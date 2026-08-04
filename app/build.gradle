@@ -1,0 +1,62 @@
+plugins {
+    alias(libs.plugins.androidApplication)
+}
+
+android {
+    namespace 'com.store.app'
+    compileSdk 34 // المعيار الحديث للأداء
+
+    // 👇 أضف هذا البلوك هنا لتفعيل BuildConfig
+    buildFeatures {
+        buildConfig true
+    }
+
+    defaultConfig {
+        applicationId "com.store.app"
+        minSdk 24 // متوافق تماماً مع محرك Royal Engine
+        targetSdk 34
+        versionCode 1
+        versionName "1.0"
+        
+        // 👑 استقبال الرابط القادم من GitHub Actions (أو وضع رابط افتراضي لحماية البناء المحلي)
+        def targetUrl = project.hasProperty('CLIENT_URL') ? project.property('CLIENT_URL') : "https://bellroy.com/"
+        
+        // 🚀 حقن الرابط مباشرة في قلب كود التطبيق كمتغير ثابت (Constant)
+        buildConfigField "String", "CLIENT_URL", "\"${targetUrl}\""
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled true // تفعيل ضغط الكود للحصول على حجم صاروخي
+            shrinkResources true // إزالة الموارد غير المستخدمة
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+    
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+dependencies {
+    // 🛡️ مكتبات أندرويد الصافية والأساسية (مسحوبة بتناغم تام من TOML)
+    implementation libs.appcompat
+    implementation libs.material
+    implementation libs.activity
+    implementation libs.constraintlayout
+    
+    // 👇 أضف هذا السطر لمكتبة WebKit المتقدمة الخاصة بمحركك
+    implementation libs.androidx.webkit
+    
+    // 🎨 مكتبة الـ Splash Screen الرسمية (لتنعيم الدخول في أندرويد 12+)
+    implementation libs.androidx.core.splashscreen
+    
+    // 🔔 الإشعارات (جاهزة ومربوطة متى ما أردت تفعيلها)
+    implementation libs.onesignal
+
+    // 🧪 مكتبات الاختبار والتأكد من الجودة
+    testImplementation libs.junit
+    androidTestImplementation libs.ext.junit
+    androidTestImplementation libs.espresso.core
+}

@@ -1,0 +1,130 @@
+name: Royal Cloud Factory 👑
+
+on:
+  workflow_dispatch: # 👑 زر البناء اليدوي للتجارب
+    inputs:
+      test_url:
+        description: 'رابط الموقع للتجربة اليدوية (يُستخدم فقط عند البناء اليدوي)'
+        required: true
+        default: 'https://bellroy.com/'
+  repository_dispatch:
+    types: [build_app] # 🚀 يظل مفتوحاً للـ Worker لإطلاق المصنع سحابياً
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: gradle
+      - name: Grant execute permission
+        run: chmod +x gradlew
+
+      - name: Prepare Keystore 👑
+        run: |
+          # 1. محاولة فك التشفير
+          echo "${{ secrets.KEYSTORE_FILE }}" | base64 --decode > release-key.jks || true
+          
+          # 2. التحقق من الملف: إذا كان حجمه صغيراً جداً أو تالفاً، نولد مفتاحاً جديداً فورياً (Automatic Fallback)
+          if [ ! -f "release-key.jks" ] || [ $(stat -c%s "release-key.jks") -lt 100 ]; then
+            echo "⚠️ Keystone file corrupted or missing! Generating auto-key for build..."
+            
+            # 🔥 الحل هنا: نحذف الملف الفارغ أو المعطوب قبل توليد الجديد حتى لا تعترض أداة الجافا
+            rm -f release-key.jks 
+            
+            keytool -genkeypair -v -keystore release-key.jks -storepass android -alias key0 -keypass android -keyalg RSA -keysize 2048 -validity 1000 -dname "CN=Royal, OU=Engine, O=Factory, L=City, S=State, C=US"
+            
+            # تحديث المتغيرات لاستخدام مفتاحنا الجديد المولّد تلقائياً
+            echo "KEYSTORE_PASSWORD=android" >> $GITHUB_ENV
+            echo "KEY_ALIAS=key0" >> $GITHUB_ENV
+            echo "KEY_PASSWORD=android" >> $GITHUB_ENV
+          else
+            echo "✅ Keystore verified!"
+            echo "KEYSTORE_PASSWORD=${{ secrets.KEYSTORE_PASSWORD }}" >> $GITHUB_ENV
+            echo "KEY_ALIAS=${{ secrets.KEY_ALIAS }}" >> $GITHUB_ENV
+            echo "KEY_PASSWORD=${{ secrets.KEY_PASSWORD }}" >> $GITHUB_ENV
+          fi
+
+      # 👑 تعطيل مؤقت لأننا نختبر يدويًا بدون سيرفر/وركر
+      # - name: Generate Client Config 👑
+      #   run: |
+      #     cat > client-config.properties <<EOF
+      #     PACKAGE_NAME=${{ github.event.client_payload.package }}
+      #     CLIENT_URL=${{ github.event.client_payload.url }}
+      #     APP_NAME=${{ github.event.client_payload.name }}
+      #     THEME_COLOR=#ffffff
+      #     IS_LIGHT_BG=true
+      #     EOF
+
+      - name: Nexus Root Diagnostic 🔍
+        run: |
+          echo "========== BUILD.GRADLE CONTENT =========="
+          cat build.gradle
+          echo "========== GRADLE VERSION =========="
+          ./gradlew --version
+
+      - name: Build Signed APK & AAB 👑
+        run: |
+          # 👑 التقاط الرابط بذكاء: إما من الوركر (client_payload) أو من الإدخال اليدوي للتجارب (inputs)
+          INJECTED_URL="${{ github.event.client_payload.url || github.event.inputs.test_url }}"
+          echo "🔥 Injecting Target URL: $INJECTED_URL into the App Core..."
+
+          ./gradlew assembleRelease bundleRelease \
+            -Pandroid.injected.signing.store.file=$(pwd)/release-key.jks \
+            -Pandroid.injected.signing.store.password=${{ env.KEYSTORE_PASSWORD }} \
+            -Pandroid.injected.signing.key.alias=${{ env.KEY_ALIAS }} \
+            -Pandroid.injected.signing.key.password=${{ env.KEY_PASSWORD }} \
+            -PCLIENT_URL="$INJECTED_URL" # 👈 تمرير الرابط إلى محرك بناء الأندرويد
+
+      - name: Extract Real SHA256 Fingerprint 🔐
+        id: cert_info
+        run: |
+          # استخراج البصمة الحقيقية بالملي من ملف الشهادة المستخدم في التوقيع
+          SHA256_HEX=$(keytool -list -v -keystore release-key.jks -storepass "${{ env.KEYSTORE_PASSWORD }}" -alias "${{ env.KEY_ALIAS }}" | grep "SHA256:" | awk '{print $2}')
+          echo "PROP_SHA256=$SHA256_HEX" >> $GITHUB_ENV
+          
+          # ========================================================
+          # 👑 أمر الطباعة في السجل لرؤية البصمة بعينك ونسخها 👑
+          # ========================================================
+          echo "========================================================"
+          echo "🔥 الف مبروك! البصمة الحقيقية للتطبيق هي: $SHA256_HEX"
+          echo "========================================================"
+
+      - name: Upload Finished APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Royal-App-Final-APK
+          path: app/build/outputs/apk/release/*.apk
+
+      - name: Find and Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: All-Found-APKs
+          path: |
+            **/*.apk
+            **/*.aab
+
+      - name: Archive Built Royal Assets 👑
+        uses: actions/upload-artifact@v4
+        with:
+          name: Royal-Wasm-Assets-Verification
+          path: app/src/main/assets/public/js/
+
+      - name: Notify Nexus Worker with Real Data 🔔
+        if: success()
+        run: |
+          # إرسال البيانات الحقيقية المستخرجة (الحالة، البصمة، وروابط الـ Artifacts التخيلية) إلى الوركر
+          curl -X POST "https://nexus-auth-manager.smart346965.workers.dev/build-webhook" \
+          -H "Content-Type: application/json" \
+          -d '{
+            "uid": "${{ github.event.client_payload.uid }}",
+            "status": "completed",
+            "sha256": "${{ env.PROP_SHA256 }}",
+            "apkUrl": "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}",
+            "aabUrl": "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}",
+            "boostScript": "<script src=\"https://cdn.nexusui.engine/v2/boost.js\" data-app-id=\"NX-${{ github.event.client_payload.uid }}\"></script>"
+          }'
