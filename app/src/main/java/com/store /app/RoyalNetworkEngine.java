@@ -153,14 +153,20 @@ public final class RoyalNetworkEngine {
         if (!allowPrefetch || renderBusy || isLowEndDevice) return;
         if (!isSafeToWarmup(urlString)) return;
 
-        boolean isFastScroll = scrollVelocity > 5;
-        long deltaTime = System.currentTimeMillis() - lastScrollTime;
-        boolean isFling = deltaTime < 50;
+        // [🔥 التعديل هنا] استثناء للموارد الحرجة جداً
+        ResourcePriority priority = classifyPriority(urlString);
+        if (priority != ResourcePriority.VERY_HIGH && !isHighPriority) {
+            // باقي الشروط للتحقق من السرعة والتبريد
+            boolean isFastScroll = scrollVelocity > 5;
+            long deltaTime = System.currentTimeMillis() - lastScrollTime;
+            boolean isFling = deltaTime < 50;
+            if ((!isFastScroll && !isFling) && !isLikelyCacheable(urlString)) return;
 
-        if ((!isFastScroll && !isFling && !isHighPriority) && !isLikelyCacheable(urlString)) return;
+            long now = System.currentTimeMillis();
+            if (now - lastPrefetchTime < PREFETCH_COOLDOWN_MS) return;
+        }
 
         long now = System.currentTimeMillis();
-        if (now - lastPrefetchTime < PREFETCH_COOLDOWN_MS) return;
 
         if (prefetchedUrls.contains(urlString)) return;
 
@@ -185,12 +191,12 @@ public final class RoyalNetworkEngine {
             prefetchExecutor.execute(() -> {
                 // 👑 فحص لحظي أثناء خروج المهمة من الطابور للتنفيذ:
                 // إذا بدأ التمرير أو الرندر وكانت المهمة ليست أولوية قصوى، يتم إلغاؤها فوراً لتفريغ المعالج والشبكة
-                ResourcePriority priority = classifyPriority(urlString);
-                if ((scrolling || renderBusy) && priority != ResourcePriority.VERY_HIGH && !isHighPriority) {
+                ResourcePriority execPriority = classifyPriority(urlString);
+                if ((scrolling || renderBusy) && execPriority != ResourcePriority.VERY_HIGH && !isHighPriority) {
                     return;
                 }
 
-                if (isHighPriority || priority == ResourcePriority.VERY_HIGH) {
+                if (isHighPriority || execPriority == ResourcePriority.VERY_HIGH) {
                     android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_FOREGROUND);
                 } else {
                     android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND);
@@ -389,4 +395,4 @@ public final class RoyalNetworkEngine {
             });
         } catch (Exception ignored) {}
     }
-            }
+    }
