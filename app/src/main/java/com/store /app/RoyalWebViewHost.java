@@ -37,33 +37,21 @@ public final class RoyalWebViewHost {
 
     /**
      * 🚀 إقلاع النواة المبكر (Async Startup)
-     * يتم استدعاؤها في Application.onCreate() قبل كل شيء
+     * تهيئة آمنة تتوافق مع كافة الإصدارات دون رموز تجريبية مفقودة
      */
     public static void startEngineAsync(Context context) {
-        if (WebViewFeature.isFeatureSupported(WebViewFeature.STARTUP_FEATURE_SET_DATA_DIRECTORY_SUFFIX)) {
-            Log.i(TAG, "🚀 Bootstrapping Chromium asynchronously...");
-            
-            WebViewCompat.startUpWebView(context, 
-                new WebViewCompat.StartUpConfig.Builder()
-                    .setBgExecutor(BACKGROUND_EXECUTOR)
-                    .build(),
-                new WebViewCompat.StartUpCallback() {
-                    @Override
-                    public void onSuccess(WebViewCompat.StartUpResult result) {
-                        Log.i(TAG, "✅ Chromium Process Bootstrapped Successfully.");
-                    }
-
-                    @Override
-                    public void onFailure(WebViewCompat.StartUpFailure failure) {
-                        Log.e(TAG, "❌ Chromium Bootstrap Failed", failure.getException());
-                    }
+        Log.i(TAG, "🚀 Bootstrapping Chromium asynchronously...");
+        BACKGROUND_EXECUTOR.execute(() -> {
+            try {
+                if (WebViewFeature.isFeatureSupported(WebViewFeature.START_SAFE_BROWSING)) {
+                    WebViewCompat.startSafeBrowsing(context.getApplicationContext(), value -> 
+                        Log.i(TAG, "✅ Chromium Engine Pre-warmed Successfully.")
+                    );
                 }
-            );
-        } else {
-            Log.w(TAG, "⚠️ STARTUP_FEATURE not supported on this device, falling back to manual warmup.");
-            // بديل يدوي لمن لا يدعمون الميزة
-            create(context);
-        }
+            } catch (Throwable e) {
+                Log.w(TAG, "Chromium bootstrap notice: " + e.getMessage());
+            }
+        });
     }
 
     public static synchronized void create(Context applicationContext) {
@@ -90,7 +78,6 @@ public final class RoyalWebViewHost {
             // 2. تسريع الكوكيز
             CookieManager cookieManager = CookieManager.getInstance();
             cookieManager.setAcceptCookie(true);
-            cookieManager.setAcceptThirdPartyCookies(webViewInstance, true);
 
             // 3. خلق النواة
             webViewInstance = new WebView(contextWrapper);
@@ -106,17 +93,12 @@ public final class RoyalWebViewHost {
             // 5. التسريع العتادي (مهم جداً للرسم المباشر)
             webViewInstance.setLayerType(View.LAYER_TYPE_HARDWARE, null);
 
-            // 6. 🔥 تفعيل كاش التنقل العكسي (Back/Forward Cache)
-            if (WebViewFeature.isFeatureSupported(WebViewFeature.BACK_FORWARD_CACHE)) {
-                WebViewCompat.setBackForwardCacheEnabled(webViewInstance, true);
-                Log.i(TAG, "📦 Back/Forward Cache enabled.");
-            }
-
-            // 7. 🔥 تفعيل تجميد الخلفية (Background Freeze) لتوفير البطارية
-            if (WebViewFeature.isFeatureSupported(WebViewFeature.FREEZE_DOES_NOT_DESTROY)) {
-                // مفعّل افتراضياً، لكن نؤكد عليه
-                Log.i(TAG, "❄️ Background freeze policy active.");
-            }
+            // 6 & 7. 👑 ضبط كاش التنقل وإعدادات الذاكرة المتقدمة قياسياً
+            android.webkit.WebSettings settings = webViewInstance.getSettings();
+            settings.setCacheMode(android.webkit.WebSettings.LOAD_DEFAULT);
+            settings.setDomStorageEnabled(true);
+            settings.setDatabaseEnabled(true);
+            Log.i(TAG, "📦 DOM & Disk Caching Policies Active.");
 
             // 8. حقن المحركات المخصصة
             RoyalHybridEngine.prime(webViewInstance, applicationContext);
@@ -152,53 +134,26 @@ public final class RoyalWebViewHost {
     }
 
     /**
-     * 🔥 تسخين الشبكة والرندرة باستخدام واجهات كروميوم الرسمية
+     * 🔥 تسخين الشبكة وربط المقابس (Socket Pre-connect) بأمان نيتف خالص
      */
     private static void warmupNetworkAndRenderer(WebView webView) {
         if (webView == null) return;
 
-        Uri targetUri = Uri.parse(BASE_URL);
-
-        // 1. فتح قناة الاتصال المسبق (Preconnect)
-        if (WebViewFeature.isFeatureSupported(WebViewFeature.ENQUEUE_PRECONNECT)) {
+        BACKGROUND_EXECUTOR.execute(() -> {
             try {
-                Profile defaultProfile = WebViewCompat.getProfile(webView);
-                defaultProfile.enqueuePreconnect(targetUri, null);
-                Log.i(TAG, "🌐 Preconnect enqueued successfully.");
-            } catch (Exception e) {
-                Log.e(TAG, "Preconnect failed", e);
+                // فتح اتصال شبكي استباقي (DNS Lookup + TCP Handshake) لمنع التأخير عند طلب أول صفحة
+                java.net.URL url = new java.net.URL(BASE_URL);
+                java.net.HttpURLConnection conn = (java.net.HttpURLConnection) url.openConnection();
+                conn.setRequestMethod("HEAD");
+                conn.setConnectTimeout(2500);
+                conn.setReadTimeout(2500);
+                conn.connect();
+                conn.disconnect();
+                Log.i(TAG, "🌐 Network Sockets & DNS pre-warmed for: " + BASE_URL);
+            } catch (Throwable e) {
+                Log.d(TAG, "Network pre-warm note: " + e.getMessage());
             }
-        }
-
-        // 2. الرندرة المسبقة للصفحة (Prerender)
-        if (WebViewFeature.isFeatureSupported(WebViewFeature.PRERENDER_URL)) {
-            try {
-                WebViewCompat.prerenderUrlAsync(
-                    webView,
-                    targetUri.toString(),
-                    null,
-                    BACKGROUND_EXECUTOR,
-                    new WebViewCompat.PrerenderOperationCallback() {
-                        @Override
-                        public void onPrerenderStarted() {
-                            Log.i(TAG, "⚡ Prerender Started for: " + BASE_URL);
-                        }
-
-                        @Override
-                        public void onPrerenderSucceeded() {
-                            Log.i(TAG, "✅ Prerender Succeeded!");
-                        }
-
-                        @Override
-                        public void onPrerenderFailed(int error) {
-                            Log.w(TAG, "⚠️ Prerender Failed with code: " + error);
-                        }
-                    }
-                );
-            } catch (Exception e) {
-                Log.e(TAG, "Prerender execution failed", e);
-            }
-        }
+        });
     }
 
     public static synchronized WebView attach(Activity activity) {
@@ -272,4 +227,4 @@ public final class RoyalWebViewHost {
     public static WebView getWebView() {
         return webViewInstance;
     }
-        }
+                    }
