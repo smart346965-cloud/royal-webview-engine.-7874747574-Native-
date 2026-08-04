@@ -8,25 +8,35 @@ public class RoyalApplication extends Application {
     @Override
     public void onCreate() {
         super.onCreate();
-        
-        Log.i("RoyalEngine", "🚀 Royal Application Ignite! Pre-warming WebView...");
-        
-        // 🌐 تشغيل رادار مراقبة الشبكة فوراً لخدمة الـ WebEngineManager والكاش
+
+        Log.i("RoyalEngine", "🚀 Royal Application Ignite!");
+
+        // 🌐 تشغيل رادار مراقبة الشبكة فوراً
         NetworkMonitor.init(this);
-        
-        // 👁️ تشغيل عقل الفحص الملكي وبدء مراقبة خيط الواجهة الرئيسي (Main Looper)
+
+        // 👁️ تشغيل عقل الفحص الملكي
         RoyalPanopticon.startAwareness();
-        
-        // هنا تكمن الخدعة الصاروخية: 
-        // نقوم بتسخين وخلق محركك (RoyalWebViewHost) في الذاكرة في الجزء من الثانية 
-        // الذي يلمس فيه المستخدم أيقونة التطبيق، قبل حتى أن تظهر شاشة السبلاش!
+
+        // 🔥 الخطوة الأولى: تسخين نواة كروميوم بشكل غير متزامن
+        // هذا يقلل وقت التهيئة بشكل كبير ويوزع الحمل على خيط خلفي
+        RoyalWebViewHost.startEngineAsync(this);
+
+        // 🔥 الخطوة الثانية: التسخين المباشر للمحرك (يتم بالتزامن مع الخطوة الأولى)
+        // بما أن startEngineAsync يعمل على خيط خلفي، فهذا التسخين يضمن
+        // أن WebView جاهز فوراً عند الحاجة إليه
         RoyalWebViewHost.create(this);
+
+        Log.i("RoyalEngine", "✅ All systems initialized. Ready for action.");
     }
 
     @Override
     public void onTerminate() {
-        // إيقاف المحرك وتنظيف الذاكرة عند إغلاق التطبيق كاملاً لمنع تلمظ الرام (Memory Leaks)
+        // إيقاف العقل الملكي وتنظيف الذاكرة
         RoyalPanopticon.stopAwareness();
+
+        // تنظيف المحرك لمنع تسريب الذاكرة
+        RoyalWebViewHost.destroy();
+
         super.onTerminate();
     }
 }
