@@ -4,6 +4,7 @@ import android.app.Activity;
 import android.content.Context;
 import android.content.MutableContextWrapper;
 import android.graphics.Color;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Looper;
 import android.util.Log;
@@ -12,6 +13,7 @@ import android.view.ViewGroup;
 import android.view.ViewParent;
 import android.webkit.CookieManager;
 import android.webkit.WebView;
+import androidx.webkit.Profile;
 import androidx.webkit.WebViewCompat;
 import androidx.webkit.WebViewFeature;
 import androidx.webkit.WebViewRenderProcess;
@@ -20,6 +22,7 @@ import androidx.webkit.WebViewRenderProcessClient;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.util.concurrent.Executors;
 
 public final class RoyalWebViewHost {
     private static final String TAG = "RoyalWebViewHost";
@@ -32,6 +35,28 @@ public final class RoyalWebViewHost {
     private static RoyalJsBridge jsBridgeInstance;
 
     private RoyalWebViewHost() {}
+
+    /**
+     * 🚀 إقلاع النواة المبكر (Async Startup)
+     * يتم استدعاؤها في Application.onCreate() قبل كل شيء
+     */
+    public static void startEngineAsync(Context context) {
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.STARTUP_FEATURE_SET_DATA_DIRECTORY_SUFFIX)) {
+            WebViewCompat.startUpWebView(context, new WebViewCompat.StartUpConfig.Builder()
+                .setBgExecutor(Executors.newSingleThreadExecutor())
+                .build(),
+                new WebViewCompat.StartUpCallback() {
+                    @Override
+                    public void onSuccess(WebViewCompat.StartUpResult result) {
+                        Log.i(TAG, "🚀 Chromium Process Bootstrapped Asynchronously.");
+                    }
+                    @Override
+                    public void onFailure(WebViewCompat.StartUpFailure failure) {
+                        Log.e(TAG, "Chromium Bootstrap Failed", failure.getException());
+                    }
+                });
+        }
+    }
 
     public static synchronized void create(Context applicationContext) {
         if (Looper.myLooper() != Looper.getMainLooper()) return;
@@ -59,6 +84,11 @@ public final class RoyalWebViewHost {
             }
             webViewInstance.setLayerType(View.LAYER_TYPE_HARDWARE, null);
 
+            // تفعيل كاش التنقل العكسي (Back/Forward Cache)
+            if (WebViewFeature.isFeatureSupported(WebViewFeature.BACK_FORWARD_CACHE)) {
+                WebViewCompat.setBackForwardCacheEnabled(webViewInstance, true);
+            }
+
             // حقن المحركات
             RoyalHybridEngine.prime(webViewInstance, applicationContext);
             RoyalNetworkEngine.install(applicationContext);
@@ -78,25 +108,43 @@ public final class RoyalWebViewHost {
 
             lastRestartTime = System.currentTimeMillis();
             
-            // [تعديل جراحي داخل RoyalWebViewHost.java - دالة create]
+            // التسخين المسبق المعتمد من نواة كروميوم للشبكة والرندرة
+            Uri targetUri = Uri.parse("https://kith.com/");
 
-            // 🔥 المحور الرابع: تسخين السوكيت (Socket Priming)
-            new Thread(() -> {
+            // 1. فتح قناة الاتصال المسبق (Preconnect)
+            if (WebViewFeature.isFeatureSupported(WebViewFeature.ENQUEUE_PRECONNECT)) {
                 try {
-                    URL url = new URL("https://kith.com/");
-                    HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-                    conn.setRequestMethod("HEAD"); // طلب خفيف جداً فقط لفتح القناة
-                    conn.setConnectTimeout(2000);
-                    conn.setReadTimeout(2000);
-                    conn.connect();
-                    // الحفاظ على السوكيت مفتوحاً في حوض الاتصالات (Connection Pool)
-                    InputStream is = conn.getInputStream();
-                    if (is != null) is.close(); 
-                    Log.i(TAG, "🌐 Network Socket Warmed Up for Royal Domain.");
+                    Profile defaultProfile = WebViewCompat.getProfile(webViewInstance);
+                    defaultProfile.enqueuePreconnect(targetUri, null);
+                    Log.i(TAG, "🌐 Preconnect enqueued successfully.");
                 } catch (Exception e) {
-                    Log.e(TAG, "Socket warmup failed", e);
+                    Log.e(TAG, "Preconnect failed", e);
                 }
-            }).start();
+            }
+
+            // 2. الرندرة المسبقة للصفحة (Prerender Async)
+            if (WebViewFeature.isFeatureSupported(WebViewFeature.PRERENDER_URL)) {
+                try {
+                    WebViewCompat.prerenderUrlAsync(
+                        webViewInstance,
+                        targetUri.toString(),
+                        null,
+                        Executors.newSingleThreadExecutor(),
+                        new WebViewCompat.PrerenderOperationCallback() {
+                            @Override
+                            public void onPrerenderStarted() {
+                                Log.i(TAG, "⚡ Prerender Started for Domain.");
+                            }
+                            @Override
+                            public void onPrerenderFailed(int error) {
+                                Log.w(TAG, "Prerender Failed with code: " + error);
+                            }
+                        }
+                    );
+                } catch (Exception e) {
+                    Log.e(TAG, "Prerender execution failed", e);
+                }
+            }
             
             // 👑 الآن فقط نعلن أن المحرك جاهز (بعد نجاح كل الخطوات)
             isInitialized = true;
@@ -169,4 +217,4 @@ public final class RoyalWebViewHost {
     public static RoyalJsBridge getBridge() {
         return jsBridgeInstance;
     }
-            }
+}
