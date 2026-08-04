@@ -30,6 +30,46 @@ const CONFIG = {
     }
 };
 
+// 👑 [إضافة في بداية الملف] كائن إدارة الطلبات المتزامنة (Single-Flight Request Map)
+const pendingRequests = new Map();
+
+/**
+ * دمج الطلبات المتطابقة في طلب شبكي واحد وإرجاع نفس الـ Promise لجميع الطالبين
+ */
+function fetchSingleFlight(request) {
+    const url = request.url;
+    
+    // أولاً: تحقق من الكاش (لتجنب الشبكة إن كان موجوداً)
+    return caches.match(request).then(cachedResponse => {
+        if (cachedResponse) {
+            console.log(`[Nexus X] ⚡ Single-Flight returned from cache: ${url}`);
+            return cachedResponse;
+        }
+        
+        // ثانياً: دمج الطلبات المتطابقة
+        if (pendingRequests.has(url)) {
+            console.log(`[Nexus X] ⛓️ Single-Flight Collapsed request for: ${url}`);
+            return pendingRequests.get(url).then(response => response.clone());
+        }
+        
+        const fetchPromise = fetch(request)
+            .then(response => {
+                // تخزين النتيجة في الكاش (للاستخدام المستقبلي)
+                if (response && response.status === 200) {
+                    const cacheName = getCacheName(request);
+                    cacheWithDate(cacheName, request, response.clone());
+                }
+                return response;
+            })
+            .finally(() => {
+                pendingRequests.delete(url);
+            });
+        
+        pendingRequests.set(url, fetchPromise);
+        return fetchPromise.then(response => response.clone());
+    });
+}
+
 // ⚡ الصفحات التي سيتم تحميلها مسبقاً تلقائياً
 const PRELOAD_PAGES = [
     '/',
@@ -387,13 +427,14 @@ async function handleFontRequest(request) {
 }
 
 /**
- * 📜 معالج الملفات الأساسية: Stale-While-Revalidate
+ * 📜 معالج الملفات الأساسية: Stale-While-Revalidate + Single-Flight + V8 Bytecode Support
  */
 async function handleCoreRequest(request) {
     const cache = await caches.open(CONFIG.CORE_CACHE);
     const cachedResponse = await cache.match(request);
     
-    const networkFetch = fetch(request)
+    // استخدام fetchSingleFlight لمنع تكرار طلب نفس ملف الـ JS/CSS أكثر من مرة في نفس الوقت
+    const networkFetch = fetchSingleFlight(request)
         .then(async (response) => {
             if (response && response.status === 200) {
                 await cacheWithDate(CONFIG.CORE_CACHE, request, response.clone());
@@ -402,7 +443,7 @@ async function handleCoreRequest(request) {
         })
         .catch(() => cachedResponse);
     
-    // إرجاع المخزن فوراً إن وجد، وإلا انتظار الشبكة
+    // إرجاع المخزن فوراً إن وجد لتشغيل V8 Bytecode المترجم، والتحديث في الخلفية
     return cachedResponse || networkFetch;
 }
 
@@ -584,6 +625,19 @@ self.addEventListener('message', (event) => {
                     });
                     
                     console.log('[Nexus X] 📊 Cache stats:', stats);
+                })()
+            );
+            break;
+        
+        // 🧠 [تعديل داخل معالج الرسائل self.addEventListener('message')]
+        case 'TRIM_MEMORY_PRESSURE':
+            event.waitUntil(
+                (async () => {
+                    console.warn('[Nexus X] 🚨 Memory Pressure Signal received from Native Host. Pruning Caches...');
+                    // تقليم جميع أوعية التخزين للحجم الأدنى فوراً
+                    await trimCache(CONFIG.IMAGE_CACHE, 50);
+                    await trimCache(CONFIG.PAGE_CACHE, 20);
+                    await trimCache(CONFIG.CORE_CACHE, 100);
                 })()
             );
             break;
