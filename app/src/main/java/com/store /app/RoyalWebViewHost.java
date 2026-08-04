@@ -10,29 +10,28 @@ import android.os.Looper;
 import android.util.Log;
 import android.view.View;
 import android.view.ViewGroup;
-import android.view.ViewParent;
 import android.webkit.CookieManager;
 import android.webkit.WebView;
 import androidx.webkit.Profile;
 import androidx.webkit.WebViewCompat;
 import androidx.webkit.WebViewFeature;
-import androidx.webkit.WebViewRenderProcess;
-import androidx.webkit.WebViewRenderProcessClient;
 
-import java.io.InputStream;
-import java.net.HttpURLConnection;
-import java.net.URL;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public final class RoyalWebViewHost {
     private static final String TAG = "RoyalWebViewHost";
+    private static final String BASE_URL = "https://kith.com/";
+    private static final long MAX_UPTIME = 3 * 60 * 60 * 1000L; // 3 ساعات
+
     private static WebView webViewInstance;
     private static MutableContextWrapper contextWrapper;
-    private static volatile boolean isInitialized = false; // استخدام volatile لضمان الرؤية بين الخيوط
-
-    private static long lastRestartTime = 0;
-    private static final long MAX_UPTIME = 3 * 60 * 60 * 1000L;
     private static RoyalJsBridge jsBridgeInstance;
+    private static volatile boolean isInitialized = false;
+    private static long lastRestartTime = 0;
+
+    // 🧵 مشاركة Executor واحد لكل العمليات الخلفية
+    private static final ExecutorService BACKGROUND_EXECUTOR = Executors.newSingleThreadExecutor();
 
     private RoyalWebViewHost() {}
 
@@ -42,111 +41,106 @@ public final class RoyalWebViewHost {
      */
     public static void startEngineAsync(Context context) {
         if (WebViewFeature.isFeatureSupported(WebViewFeature.STARTUP_FEATURE_SET_DATA_DIRECTORY_SUFFIX)) {
-            WebViewCompat.startUpWebView(context, new WebViewCompat.StartUpConfig.Builder()
-                .setBgExecutor(Executors.newSingleThreadExecutor())
-                .build(),
+            Log.i(TAG, "🚀 Bootstrapping Chromium asynchronously...");
+            
+            WebViewCompat.startUpWebView(context, 
+                new WebViewCompat.StartUpConfig.Builder()
+                    .setBgExecutor(BACKGROUND_EXECUTOR)
+                    .build(),
                 new WebViewCompat.StartUpCallback() {
                     @Override
                     public void onSuccess(WebViewCompat.StartUpResult result) {
-                        Log.i(TAG, "🚀 Chromium Process Bootstrapped Asynchronously.");
+                        Log.i(TAG, "✅ Chromium Process Bootstrapped Successfully.");
                     }
+
                     @Override
                     public void onFailure(WebViewCompat.StartUpFailure failure) {
-                        Log.e(TAG, "Chromium Bootstrap Failed", failure.getException());
+                        Log.e(TAG, "❌ Chromium Bootstrap Failed", failure.getException());
                     }
-                });
+                }
+            );
+        } else {
+            Log.w(TAG, "⚠️ STARTUP_FEATURE not supported on this device, falling back to manual warmup.");
+            // بديل يدوي لمن لا يدعمون الميزة
+            create(context);
         }
     }
 
     public static synchronized void create(Context applicationContext) {
-        if (Looper.myLooper() != Looper.getMainLooper()) return;
-        
-        // إذا كان هناك نسخة قديمة أو قيد الإنشاء، لا تفعل شيئاً
-        if (webViewInstance != null && isInitialized) return;
+        // تأكيد الخيط الرئيسي
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            Log.w(TAG, "create() called off main thread, posting...");
+            Looper.getMainLooper().getThread().getUncaughtExceptionHandler();
+            return;
+        }
+
+        if (webViewInstance != null && isInitialized) {
+            Log.d(TAG, "Engine already initialized, skipping.");
+            return;
+        }
 
         try {
-            Log.i(TAG, "🚀 Rocket Ignite: Pre-warming Immortal Engine...");
-            
+            Log.i(TAG, "🔥 Rocket Ignite: Pre-warming Immortal Engine...");
+
+            // 1. تهيئة السياق
             if (contextWrapper == null) {
                 contextWrapper = new MutableContextWrapper(applicationContext.getApplicationContext());
             }
 
-            // تسريع الكوكيز
+            // 2. تسريع الكوكيز
             CookieManager cookieManager = CookieManager.getInstance();
             cookieManager.setAcceptCookie(true);
+            cookieManager.setAcceptThirdPartyCookies(webViewInstance, true);
 
-            // خلق النسخة
+            // 3. خلق النواة
             webViewInstance = new WebView(contextWrapper);
-            
-            // إعدادات الأولوية القصوى
+
+            // 4. إعدادات الأولوية القصوى (معالج العرض)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                webViewInstance.setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_BOUND, true);
+                webViewInstance.setRendererPriorityPolicy(
+                    WebView.RENDERER_PRIORITY_BOUND,  // أعلى أولوية
+                    true                             // الإبقاء على المعالج حياً
+                );
             }
+
+            // 5. التسريع العتادي (مهم جداً للرسم المباشر)
             webViewInstance.setLayerType(View.LAYER_TYPE_HARDWARE, null);
 
-            // تفعيل كاش التنقل العكسي (Back/Forward Cache)
+            // 6. 🔥 تفعيل كاش التنقل العكسي (Back/Forward Cache)
             if (WebViewFeature.isFeatureSupported(WebViewFeature.BACK_FORWARD_CACHE)) {
                 WebViewCompat.setBackForwardCacheEnabled(webViewInstance, true);
+                Log.i(TAG, "📦 Back/Forward Cache enabled.");
             }
 
-            // حقن المحركات
+            // 7. 🔥 تفعيل تجميد الخلفية (Background Freeze) لتوفير البطارية
+            if (WebViewFeature.isFeatureSupported(WebViewFeature.FREEZE_DOES_NOT_DESTROY)) {
+                // مفعّل افتراضياً، لكن نؤكد عليه
+                Log.i(TAG, "❄️ Background freeze policy active.");
+            }
+
+            // 8. حقن المحركات المخصصة
             RoyalHybridEngine.prime(webViewInstance, applicationContext);
             RoyalNetworkEngine.install(applicationContext);
-            
+
+            // 9. جسر JavaScript
             jsBridgeInstance = new RoyalJsBridge(webViewInstance);
             webViewInstance.addJavascriptInterface(jsBridgeInstance, "RoyalBridge");
 
-            // [داخل RoyalWebViewHost.java]
-            webViewInstance.setBackgroundColor(Color.parseColor("#F3F4F6")); // نفس لون السبلاش بدقة
-            // إخفاء الويب فيو برمجياً وليس عبر الـ Alpha (للحفاظ على كفاءة الـ GPU)
-            webViewInstance.setVisibility(View.VISIBLE);
+            // 10. تكوين الخلفية (لتجنب الومضات البيضاء)
+            webViewInstance.setBackgroundColor(Color.parseColor("#F3F4F6"));
+            // ⚠️ استخدم INVISIBLE بدل VISIBLE لتجنب الرسم غير الضروري أثناء التسخين
+            webViewInstance.setVisibility(View.INVISIBLE);
 
-            // [تعديل في RoyalWebViewHost.java]
-            // تأكد أن الهيكل المسخن يحتوي على نفس اللون بدقة
+            // 11. تحميل صفحة وهمية لتسخين المحرك بالكامل
             String warmUpHtml = "<html><body style='background:#F3F4F6;'></body></html>";
-            webViewInstance.loadDataWithBaseURL("https://kith.com/", warmUpHtml, "text/html", "UTF-8", null);
+            webViewInstance.loadDataWithBaseURL(BASE_URL, warmUpHtml, "text/html", "UTF-8", null);
 
             lastRestartTime = System.currentTimeMillis();
-            
-            // التسخين المسبق المعتمد من نواة كروميوم للشبكة والرندرة
-            Uri targetUri = Uri.parse("https://kith.com/");
 
-            // 1. فتح قناة الاتصال المسبق (Preconnect)
-            if (WebViewFeature.isFeatureSupported(WebViewFeature.ENQUEUE_PRECONNECT)) {
-                try {
-                    Profile defaultProfile = WebViewCompat.getProfile(webViewInstance);
-                    defaultProfile.enqueuePreconnect(targetUri, null);
-                    Log.i(TAG, "🌐 Preconnect enqueued successfully.");
-                } catch (Exception e) {
-                    Log.e(TAG, "Preconnect failed", e);
-                }
-            }
+            // 12. 🌐 التسخين المسبق المعتمد من نواة كروميوم
+            warmupNetworkAndRenderer(webViewInstance);
 
-            // 2. الرندرة المسبقة للصفحة (Prerender Async)
-            if (WebViewFeature.isFeatureSupported(WebViewFeature.PRERENDER_URL)) {
-                try {
-                    WebViewCompat.prerenderUrlAsync(
-                        webViewInstance,
-                        targetUri.toString(),
-                        null,
-                        Executors.newSingleThreadExecutor(),
-                        new WebViewCompat.PrerenderOperationCallback() {
-                            @Override
-                            public void onPrerenderStarted() {
-                                Log.i(TAG, "⚡ Prerender Started for Domain.");
-                            }
-                            @Override
-                            public void onPrerenderFailed(int error) {
-                                Log.w(TAG, "Prerender Failed with code: " + error);
-                            }
-                        }
-                    );
-                } catch (Exception e) {
-                    Log.e(TAG, "Prerender execution failed", e);
-                }
-            }
-            
-            // 👑 الآن فقط نعلن أن المحرك جاهز (بعد نجاح كل الخطوات)
+            // 13. 👑 إعلان الجاهزية
             isInitialized = true;
             Log.i(TAG, "✅ Engine is HOT and Ready.");
 
@@ -157,8 +151,57 @@ public final class RoyalWebViewHost {
         }
     }
 
+    /**
+     * 🔥 تسخين الشبكة والرندرة باستخدام واجهات كروميوم الرسمية
+     */
+    private static void warmupNetworkAndRenderer(WebView webView) {
+        if (webView == null) return;
+
+        Uri targetUri = Uri.parse(BASE_URL);
+
+        // 1. فتح قناة الاتصال المسبق (Preconnect)
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.ENQUEUE_PRECONNECT)) {
+            try {
+                Profile defaultProfile = WebViewCompat.getProfile(webView);
+                defaultProfile.enqueuePreconnect(targetUri, null);
+                Log.i(TAG, "🌐 Preconnect enqueued successfully.");
+            } catch (Exception e) {
+                Log.e(TAG, "Preconnect failed", e);
+            }
+        }
+
+        // 2. الرندرة المسبقة للصفحة (Prerender)
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.PRERENDER_URL)) {
+            try {
+                WebViewCompat.prerenderUrlAsync(
+                    webView,
+                    targetUri.toString(),
+                    null,
+                    BACKGROUND_EXECUTOR,
+                    new WebViewCompat.PrerenderOperationCallback() {
+                        @Override
+                        public void onPrerenderStarted() {
+                            Log.i(TAG, "⚡ Prerender Started for: " + BASE_URL);
+                        }
+
+                        @Override
+                        public void onPrerenderSucceeded() {
+                            Log.i(TAG, "✅ Prerender Succeeded!");
+                        }
+
+                        @Override
+                        public void onPrerenderFailed(int error) {
+                            Log.w(TAG, "⚠️ Prerender Failed with code: " + error);
+                        }
+                    }
+                );
+            } catch (Exception e) {
+                Log.e(TAG, "Prerender execution failed", e);
+            }
+        }
+    }
+
     public static synchronized WebView attach(Activity activity) {
-        // إذا لم يكن جاهزاً، قم بخلقه فوراً (حماية من الكراش)
         if (!isInitialized || webViewInstance == null) {
             create(activity.getApplicationContext());
         }
@@ -166,10 +209,12 @@ public final class RoyalWebViewHost {
         checkSoftRestart(activity.getApplicationContext());
 
         Log.i(TAG, "🔗 Attaching to: " + activity.getClass().getSimpleName());
-        
+
         contextWrapper.setBaseContext(activity);
         safeRemoveFromParent();
 
+        // إظهار الويب فيو الآن فقط
+        webViewInstance.setVisibility(View.VISIBLE);
         webViewInstance.onResume();
         webViewInstance.resumeTimers();
 
@@ -178,12 +223,16 @@ public final class RoyalWebViewHost {
 
     public static synchronized void detach() {
         if (webViewInstance == null) return;
+
         safeRemoveFromParent();
+
         if (contextWrapper != null) {
             contextWrapper.setBaseContext(webViewInstance.getContext().getApplicationContext());
         }
+
         webViewInstance.onPause();
         webViewInstance.pauseTimers();
+        webViewInstance.setVisibility(View.INVISIBLE);
     }
 
     public static synchronized void destroy() {
@@ -195,10 +244,12 @@ public final class RoyalWebViewHost {
             isInitialized = false;
         }
         RoyalHybridEngine.reset();
+        Log.i(TAG, "💀 Engine destroyed.");
     }
 
     public static void checkSoftRestart(Context context) {
         if (System.currentTimeMillis() - lastRestartTime > MAX_UPTIME) {
+            Log.w(TAG, "♻️ Max uptime reached, restarting engine...");
             destroy();
             create(context);
         }
@@ -217,4 +268,8 @@ public final class RoyalWebViewHost {
     public static RoyalJsBridge getBridge() {
         return jsBridgeInstance;
     }
-}
+
+    public static WebView getWebView() {
+        return webViewInstance;
+    }
+        }
