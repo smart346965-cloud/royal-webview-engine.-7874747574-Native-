@@ -123,8 +123,20 @@ public final class RoyalCacheManager {
             // ⚡ L1 RAM
             byte[] mem = memoryCache.get(key);
             if (mem != null) {
-                return new WebResourceResponse(getMime(url), null,
-                        new ByteArrayInputStream(mem));
+                return new WebResourceResponse(
+                        getMime(url),
+                        "UTF-8",
+                        200,
+                        "OK",
+                        buildResponseHeaders(url, null, mem.length),
+                        new ByteArrayInputStream(mem)
+                );
+            }
+
+            // 🔒 [تعديل داخل intercept] منع قراءة ملف قيد الكتابة حالياً (Single-Flight Conflict Avoidance)
+            if (writingNow.contains(key)) {
+                // الملف قيد الكتابة حالياً بواسطة خيط آخر؛ ننسحب ودع الشبكة/SW يتعامل لتجنب قراءة ملف ناقص
+                return null;
             }
 
             // 💾 L2 Disk
@@ -186,14 +198,23 @@ public final class RoyalCacheManager {
 
                     file.setLastModified(System.currentTimeMillis());
 
-                    return new WebResourceResponse(getMime(url), null,
-                            new ByteArrayInputStream(data));
+                    return new WebResourceResponse(
+                            getMime(url),
+                            "UTF-8",
+                            200,
+                            "OK",
+                            buildResponseHeaders(url, meta != null ? meta.etag : null, data.length),
+                            new ByteArrayInputStream(data)
+                    );
                 }
 
                 // 🔥 LARGE → STREAM (بدون RAM)
                 return new WebResourceResponse(
                         getMime(url),
-                        null,
+                        "UTF-8",
+                        200,
+                        "OK",
+                        buildResponseHeaders(url, meta != null ? meta.etag : null, file.length()),
                         new BufferedInputStream(new FileInputStream(file))
                 );
 
@@ -486,6 +507,30 @@ public final class RoyalCacheManager {
         return Long.toHexString(hash);
     }
 
+    // 👑 [إضافة دالة جديدة] بناء هيدرات HTTP احترافية لتفعيل V8 Bytecode Caching
+    private static Map<String, String> buildResponseHeaders(String url, String etag, long contentLength) {
+        Map<String, String> headers = new HashMap<>();
+        headers.put("Access-Control-Allow-Origin", "*");
+        headers.put("X-Served-By", "RoyalCacheManager"); // وسم المصدر لمنع التضارب مع SW
+        headers.put("Accept-Ranges", "bytes");
+        headers.put("Vary", "Accept-Encoding"); // دعم الضغط
+
+        // إجبار V8 على أرشفة الجافاسكريبت والـ CSS في الـ Compilation Cache
+        if (url.endsWith(".js") || url.endsWith(".mjs") || url.endsWith(".css")) {
+            headers.put("Cache-Control", "public, max-age=31536000, immutable");
+        } else {
+            headers.put("Cache-Control", "public, max-age=86400");
+        }
+
+        if (etag != null && !etag.isEmpty()) {
+            headers.put("ETag", etag);
+        }
+        if (contentLength > 0) {
+            headers.put("Content-Length", String.valueOf(contentLength));
+        }
+        return headers;
+    }
+
     private static String getMime(String url) {
         String clean = url.toLowerCase().split("\\?")[0];
 
@@ -642,4 +687,35 @@ public final class RoyalCacheManager {
             Log.e(TAG, "Royal Download Manager failed", e);
         }
     }
-}
+
+    /**
+     * 🚨 [إضافة دالة جديدة] تفريغ طارئ واستباقي للذاكرة عند حدوث OOM Risk
+     */
+    public static void onMemoryPressure(int level) {
+        Log.w(TAG, "🚨 Memory Pressure Triggered (Level: " + level + "). Evicting L1 RAM Cache...");
+        
+        // 1. تفريغ ذاكرة L1 RAM فوراً
+        memoryCache.evictAll();
+        
+        // 2. إرسال إشارة لـ Service Worker لتقليص كاشه (عبر Native Bridge)
+        // نفترض أن لديك طريقة لإرسال رسالة للـ Service Worker، مثلاً عبر WebView
+        // يمكنك استخدام webView.evaluateJavascript() أو postMessage
+        // نضع هنا الكود النموذجي:
+        try {
+            if (RoyalWebViewHost.getWebView() != null) {
+                RoyalWebViewHost.getWebView().evaluateJavascript(
+                    "navigator.serviceWorker.ready.then(reg => {" +
+                    "  reg.active.postMessage({ type: 'TRIM_MEMORY_PRESSURE' });" +
+                    "});", null);
+            }
+        } catch (Exception ignored) {}
+        
+        // 3. طلب جمع القمامة المباشر
+        System.gc();
+
+        // تنظيف القرص أيضاً (L2) لتخفيف الضغط
+        new Thread(() -> {
+            performLRUEviction(); // هذا سيُقلّم حتى 80% من السعة
+        }).start();
+    }
+                        }
