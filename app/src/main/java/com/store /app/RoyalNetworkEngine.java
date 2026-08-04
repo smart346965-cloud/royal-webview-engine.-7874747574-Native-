@@ -16,8 +16,6 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 public final class RoyalNetworkEngine {
 
@@ -45,6 +43,14 @@ public final class RoyalNetworkEngine {
     private static int scrollVelocity = 0;
     private static volatile boolean scrolling = false;
 
+    // [أضف الترقيم وتحديد مستويات الأولويات كـ Enum في أعلى الكلاس]
+    public enum ResourcePriority {
+        VERY_HIGH, // HTML, CSS الرئيسي
+        HIGH,      // Scripts, Fonts
+        MEDIUM,    // Images, Media
+        LOW        // Prefetch, Analytics, Third-party
+    }
+
     private RoyalNetworkEngine() {}
 
     public static void install(Context context) {
@@ -61,14 +67,21 @@ public final class RoyalNetworkEngine {
         Log.i(TAG, "🌐 Royal Network Advisor V5 Engine Active (Anti-Freeze Edition).");
     }
 
+    // [تعديل دالة interceptRequest]
     public static WebResourceResponse interceptRequest(WebResourceRequest request) {
+        if (request == null || request.getUrl() == null) return null;
+
+        String url = request.getUrl().toString();
+
+        // إذا كان الطلب رئيسياً ومستدعاً من الصفحة فوراً، نرفع أولوية الشبكة ونوقف التحميل المسبق الخفي
+        if (request.isForMainFrame()) {
+            notifyRenderStart();
+        }
+
         // خط الدفاع الأول: الكاش (الذي أصبح يستخدم FNV-1a الآن)
         WebResourceResponse cached = RoyalCacheManager.intercept(request);
         if (cached != null) return cached;
 
-        if (request == null || request.getUrl() == null) return null;
-
-        // إشعار النواة بالخمول عند وجود لمسة (تنسيق مع Predictor)
         if (request.hasGesture()) {
             notifyRenderIdle();
         }
@@ -85,6 +98,22 @@ public final class RoyalNetworkEngine {
         String u = url.toLowerCase();
         return u.endsWith(".png") || u.endsWith(".jpg") || u.endsWith(".jpeg") ||
                 u.endsWith(".webp") || u.endsWith(".avif") || u.contains("cdn") || u.contains("img");
+    }
+
+    // [أضف دالة تصنيف أولويات الموارد بناءً على طبيعتها]
+    private static ResourcePriority classifyPriority(String urlString) {
+        String u = urlString.toLowerCase();
+
+        if (u.contains(".css") || u.contains("main.js") || u.contains("app.js")) {
+            return ResourcePriority.VERY_HIGH;
+        }
+        if (u.contains(".woff") || u.contains(".woff2") || u.contains(".ttf") || u.contains(".js")) {
+            return ResourcePriority.HIGH;
+        }
+        if (isImageResource(u)) {
+            return ResourcePriority.MEDIUM;
+        }
+        return ResourcePriority.LOW;
     }
 
     private static boolean isSafeToWarmup(String url) {
@@ -154,8 +183,17 @@ public final class RoyalNetworkEngine {
 
         try {
             prefetchExecutor.execute(() -> {
-                if (isHighPriority) {
+                // 👑 فحص لحظي أثناء خروج المهمة من الطابور للتنفيذ:
+                // إذا بدأ التمرير أو الرندر وكانت المهمة ليست أولوية قصوى، يتم إلغاؤها فوراً لتفريغ المعالج والشبكة
+                ResourcePriority priority = classifyPriority(urlString);
+                if ((scrolling || renderBusy) && priority != ResourcePriority.VERY_HIGH && !isHighPriority) {
+                    return;
+                }
+
+                if (isHighPriority || priority == ResourcePriority.VERY_HIGH) {
                     android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_FOREGROUND);
+                } else {
+                    android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND);
                 }
 
                 HttpURLConnection connection = null;
@@ -311,17 +349,18 @@ public final class RoyalNetworkEngine {
         scheduleWarmup(urlString, true);
     }
 
-    private static void warmupHost(String url) {
+    // [تعديل دالة warmupHost الموجودة في أسفل RoyalNetworkEngine.java]
+    private static void warmupHost(String urlString) {
         try {
-            String host = new URL(url).getHost();
+            URL url = new URL(urlString);
+            String host = url.getHost();
+            int port = url.getPort() != -1 ? url.getPort() : (url.getProtocol().equalsIgnoreCase("https") ? 443 : 80);
+
             if (warmedHosts.contains(host)) return;
 
             if (warmedHosts.size() > MAX_WARMED_HOSTS) {
-
                 java.util.Iterator<String> it = warmedHosts.iterator();
-
                 int remove = MAX_WARMED_HOSTS / 3;
-
                 while (it.hasNext() && remove-- > 0) {
                     it.next();
                     it.remove();
@@ -331,7 +370,21 @@ public final class RoyalNetworkEngine {
 
             prefetchExecutor.execute(() -> {
                 try {
-                    java.net.InetAddress.getAllByName(host);
+                    // 1. ترجمة العنوان (DNS Lookup)
+                    java.net.InetAddress addr = java.net.InetAddress.getByName(host);
+
+                    // 2. فتح مقبس حقيقي (TCP/TLS Preconnect) لتجهيز القناة في ذاكرة النظام
+                    if (port == 443) {
+                        javax.net.ssl.SSLSocketFactory factory = (javax.net.ssl.SSLSocketFactory) javax.net.ssl.SSLSocketFactory.getDefault();
+                        try (javax.net.ssl.SSLSocket socket = (javax.net.ssl.SSLSocket) factory.createSocket(addr, port)) {
+                            socket.setSoTimeout(1000);
+                            socket.startHandshake(); // إتمام مصافحة TLS مسبقاً
+                        }
+                    } else {
+                        try (java.net.Socket socket = new java.net.Socket(addr, port)) {
+                            socket.setSoTimeout(1000);
+                        }
+                    }
                 } catch (Exception ignored) {}
             });
         } catch (Exception ignored) {}
