@@ -15,6 +15,11 @@
         const style = document.createElement("style");
         style.id = 'royal-interaction-styles';
         style.textContent = `
+            /* ⚡ View Transitions API: منع الوميض الأبيض بـ Transitions سلسة */
+            @view-transition { navigation: auto; }
+            ::view-transition-old(root) { animation: 90ms ease-out both fade-out; }
+            ::view-transition-new(root) { animation: 140ms ease-in both fade-in; }
+
             * { -webkit-tap-highlight-color: transparent !important; }
             a, button, [role="button"], input, select, textarea { touch-action: manipulation !important; }
             img { transform: translateZ(0); backface-visibility: hidden; }
@@ -23,6 +28,9 @@
             body.royal-is-scrolling { will-change: scroll-position; }
             .royal-tap-active { opacity: 0.6 !important; transition: none !important; }
             .royal-tap-release { transition: opacity 0.3s ease-out !important; }
+
+            @keyframes fade-out { from { opacity: 1; } to { opacity: 0; } }
+            @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
         `;
         document.head.appendChild(style);
     }
@@ -100,15 +108,41 @@
         }
     };
 
-    const BFCacheSanitizer = { /* نفس الكود الخاص بك دون تغيير */ };
-    const RenderStabilizer = { /* نفس الكود الخاص بك دون تغيير */ };
+    const BFCacheSanitizer = {
+        init: function () {
+            // التأكد من عدم وجود أي أحداث Unload تعطل BFCache
+            window.addEventListener('pageshow', (event) => {
+                if (event.persisted) {
+                    console.log('⚡ [BFCache] Page restored instantly from memory (0ms).');
+                    // تنظيف أي حالة سكرول أو ضغط معلقة من التصفح السابق
+                    document.body.classList.remove('royal-is-scrolling');
+                    document.querySelectorAll('.royal-tap-active').forEach(el => {
+                        el.classList.remove('royal-tap-active');
+                    });
+                }
+            }, { passive: true });
+        }
+    };
+
+    const RenderStabilizer = {
+        init: function () {
+            let scheduled = false;
+            function stabilize() {
+                if (scheduled) return;
+                scheduled = true;
+                requestAnimationFrame(() => { scheduled = false; });
+            }
+            const observer = new MutationObserver(stabilize);
+            observer.observe(document.body, { childList: true, subtree: true });
+        }
+    };
 
     function startRoyalInteraction() {
         injectHardwareAcceleration();
         TapEngine.init();
+        BFCacheSanitizer.init();
         RenderStabilizer.init();
-        // تم نقل ScrollEngine لملف التنبؤ لدمج حسابات السرعة
-        console.log("⚡ ROYAL INTERACTION V5: UI Sensory Array Online & Synced with Wasm Core.");
+        console.log("⚡ ROYAL INTERACTION V5: View Transitions & BFCache Fully Active.");
     }
 
     window.RoyalInteraction = { init: startRoyalInteraction };
