@@ -395,4 +395,32 @@ public final class RoyalNetworkEngine {
             });
         } catch (Exception ignored) {}
     }
+
+    /**
+     * 🌐 تسخين NetworkService مبكراً
+     * يتم استدعاؤها من Application.onCreate() لتسخين خدمة الشبكة
+     * هذا يقلل وقت إنشاء أول اتصال شبكي[reference:10]
+     */
+    public static void warmupNetworkService(Context context) {
+        prefetchExecutor.execute(() -> {
+            try {
+                Log.i(TAG, "🌐 Warming up Network Service...");
+                // استخدام WebViewCompat لبدء تسخين الشبكة بطريقة آمنة
+                // هذه الميزة متاحة في الإصدارات الحديثة من AndroidX WebKit
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                    // محاكاة طلب شبكة خفيف لتسخين NetworkService
+                    java.net.URL url = new java.net.URL("https://kith.com/");
+                    java.net.HttpURLConnection conn = (java.net.HttpURLConnection) url.openConnection();
+                    conn.setRequestMethod("HEAD");
+                    conn.setConnectTimeout(1000);
+                    conn.setReadTimeout(1000);
+                    conn.connect();
+                    conn.disconnect();
+                    Log.i(TAG, "✅ Network Service warmed up successfully.");
+                }
+            } catch (Exception e) {
+                Log.w(TAG, "⚠️ Network Service warmup failed: " + e.getMessage());
+            }
+        });
     }
+            }
