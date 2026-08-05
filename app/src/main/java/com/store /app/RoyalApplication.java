@@ -21,6 +21,14 @@ public class RoyalApplication extends Application {
         // هذا يقلل وقت التهيئة بشكل كبير ويوزع الحمل على خيط خلفي
         RoyalWebViewHost.startEngineAsync(this);
 
+        // 🔥 [التحسين 2]: تسخين خدمة الشبكة مبكراً (جديد)
+        // هذا يقلل وقت التهيئة عند أول طلب شبكي
+        RoyalNetworkEngine.warmupNetworkService(this);
+
+        // 🔥 [التحسين 3]: تسخين Renderer (جديد)
+        // يقوم بإنشاء Spare Renderer في الخلفية
+        RoyalWebViewHost.prepareSpareRenderer(this);
+
         // 🔥 الخطوة الثانية: التسخين المباشر للمحرك (يتم بالتزامن مع الخطوة الأولى)
         // بما أن startEngineAsync يعمل على خيط خلفي، فهذا التسخين يضمن
         // أن WebView جاهز فوراً عند الحاجة إليه
