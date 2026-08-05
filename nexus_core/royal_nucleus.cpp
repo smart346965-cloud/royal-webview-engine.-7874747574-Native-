@@ -166,6 +166,40 @@ public:
         return distance > 12.0f;
     }
 
+    /**
+     * 🌐 وعي عزل المواقع (Site Isolation Engine)
+     * تحلل ما إذا كان التنقل داخل نفس الأصل (Same-Site) أو أصل مختلف (Cross-Site)
+     * لإعداد عملية رندر جديدة (Render Process) في الذاكرة مسبقاً عند الحاجة
+     */
+    bool is_same_site_navigation(const std::string& target_url) const {
+        if (target_url.empty() || app_origin.empty()) return false;
+
+        // دالة لمسح واستخراج الهوست فقط من الرابط
+        auto extract_host = [](const std::string& url) -> std::string {
+            size_t start = url.find("://");
+            start = (start == std::string::npos) ? 0 : start + 3;
+            size_t end = url.find_first_of(":/", start);
+            return url.substr(start, (end == std::string::npos) ? std::string::npos : end - start);
+        };
+
+        std::string current_host = extract_host(app_origin);
+        std::string target_host = extract_host(target_url);
+
+        return (current_host == target_host);
+    }
+
+    /**
+     * ⚡ فحص جاهزية CommitNavigation
+     * يقيس مدى جاهزية عملية الرندر للبدء في اعتماد التنقل فور وصول أول بيانات الهيدر من الشبكة
+     */
+    bool check_commit_navigation_readiness(int response_status, double header_ttfb_ms) const {
+        // تكون الاستجابة جاهزة للـ Commit المباشر (0ms) إذا كان الرمز 200 والـ TTFB أقل من 250ms
+        if (response_status == 200 && header_ttfb_ms < 250.0) {
+            return true;
+        }
+        return false;
+    }
+
     // عرض عنوان الذاكرة للجافا سكريبت
     uintptr_t get_shared_buffer_ptr() {
         return reinterpret_cast<uintptr_t>(shared_buffer);
@@ -404,7 +438,9 @@ EMSCRIPTEN_BINDINGS(royal_nucleus_module) {
         .function("detect_scroll_slop", &RoyalCoreEngine::detect_scroll_slop)
         .function("get_active_prefetch_list", &RoyalCoreEngine::get_active_prefetch_list)
         .function("get_shared_buffer_ptr", &RoyalCoreEngine::get_shared_buffer_ptr)
-        .function("process_raw_touch", &RoyalCoreEngine::process_raw_touch);
+        .function("process_raw_touch", &RoyalCoreEngine::process_raw_touch)
+        .function("is_same_site_navigation", &RoyalCoreEngine::is_same_site_navigation)
+        .function("check_commit_navigation_readiness", &RoyalCoreEngine::check_commit_navigation_readiness);
     
     // كلاس الـ Network
     class_<RoyalNetworkCore>("RoyalNetworkCore")
@@ -419,4 +455,4 @@ EMSCRIPTEN_BINDINGS(royal_nucleus_module) {
         .constructor()
         .function("getPredictor", &RoyalNucleus::getPredictor, allow_raw_pointers())
         .function("getGuardian", &RoyalNucleus::getGuardian, allow_raw_pointers());
-}
+    }
