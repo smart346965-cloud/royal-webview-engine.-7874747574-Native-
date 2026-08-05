@@ -38,23 +38,36 @@ public:
 
     /**
      * 🔮 محرك حقن قواعد التكهن (Speculation Rules Injector)
-     * يولد كود JS فائق القوة ليخبر الكروميوم بالصفحات التي يجب رسمها مسبقاً
+     * يولد قواعد Prerender فورية مع دعم فصل خيط العمال (Worker Safe)
      */
     void inject_speculation_atomic(const std::string& url) {
         EM_ASM_((
             const targetUrl = UTF8ToString($0);
-            // إذا كنا في الـ Worker نرسل رسالة للـ Main Thread ليقوم بالحقن
-            if (typeof self !== 'undefined' && typeof document === 'undefined') {
-                self.postMessage({ type: 'EXECUTE_PRERENDER', url: targetUrl });
-            } else if (typeof document !== 'undefined') {
-                const specScript = document.createElement('script');
-                specScript.type = 'speculationrules';
-                specScript.textContent = JSON.stringify({
-                    "prerender": [{ "source": "list", "urls": [targetUrl], "score": 1.0, "eagerness": "immediate" }]
-                });
-                document.head.appendChild(specScript);
+            
+            // 1. إذا كنا داخل الـ Worker نرسل رسالة للخيط الرئيسي فوراً
+            if (typeof document === 'undefined') {
+                if (typeof self !== 'undefined') {
+                    self.postMessage({ type: 'EXECUTE_PRERENDER', url: targetUrl });
+                }
+                return;
             }
-            console.log("🔮 NUCLEUS: Full Prerender Triggered for: " + targetUrl);
+
+            // 2. منع تكرار حقن نفس الرابط
+            if (document.querySelector(`script[data-royal-prerender="${targetUrl}"]`)) return;
+
+            // 3. حقن وسم Prerender بدرجة أولوية قصوى
+            const specScript = document.createElement('script');
+            specScript.type = 'speculationrules';
+            specScript.setAttribute('data-royal-prerender', targetUrl);
+            specScript.textContent = JSON.stringify({
+                "prerender": [{
+                    "source": "list",
+                    "urls": [targetUrl],
+                    "eagerness": "immediate"
+                }]
+            });
+            document.head.appendChild(specScript);
+            console.log("🔮 NUCLEUS: Atomic Prerender Rules Applied for: " + targetUrl);
         ), url.c_str());
     }
 
@@ -121,14 +134,20 @@ public:
     }
 
     /**
-     * 🔄 خوارزمية "الرؤية العكسية" (Reverse-Navigation Oracle)
-     * تقوم بتحليل سجل التنقل ورسم الصفحة السابقة "شبحياً" لضمان 0ms عند الرجوع
+     * 🔄 خوارزمية "التنبؤ العكسي" (Back-Step Oracle)
+     * تقوم بتنظيف وسوم الرجوع القديمة ورسم الصفحة السابقة فوراً في ذاكرة الـ GPU
      */
     void predict_back_step(const std::string& previous_url) {
         if (previous_url.empty()) return;
 
         EM_ASM_((
             const url = UTF8ToString($0);
+            if (typeof document === 'undefined') return;
+
+            // تنظيف أي وسم تنبؤ عكسي سابق لتوفير ذاكرة الـ GPU
+            const oldScript = document.getElementById('royal-back-prerender');
+            if (oldScript) oldScript.remove();
+
             const spec = {
                 "prerender": [{
                     "source": "list",
@@ -136,12 +155,13 @@ public:
                     "eagerness": "immediate"
                 }]
             };
+            
             const script = document.createElement('script');
             script.type = 'speculationrules';
             script.id = 'royal-back-prerender';
             script.textContent = JSON.stringify(spec);
             document.head.appendChild(script);
-            console.log("🔄 NUCLEUS: Back-Step Prerendered in GPU memory: " + url);
+            console.log("🔄 NUCLEUS [Back-Step Oracle]: Previous Page Prerendered in GPU Memory: " + url);
         ), previous_url.c_str());
     }
 
