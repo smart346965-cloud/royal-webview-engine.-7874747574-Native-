@@ -10,17 +10,43 @@
     'use strict';
 
     /**
-     * 🎯 دالة التوجيه الخارقة (ترسل الرابط للـ C++ ليتخذ القرار)
+     * 👑 حقن قواعد Speculation Rules API للـ Prerendering الفوري عبر محرك Chromium
+     */
+    function injectNativePrerender(url) {
+        if (!HTMLScriptElement.supports || !HTMLScriptElement.supports('speculationrules')) {
+            return false;
+        }
+
+        // تجنب تكرار الحقن لنفس الرابط
+        if (document.querySelector(`script[data-royal-prerender="${url}"]`)) return true;
+
+        const specScript = document.createElement('script');
+        specScript.type = 'speculationrules';
+        specScript.setAttribute('data-royal-prerender', url);
+        specScript.textContent = JSON.stringify({
+            prerender: [{
+                source: "list",
+                urls: [url],
+                eagerness: "immediate"
+            }]
+        });
+
+        document.head.appendChild(specScript);
+        console.log(`👑 [Royal Speculator] Immediate Prerender Injected: ${url}`);
+        return true;
+    }
+
+    /**
+     * 🎯 دالة التوجيه المعدلة (تضمن الرندر المسبق الكامل)
      */
     function delegateToWasm(url) {
-        // التأكد من أن محرك C++ جاهز للعمل
+        // 1. تفعيل الرندر المسبق الشبه كامل للصفحة فوراً (0ms Instant Render)
+        injectNativePrerender(url);
+
+        // 2. تفويض محرك Wasm C++ لإدارة حسابات الأولوية وتخفيف الذاكرة
         if (window.RoyalWasm && window.RoyalWasm.core && window.RoyalWasm.intel) {
-            
-            // 1. إسأل النواة: هل هذا الرابط مؤهل؟ (تصفية + حماية الرام)
             let isEligible = window.RoyalWasm.core.evaluate_speculation(url);
-            
             if (isEligible) {
-                // 2. إذا وافقت النواة، اجعل محرك Intel يحقن الكود فوراً
                 window.RoyalWasm.intel.inject_speculation_atomic(url);
             }
         }
