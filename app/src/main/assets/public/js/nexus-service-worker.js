@@ -239,6 +239,12 @@ self.addEventListener('activate', (event) => {
             
             await Promise.all(deletePromises);
             
+            // 🚀 [Navigation Preload]: جلب شبكة الصفحة بالتوازي مع استيقاظ الـ SW
+            if (self.registration.navigationPreload) {
+                await self.registration.navigationPreload.enable();
+                console.log('[Nexus X] 🚀 Navigation Preload Enabled.');
+            }
+            
             // السيطرة الفورية على جميع العملاء
             const clients = await self.clients.matchAll();
             clients.forEach(client => {
@@ -281,7 +287,8 @@ self.addEventListener('fetch', (event) => {
     // 🏠 استراتيجية الصفحة الرئيسية: Offline-First + Visual Continuity
     // ========================================
     if (request.mode === 'navigate') {
-        event.respondWith(handlePageRequest(request));
+        // ⚡ تمرير event.preloadResponse للبدء باستهلاكه فوراً
+        event.respondWith(handlePageRequest(request, event.preloadResponse));
         return;
     }
     
@@ -322,16 +329,29 @@ self.addEventListener('fetch', (event) => {
 // ============================================================
 
 /**
- * 🏠 معالج الصفحات: Offline-First + Visual Continuity
- * هذا الجزء يضمن عدم ظهور صفحة Chrome أبداً
+ * 🏠 معالج الصفحات: Navigation Preload + Cache Fallback + BFCache Compliant
  */
-async function handlePageRequest(request) {
+async function handlePageRequest(request, preloadResponsePromise) {
     const cache = await caches.open(CONFIG.PAGE_CACHE);
     
-    // 1. محاولة جلب النسخة الأحدث من الشبكة (Network-First) مع Timeout
-    // لكي نضمن سرعة الرد حتى لو الإنترنت ضعيف
+    // ⚡ 1. استهلاك Navigation Preload فوراً (يلغي تأخير استيقاظ Service Worker)
+    try {
+        if (preloadResponsePromise) {
+            const preloadResponse = await preloadResponsePromise;
+            if (preloadResponse) {
+                console.log(`[Nexus X] ⚡ Served directly from Navigation Preload: ${request.url}`);
+                // حفظ النسخة في الكاش خلف الكواليس
+                cacheWithDate(CONFIG.PAGE_CACHE, request, preloadResponse.clone());
+                return preloadResponse;
+            }
+        }
+    } catch (err) {
+        console.warn("[Nexus X] ⚠️ Navigation Preload bypass failed, falling back to cache/network.");
+    }
+
+    // 2. محاولة جلب النسخة الأحدث من الشبكة مع مهلة سريعة (2 ثانية)
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 3000); // 3 ثواني للرد أو التحول للكاش
+    const timeoutId = setTimeout(() => controller.abort(), 2000);
 
     try {
         const networkResponse = await fetch(request, { signal: controller.signal });
@@ -341,17 +361,17 @@ async function handlePageRequest(request) {
             return networkResponse;
         }
     } catch (error) {
-        console.log("[Nexus X] 📡 Network Fail/Timeout. Switching to Warehouse...");
+        console.log("[Nexus X] 📡 Network Fail/Timeout. Switching to Cache...");
     }
 
-    // 2. 🚀 [الدرع الملكي]: إذا فشلت الشبكة، أرجع الكاش فوراً (0ms Offline Experience)
+    // 3. 🚀 الدرع الملكي: إرجاع الكاش فوراً (0ms)
     const cachedResponse = await cache.match(request);
     if (cachedResponse) {
         return cachedResponse;
     }
 
-    // 3. 🆘 إذا لم يوجد كاش أبداً (أول تشغيل)، أرجع الصفحة الرئيسية المخزنة مسبقاً
-    return caches.match('/');
+    // 4. الصفحة البديلة عند انقطاع الكاش والشبكة
+    return caches.match('/') || caches.match(CONFIG.OFFLINE_PAGE);
 }
 
 /**
