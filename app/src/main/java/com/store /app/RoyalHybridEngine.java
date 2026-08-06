@@ -7,6 +7,9 @@ import android.webkit.CookieManager;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 
+import androidx.webkit.WebSettingsCompat;
+import androidx.webkit.WebViewFeature;
+
 /**
  * =========================================================
  * 👑 ROYAL HYBRID ENGINE (V2 - Runtime Controller)
@@ -56,6 +59,12 @@ public final class RoyalHybridEngine {
         settings.setDomStorageEnabled(true);
         settings.setDatabaseEnabled(true);
 
+        // 🔥 [التحسين الجديد]: تفعيل BackForwardCache لتجميد الصفحات في الذاكرة
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.BACK_FORWARD_CACHE)) {
+            WebSettingsCompat.setBackForwardCacheEnabled(settings, true);
+            Log.i(TAG, "📦 BackForwardCache enabled.");
+        }
+
         // 5️⃣ منع التخزين المؤقت للرسم القديم (Hardware Only)
         webView.setDrawingCacheEnabled(false);
 
@@ -81,6 +90,13 @@ public final class RoyalHybridEngine {
             settings.setSafeBrowsingEnabled(true);
         }
 
+        // 🔥 [التحسين الجديد]: دعم WebAuthn للدخول بالبصمة
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_AUTHENTICATION_SUPPORT)) {
+            WebSettingsCompat.setWebAuthenticationSupport(settings,
+                    WebSettingsCompat.WEB_AUTHENTICATION_SUPPORT_AUTOMATIC);
+            Log.i(TAG, "🔐 WebAuthn support enabled.");
+        }
+
         // 💥 ربط الكاش بالجلسة: تفعيل الكوكيز لربط التخزين المؤقت بجلسة المستخدم
         CookieManager cookieManager = CookieManager.getInstance();
         cookieManager.setAcceptCookie(true);
@@ -93,9 +109,10 @@ public final class RoyalHybridEngine {
         // ==========================================
         settings.setJavaScriptEnabled(true);
         
-        // 👑 كسر القيود الأمنية لمنع الحظر الصامت وتشغيل الـ WebAssembly المحلي بنجاح
-        settings.setAllowFileAccessFromFileURLs(true);
-        settings.setAllowUniversalAccessFromFileURLs(true);
+        // ❌ تم حذف السطرين التاليين لأسباب أمنية:
+        // settings.setAllowFileAccessFromFileURLs(true);
+        // settings.setAllowUniversalAccessFromFileURLs(true);
+        // سيتم استخدام WebViewAssetLoader الآمن بدلاً منهما في WebEngineManager
         
         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
         settings.setSupportZoom(false);
@@ -120,4 +137,4 @@ public final class RoyalHybridEngine {
     public static void reset() {
         isEnginePrimed = false;
     }
-            }
+    }
