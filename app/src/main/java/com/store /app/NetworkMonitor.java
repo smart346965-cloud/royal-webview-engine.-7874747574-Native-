@@ -8,6 +8,8 @@ import android.net.NetworkRequest;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
+import android.webkit.WebView;
+
 import java.util.concurrent.atomic.AtomicBoolean;
 
 public class NetworkMonitor {
@@ -20,6 +22,13 @@ public class NetworkMonitor {
         void onNetworkChanged(boolean connected);
     }
     private static NetworkStateListener listener;
+
+    // 👑 كائن الويب فيو لنقل الأحداث للجافا سكريبت
+    private static WebView webView;
+
+    public static void setWebView(WebView wv) {
+        webView = wv;
+    }
 
     public static void setListener(NetworkStateListener l) { listener = l; }
 
@@ -55,7 +64,19 @@ public class NetworkMonitor {
                         RoyalNetworkEngine.setNetworkPrefetchAllowed(ok);
 
                         if (listener != null) {
-                            new Handler(Looper.getMainLooper()).post(() -> listener.onNetworkChanged(ok));
+                            new Handler(Looper.getMainLooper()).post(() -> {
+                                listener.onNetworkChanged(ok);
+                                
+                                // 🔥 إرسال حدث للجافا سكريبت (دائماً، لأن WebEngineManager سيتحقق من الصلاحية)
+                                if (webView != null) {
+                                    try {
+                                        webView.evaluateJavascript(
+                                            "window.dispatchEvent(new Event('" + (ok ? "online" : "offline") + "'));",
+                                            null
+                                        );
+                                    } catch (Exception ignored) {}
+                                }
+                            });
                         }
                     }
                     @Override
@@ -66,7 +87,19 @@ public class NetworkMonitor {
                         RoyalNetworkEngine.setNetworkPrefetchAllowed(false);
 
                         if (listener != null) {
-                            new Handler(Looper.getMainLooper()).post(() -> listener.onNetworkChanged(false));
+                            new Handler(Looper.getMainLooper()).post(() -> {
+                                listener.onNetworkChanged(false);
+                                
+                                // 🔥 إرسال حدث للجافا سكريبت (دائماً، لأن WebEngineManager سيتحقق من الصلاحية)
+                                if (webView != null) {
+                                    try {
+                                        webView.evaluateJavascript(
+                                            "window.dispatchEvent(new Event('offline'));",
+                                            null
+                                        );
+                                    } catch (Exception ignored) {}
+                                }
+                            });
                         }
                     }
                 });
