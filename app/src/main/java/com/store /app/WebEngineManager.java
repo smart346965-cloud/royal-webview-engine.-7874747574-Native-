@@ -88,28 +88,25 @@ public class WebEngineManager {
         configureSettings();
         attachClients();
 
-        // 🔥 [التحسين 14]: Prerender تخميني للصفحة الرئيسية
-        if (WebViewFeature.isFeatureSupported(WebViewFeature.PRERENDER_WITH_URL)) {
-            try {
-                WebViewCompat.prerenderUrlAsync(
-                    webView,
-                    BuildConfig.CLIENT_URL,
-                    null,  // CancellationSignal - يمكن تمرير null
-                    null,  // Executor - سيستخدم الخيط الرئيسي
-                    new WebViewCompat.PrerenderOperationCallback() {
-                        @Override
-                        public void onPrerenderStarted() {
-                            Log.i("RoyalEngine", "⚡ Prerender started for home page.");
-                        }
-                        @Override
-                        public void onPrerenderFailed(int error) {
-                            Log.w("RoyalEngine", "⚠️ Prerender failed: " + error);
-                        }
-                    }
-                );
-            } catch (Exception e) {
-                Log.w("RoyalEngine", "Prerender failed: " + e.getMessage());
+        // 🔥 [التحسين 14]: تسخين الشبكة والرندر عبر Profile (أكثر استقراراً من Prerender)
+        try {
+            if (WebViewFeature.isFeatureSupported(WebViewFeature.WARM_UP_RENDERER_PROCESS)) {
+                // تسخين Renderer عبر Profile
+                androidx.webkit.ProfileStore.getInstance()
+                    .getOrCreateProfile("Default")
+                    .warmUpRendererProcess();
+                Log.i("RoyalEngine", "🧠 Renderer process warmed up.");
             }
+            
+            if (WebViewFeature.isFeatureSupported(WebViewFeature.PRECONNECT)) {
+                // Preconnect لأصل الموقع
+                androidx.webkit.ProfileStore.getInstance()
+                    .getOrCreateProfile("Default")
+                    .preconnect(Uri.parse(BuildConfig.CLIENT_URL).getHost());
+                Log.i("RoyalEngine", "🌐 Preconnect enqueued.");
+            }
+        } catch (Exception e) {
+            Log.w("RoyalEngine", "Profile warmup failed: " + e.getMessage());
         }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
@@ -182,10 +179,6 @@ public class WebEngineManager {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             settings.setOffscreenPreRaster(true);
         }
-
-        // 🔥 [التحسين 13]: تحسين Compositor (Fast Fallback Tick مدمج في الإعدادات)
-        // هذه الإعدادات تضبط سلوك الـ Compositor لتقليل زمن الإطار الأول
-        // settings.setEnableSmoothTransition(true); // موجود بالفعل، نؤكد عليه
 
         // 3. تحرير طاقة المعالج الرسومي (GPU Unbound)
         webView.setLayerType(View.LAYER_TYPE_HARDWARE, null);
@@ -278,8 +271,9 @@ public class WebEngineManager {
             // [تعديل جراحي 3 في WebEngineManager.java]
             @Override
             public void onPageCommitVisible(WebView view, String url) {
-                // 🔥 تمت إزالة RoyalPanopticon.recordFirstFrame() لأنها غير موجودة
-                // يمكن استبدالها بـ Log بسيط أو تنفيذ الدالة في RoyalPanopticon
+                // ✅ تمت إزالة RoyalPanopticon.recordFirstFrame() لأنها غير موجودة
+                // يمكن إضافة Log بسيط بدلاً منها
+                Log.i("RoyalEngine", "🎯 First frame recorded at onPageCommitVisible.");
 
                 if (trustedHost == null && url != null) {
                     setTrustedOrigin(url);
@@ -293,7 +287,7 @@ public class WebEngineManager {
 
                 RoyalNetworkEngine.notifyRenderStart();
                 syncStatusBarColor(view);
-                Log.i("RoyalEngine", "🎨 Page Committed. Content is ready, but Splash is locked by timer.");
+                Log.i("RoyalEngine", "🎨 Page Committed. Content is ready.");
             }
 
             @Override
@@ -657,4 +651,4 @@ public class WebEngineManager {
                 && trustedScheme.equalsIgnoreCase(targetScheme)
                 && trustedPort == port;
     }
-            }
+                                                              }
