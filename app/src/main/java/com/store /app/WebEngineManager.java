@@ -12,6 +12,10 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.webkit.*;
 
+import androidx.annotation.NonNull;
+import androidx.webkit.Navigation;
+import androidx.webkit.NavigationListener;
+import androidx.webkit.Page;
 import androidx.webkit.WebSettingsCompat;
 import androidx.webkit.WebViewCompat;
 import androidx.webkit.WebViewFeature;
@@ -88,25 +92,44 @@ public class WebEngineManager {
         configureSettings();
         attachClients();
 
-        // 🔥 [التحسين 14]: تسخين الشبكة والرندر عبر Profile (أكثر استقراراً من Prerender)
-        try {
-            if (WebViewFeature.isFeatureSupported(WebViewFeature.WARM_UP_RENDERER_PROCESS)) {
-                // تسخين Renderer عبر Profile
-                androidx.webkit.ProfileStore.getInstance()
-                    .getOrCreateProfile("Default")
-                    .warmUpRendererProcess();
-                Log.i("RoyalEngine", "🧠 Renderer process warmed up.");
-            }
-            
-            if (WebViewFeature.isFeatureSupported(WebViewFeature.PRECONNECT)) {
-                // Preconnect لأصل الموقع
-                androidx.webkit.ProfileStore.getInstance()
-                    .getOrCreateProfile("Default")
-                    .preconnect(Uri.parse(BuildConfig.CLIENT_URL).getHost());
-                Log.i("RoyalEngine", "🌐 Preconnect enqueued.");
-            }
-        } catch (Exception e) {
-            Log.w("RoyalEngine", "Profile warmup failed: " + e.getMessage());
+        // ✅ ❌ إزالة كود Profile.warmUpRendererProcess() بالكامل (تم حذفه)
+        // تم حذف كتلة try-catch الخاصة بـ Profile و Preconnect
+
+        // 🔥 [التحسين الجديد]: مراقبة مقاييس الأداء (FCP, LCP)
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.NAVIGATION_LISTENER)) {
+            WebViewCompat.addNavigationListener(webView, new NavigationListener() {
+                @Override
+                public void onFirstContentfulPaintMillis(@NonNull Page page, long durationMillis) {
+                    Log.i("Performance", "🎯 FCP: " + durationMillis + "ms");
+                    RoyalPanopticon.recordMetric("FCP", durationMillis);
+                }
+                @Override
+                public void onLargestContentfulPaintMillis(@NonNull Page page, long durationMillis) {
+                    Log.i("Performance", "🏆 LCP: " + durationMillis + "ms");
+                    RoyalPanopticon.recordMetric("LCP", durationMillis);
+                }
+                @Override
+                public void onDOMContentLoaded(@NonNull Page page) {
+                    Log.i("Performance", "📄 DOMContentLoaded");
+                }
+                @Override
+                public void onLoad(@NonNull Page page) {
+                    Log.i("Performance", "📦 Load event fired");
+                }
+                @Override
+                public void onNavigationStarted(@NonNull Navigation navigation) {
+                    Log.i("Performance", "🚀 Navigation started");
+                }
+                @Override
+                public void onNavigationCompleted(@NonNull Navigation navigation) {
+                    Log.i("Performance", "✅ Navigation completed");
+                }
+                @Override
+                public void onPageEvicted(@NonNull Page page) {
+                    Log.i("Performance", "🗑️ Page evicted");
+                }
+            });
+            Log.i("RoyalEngine", "📊 NavigationListener added for performance metrics.");
         }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
@@ -651,4 +674,4 @@ public class WebEngineManager {
                 && trustedScheme.equalsIgnoreCase(targetScheme)
                 && trustedPort == port;
     }
-                                                              }
+                   }
