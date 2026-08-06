@@ -105,15 +105,23 @@ public final class RoyalWebViewHost {
             Log.i(TAG, "🏗️ View Hierarchy pre-inflated.");
 
             // 4. إعدادات الأولوية القصوى (معالج العرض)
+            // 🔥 [التحسين 12]: Renderer Importance API - HIGH priority
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 webViewInstance.setRendererPriorityPolicy(
-                    WebView.RENDERER_PRIORITY_BOUND,  // أعلى أولوية
-                    true                             // الإبقاء على المعالج حياً
+                    WebView.RENDERER_PRIORITY_BOUND,  // HIGH priority
+                    true                              // Waived when not visible
                 );
+                Log.i(TAG, "⚡ Renderer priority set to BOUND.");
             }
 
             // 5. التسريع العتادي (مهم جداً للرسم المباشر)
             webViewInstance.setLayerType(View.LAYER_TYPE_HARDWARE, null);
+
+            // 🔥 [التحسين 11]: تفعيل OffscreenPreRaster (رسم البلاطات خارج الشاشة)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                webViewInstance.getSettings().setOffscreenPreRaster(true);
+                Log.i(TAG, "🎨 OffscreenPreRaster enabled.");
+            }
 
             // 6 & 7. 👑 ضبط كاش التنقل وإعدادات الذاكرة المتقدمة قياسياً
             android.webkit.WebSettings settings = webViewInstance.getSettings();
@@ -289,4 +297,4 @@ public final class RoyalWebViewHost {
     public static WebView getWebView() {
         return webViewInstance;
     }
-}
+            }
