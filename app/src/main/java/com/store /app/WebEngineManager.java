@@ -117,27 +117,33 @@ public class WebEngineManager {
                     Log.i("Performance", "🎯 FCP: " + durationMillis + "ms");
                     RoyalPanopticon.recordMetric("FCP", durationMillis);
                 }
+
                 @Override
                 public void onLargestContentfulPaintMillis(@NonNull Page page, long durationMillis) {
                     Log.i("Performance", "🏆 LCP: " + durationMillis + "ms");
                     RoyalPanopticon.recordMetric("LCP", durationMillis);
                 }
+
                 @Override
                 public void onDOMContentLoaded(@NonNull Page page) {
                     Log.i("Performance", "📄 DOMContentLoaded");
                 }
+
                 @Override
                 public void onLoad(@NonNull Page page) {
                     Log.i("Performance", "📦 Load event fired");
                 }
+
                 @Override
                 public void onNavigationStarted(@NonNull Navigation navigation) {
                     Log.i("Performance", "🚀 Navigation started");
                 }
+
                 @Override
                 public void onNavigationCompleted(@NonNull Navigation navigation) {
                     Log.i("Performance", "✅ Navigation completed");
                 }
+
                 @Override
                 public void onPageEvicted(@NonNull Page page) {
                     Log.i("Performance", "🗑️ Page evicted");
@@ -722,4 +728,4 @@ public class WebEngineManager {
     public boolean isPageValid() {
         return isPageValid;
     }
-    }
+        }
