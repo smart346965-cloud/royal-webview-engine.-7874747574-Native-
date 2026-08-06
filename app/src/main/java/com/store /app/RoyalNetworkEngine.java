@@ -5,6 +5,7 @@ import android.content.Context;
 import android.util.Log;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
+import android.webkit.CookieManager;
 
 import java.io.BufferedInputStream;
 import java.io.InputStream;
@@ -64,6 +65,10 @@ public final class RoyalNetworkEngine {
         System.setProperty("http.maxConnections", "30"); // رفع سقف القنوات المفتوحة مسبقاً لتمرير عدة طلبات معاً
 
         RoyalCacheManager.init(context);
+
+        // 🔥 [التحسين 5]: تسخين الجلسة عبر Warmup URL Fetch
+        warmupSession(context, "https://kith.com/");
+
         Log.i(TAG, "🌐 Royal Network Advisor V5 Engine Active (Anti-Freeze Edition).");
     }
 
@@ -423,4 +428,39 @@ public final class RoyalNetworkEngine {
             }
         });
     }
+
+    /**
+     * 🔥 تسخين الجلسة عبر Warmup URL Fetch
+     * ينشئ جلسة HTTP قابلة لإعادة الاستخدام مع الكوكيز
+     */
+    public static void warmupSession(Context context, String targetUrl) {
+        prefetchExecutor.execute(() -> {
+            try {
+                URL url = new URL(targetUrl);
+                HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+                conn.setRequestMethod("HEAD");
+                conn.setInstanceFollowRedirects(true);
+                conn.setConnectTimeout(2000);
+                conn.setReadTimeout(2000);
+                
+                // حقن الكوكيز لإنشاء جلسة معتمدة
+                String cookies = CookieManager.getInstance().getCookie(targetUrl);
+                if (cookies != null && !cookies.isEmpty()) {
+                    conn.setRequestProperty("Cookie", cookies);
+                }
+                conn.setRequestProperty("Connection", "keep-alive");
+                conn.setRequestProperty("Accept-Encoding", "gzip, deflate, br");
+                
+                int code = conn.getResponseCode();
+                if (code >= 200 && code < 300) {
+                    // 🔥 لا نستدعي conn.disconnect() - نبقي الاتصال مفتوحاً في الـ Pool
+                    Log.i(TAG, "✅ Warmup session established for: " + targetUrl);
+                } else {
+                    Log.d(TAG, "Warmup session response code: " + code);
+                }
+            } catch (Exception e) {
+                Log.d(TAG, "Warmup session failed: " + e.getMessage());
             }
+        });
+    }
+    }
