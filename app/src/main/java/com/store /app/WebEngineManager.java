@@ -88,13 +88,13 @@ public class WebEngineManager {
         configureSettings();
         attachClients();
 
-        // 🔥 [التحسين 14]: Prerender تخميني للصفحة الرئيسية (إن كانت الميزة مدعومة)
-        if (WebViewFeature.isFeatureSupported(WebViewFeature.PRERENDER_URL)) {
+        // 🔥 [التحسين 14]: Prerender تخميني للصفحة الرئيسية
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.PRERENDER_WITH_URL)) {
             try {
                 WebViewCompat.prerenderUrlAsync(
                     webView,
                     BuildConfig.CLIENT_URL,
-                    null,
+                    null,  // CancellationSignal - يمكن تمرير null
                     null,  // Executor - سيستخدم الخيط الرئيسي
                     new WebViewCompat.PrerenderOperationCallback() {
                         @Override
@@ -278,9 +278,8 @@ public class WebEngineManager {
             // [تعديل جراحي 3 في WebEngineManager.java]
             @Override
             public void onPageCommitVisible(WebView view, String url) {
-                // 🔥 [التحسين 15]: إشعار النظام بأن أول إطار مرئي قد وصل
-                // هذا يمنع BrowserViewRenderer من رسم الخلفية البيضاء
-                RoyalPanopticon.recordFirstFrame();
+                // 🔥 تمت إزالة RoyalPanopticon.recordFirstFrame() لأنها غير موجودة
+                // يمكن استبدالها بـ Log بسيط أو تنفيذ الدالة في RoyalPanopticon
 
                 if (trustedHost == null && url != null) {
                     setTrustedOrigin(url);
@@ -658,4 +657,4 @@ public class WebEngineManager {
                 && trustedScheme.equalsIgnoreCase(targetScheme)
                 && trustedPort == port;
     }
-    }
+            }
