@@ -11,7 +11,8 @@ const CONFIG = {
     IMAGE_CACHE: 'nexus-images-v5',
     FONT_CACHE: 'nexus-fonts-v5',
     PAGE_CACHE: 'nexus-pages-v5',
-    OFFLINE_PAGE: '/offline.html',
+    // 🔥 حذف OFFLINE_PAGE نهائياً
+    // OFFLINE_PAGE: '/offline.html',
     
     // الصلاحيات الزمنية للتخزين
     MAX_AGE: {
@@ -334,25 +335,23 @@ self.addEventListener('fetch', (event) => {
 async function handlePageRequest(request, preloadResponsePromise) {
     const cache = await caches.open(CONFIG.PAGE_CACHE);
     
-    // ⚡ 1. استهلاك Navigation Preload فوراً (يلغي تأخير استيقاظ Service Worker)
+    // ⚡ 1. استهلاك Navigation Preload فوراً
     try {
         if (preloadResponsePromise) {
             const preloadResponse = await preloadResponsePromise;
             if (preloadResponse) {
-                console.log(`[Nexus X] ⚡ Served directly from Navigation Preload: ${request.url}`);
-                // حفظ النسخة في الكاش خلف الكواليس
+                console.log(`[Nexus X] ⚡ Served from Navigation Preload: ${request.url}`);
                 cacheWithDate(CONFIG.PAGE_CACHE, request, preloadResponse.clone());
                 return preloadResponse;
             }
         }
     } catch (err) {
-        console.warn("[Nexus X] ⚠️ Navigation Preload bypass failed, falling back to cache/network.");
+        console.warn("[Nexus X] ⚠️ Navigation Preload bypass failed.");
     }
 
-    // 2. محاولة جلب النسخة الأحدث من الشبكة مع مهلة سريعة (2 ثانية)
+    // 2. محاولة الشبكة مع مهلة
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 2000);
-
     try {
         const networkResponse = await fetch(request, { signal: controller.signal });
         if (networkResponse && networkResponse.status === 200) {
@@ -361,17 +360,19 @@ async function handlePageRequest(request, preloadResponsePromise) {
             return networkResponse;
         }
     } catch (error) {
-        console.log("[Nexus X] 📡 Network Fail/Timeout. Switching to Cache...");
+        console.log("[Nexus X] 📡 Network Fail/Timeout.");
     }
 
-    // 3. 🚀 الدرع الملكي: إرجاع الكاش فوراً (0ms)
+    // 3. إرجاع الكاش إن وجد
     const cachedResponse = await cache.match(request);
     if (cachedResponse) {
         return cachedResponse;
     }
 
-    // 4. الصفحة البديلة عند انقطاع الكاش والشبكة
-    return caches.match('/') || caches.match(CONFIG.OFFLINE_PAGE);
+    // 4. 🔥 آخر خيار: إرجاع خطأ شبكة لتفعيل onReceivedError في الجافا
+    // هذا يمنع ظهور صفحة 404 البيضاء ويُفعّل الدرع النيتف
+    console.warn("[Nexus X] 🚨 No cache and network failed. Returning network error.");
+    return Response.error(); // <-- هذا هو التصحيح الأساسي
 }
 
 /**
