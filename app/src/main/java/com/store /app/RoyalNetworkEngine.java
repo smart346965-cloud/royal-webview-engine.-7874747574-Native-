@@ -67,7 +67,7 @@ public final class RoyalNetworkEngine {
         RoyalCacheManager.init(context);
 
         // 🔥 [التحسين 5]: تسخين الجلسة عبر Warmup URL Fetch
-        warmupSession(context, "https://kith.com/");
+        warmupSession(context, "https://bellroy.com/");
 
         Log.i(TAG, "🌐 Royal Network Advisor V5 Engine Active (Anti-Freeze Edition).");
     }
@@ -463,4 +463,4 @@ public final class RoyalNetworkEngine {
             }
         });
     }
-    }
+        }
