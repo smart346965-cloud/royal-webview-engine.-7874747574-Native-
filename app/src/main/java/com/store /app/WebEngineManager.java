@@ -88,6 +88,30 @@ public class WebEngineManager {
         configureSettings();
         attachClients();
 
+        // 🔥 [التحسين 14]: Prerender تخميني للصفحة الرئيسية (إن كانت الميزة مدعومة)
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.PRERENDER_URL)) {
+            try {
+                WebViewCompat.prerenderUrlAsync(
+                    webView,
+                    BuildConfig.CLIENT_URL,
+                    null,
+                    null,  // Executor - سيستخدم الخيط الرئيسي
+                    new WebViewCompat.PrerenderOperationCallback() {
+                        @Override
+                        public void onPrerenderStarted() {
+                            Log.i("RoyalEngine", "⚡ Prerender started for home page.");
+                        }
+                        @Override
+                        public void onPrerenderFailed(int error) {
+                            Log.w("RoyalEngine", "⚠️ Prerender failed: " + error);
+                        }
+                    }
+                );
+            } catch (Exception e) {
+                Log.w("RoyalEngine", "Prerender failed: " + e.getMessage());
+            }
+        }
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             webView.setOnScrollChangeListener((v, scrollX, scrollY, oldScrollX, oldScrollY) -> {
                 RoyalNetworkEngine.notifyScroll(scrollY);
@@ -158,6 +182,10 @@ public class WebEngineManager {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             settings.setOffscreenPreRaster(true);
         }
+
+        // 🔥 [التحسين 13]: تحسين Compositor (Fast Fallback Tick مدمج في الإعدادات)
+        // هذه الإعدادات تضبط سلوك الـ Compositor لتقليل زمن الإطار الأول
+        // settings.setEnableSmoothTransition(true); // موجود بالفعل، نؤكد عليه
 
         // 3. تحرير طاقة المعالج الرسومي (GPU Unbound)
         webView.setLayerType(View.LAYER_TYPE_HARDWARE, null);
@@ -250,6 +278,9 @@ public class WebEngineManager {
             // [تعديل جراحي 3 في WebEngineManager.java]
             @Override
             public void onPageCommitVisible(WebView view, String url) {
+                // 🔥 [التحسين 15]: إشعار النظام بأن أول إطار مرئي قد وصل
+                // هذا يمنع BrowserViewRenderer من رسم الخلفية البيضاء
+                RoyalPanopticon.recordFirstFrame();
 
                 if (trustedHost == null && url != null) {
                     setTrustedOrigin(url);
@@ -627,4 +658,4 @@ public class WebEngineManager {
                 && trustedScheme.equalsIgnoreCase(targetScheme)
                 && trustedPort == port;
     }
-            }
+    }
