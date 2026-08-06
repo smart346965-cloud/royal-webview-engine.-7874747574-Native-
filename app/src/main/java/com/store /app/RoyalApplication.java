@@ -27,12 +27,11 @@ public class RoyalApplication extends Application {
         // 👁️ تشغيل عقل الفحص الملكي
         RoyalPanopticon.startAwareness();
 
-        // 🔥 [التحسين 11]: startUpWebView - تسخين WebView بشكل غير متزامن (API رسمي من Jetpack Webkit 1.16.0)
-        // ينقل عبء التهيئة لخيط خلفي ويجزئ عمل الخيط الرئيسي، مما يقلل ANR ويحسن الأداء
-        // يجب أن يكون قبل أي استدعاء آخر لـ WebView APIs
+        // ==========================================
+        // 🔥 المرحلة 1: startUpWebView (يجب أن يكون الأول)
+        // ==========================================
         try {
             if (WebViewFeature.isFeatureSupported(WebViewFeature.START_UP_WEB_VIEW)) {
-                // استخدام BACKGROUND_EXECUTOR الموجود بالفعل في RoyalWebViewHost
                 androidx.webkit.WebViewStartUpConfig config = new androidx.webkit.WebViewStartUpConfig.Builder(
                         RoyalWebViewHost.getBackgroundExecutor()
                 ).build();
@@ -62,24 +61,11 @@ public class RoyalApplication extends Application {
             Log.w("RoyalEngine", "startUpWebView not available: " + e.getMessage());
         }
 
-        // 🔥 الخطوة الأولى: تسخين نواة كروميوم بشكل غير متزامن
-        // هذا يقلل وقت التهيئة بشكل كبير ويوزع الحمل على خيط خلفي
-        RoyalWebViewHost.startEngineAsync(this);
+        // ==========================================
+        // 🔥 المرحلة 2: تسخين Profile APIs
+        // ==========================================
 
-        // 🔥 [التحسين 2]: تسخين خدمة الشبكة مبكراً (جديد)
-        // هذا يقلل وقت التهيئة عند أول طلب شبكي
-        RoyalNetworkEngine.warmupNetworkService(this);
-
-        // 🔥 [التحسين 3]: تسخين Renderer (جديد)
-        // يقوم بإنشاء Spare Renderer في الخلفية
-        RoyalWebViewHost.prepareSpareRenderer(this);
-
-        // 🔥 الخطوة الثانية: التسخين المباشر للمحرك (يتم بالتزامن مع الخطوة الأولى)
-        // بما أن startEngineAsync يعمل على خيط خلفي، فهذا التسخين يضمن
-        // أن WebView جاهز فوراً عند الحاجة إليه
-        RoyalWebViewHost.create(this);
-
-        // 🔥 [التحسين 8]: تسخين Renderer عبر Profile API (أعمق من Spare Renderer)
+        // 🔥 [التحسين 8]: تسخين Renderer عبر Profile API
         try {
             if (WebViewFeature.isFeatureSupported(WebViewFeature.WARM_UP_RENDERER_PROCESS)) {
                 androidx.webkit.ProfileStore.getInstance()
@@ -96,7 +82,7 @@ public class RoyalApplication extends Application {
             if (WebViewFeature.isFeatureSupported(WebViewFeature.PRECONNECT)) {
                 androidx.webkit.ProfileStore.getInstance()
                         .getOrCreateProfile("Default")
-                        .preconnect(Uri.parse("https://kith.com/").getHost());
+                        .preconnect(Uri.parse("https://bellroy.com/").getHost());
                 Log.i("RoyalEngine", "🌐 Preconnect enqueued for origin.");
             }
         } catch (Exception e) {
@@ -117,14 +103,31 @@ public class RoyalApplication extends Application {
             Log.w("RoyalEngine", "addQuicHints failed: " + e.getMessage());
         }
 
-        // 🔥 [التحسين 4]: IdleHandler لتهيئة المهام الخفيفة أثناء خمول المعالج
+        // ==========================================
+        // 🔥 المرحلة 3: تسخين المحرك
+        // ==========================================
+
+        // 🔥 الخطوة الأولى: تسخين نواة كروميوم بشكل غير متزامن
+        RoyalWebViewHost.startEngineAsync(this);
+
+        // 🔥 [التحسين 2]: تسخين خدمة الشبكة مبكراً
+        RoyalNetworkEngine.warmupNetworkService(this);
+
+        // 🔥 [التحسين 3]: تسخين Renderer (Spare Renderer)
+        RoyalWebViewHost.prepareSpareRenderer(this);
+
+        // 🔥 الخطوة الثانية: التسخين المباشر للمحرك (يجب أن يكون الأخير)
+        RoyalWebViewHost.create(this);
+
+        // ==========================================
+        // 🔥 المرحلة 4: IdleHandler (يُترك للأخير)
+        // ==========================================
+
         Looper.myQueue().addIdleHandler(() -> {
             try {
-                // تهيئة CookieManager في الخلفية
                 CookieManager.getInstance().setAcceptCookie(true);
                 Log.i("RoyalEngine", "🍪 CookieManager initialized via IdleHandler.");
 
-                // تسخين SafeBrowsing (إن كان مدعوماً)
                 if (WebViewFeature.isFeatureSupported(WebViewFeature.START_SAFE_BROWSING)) {
                     WebViewCompat.startSafeBrowsing(this, value ->
                         Log.i("RoyalEngine", "🛡️ SafeBrowsing warmed up.")
@@ -133,7 +136,7 @@ public class RoyalApplication extends Application {
             } catch (Exception e) {
                 Log.w("RoyalEngine", "IdleHandler task failed: " + e.getMessage());
             }
-            return false; // تنفيذ مرة واحدة فقط
+            return false;
         });
 
         Log.i("RoyalEngine", "✅ All systems initialized. Ready for action.");
@@ -149,4 +152,4 @@ public class RoyalApplication extends Application {
 
         super.onTerminate();
     }
-                    }
+    }
