@@ -19,6 +19,9 @@ import androidx.webkit.WebViewFeature;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
+// 👑 استيراد كلاس الحارس المجمد
+import com.store.app.RoyalSessionSentinel;
+
 public final class RoyalWebViewHost {
     private static final String TAG = "RoyalWebViewHost";
     private static final String BASE_URL = "https://kith.com/";
@@ -81,6 +84,25 @@ public final class RoyalWebViewHost {
 
             // 3. خلق النواة
             webViewInstance = new WebView(contextWrapper);
+
+            // 🔥 [التحسين 4]: تسخين المكتبات الأصلية مسبقاً (Native Library Prefetch)
+            BACKGROUND_EXECUTOR.execute(() -> {
+                try {
+                    // محاولة تحميل المكتبة الأصلية لتسخينها في الذاكرة
+                    System.loadLibrary("webviewchromium");
+                    Log.i(TAG, "📚 Native Library Prefetched successfully.");
+                } catch (Throwable e) {
+                    // المكتبة قد تكون محملة مسبقاً أو غير موجودة باسم ثابت، نتجاهل الخطأ
+                    Log.d(TAG, "Native library prefetch note: " + e.getMessage());
+                }
+            });
+
+            // 🔥 [التحسين 5]: تضخيم الواجهة مسبقاً (Pre-inflation)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                webViewInstance.setElevation(0);
+                webViewInstance.setTransitionName("royal_webview");
+            }
+            Log.i(TAG, "🏗️ View Hierarchy pre-inflated.");
 
             // 4. إعدادات الأولوية القصوى (معالج العرض)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -196,6 +218,16 @@ public final class RoyalWebViewHost {
 
         // إظهار الويب فيو الآن فقط
         webViewInstance.setVisibility(View.VISIBLE);
+
+        // 🔥 [التحسين 6]: محاولة استعادة الجلسة المجمدة (Freeze Dried Tabs)
+        if (RoyalSessionSentinel.resurrect(webViewInstance, activity)) {
+            Log.i(TAG, "🧊 Session restored from freeze.");
+        } else {
+            // إذا لم توجد جلسة، تحميل الصفحة الرئيسية
+            webViewInstance.loadUrl(BASE_URL);
+            Log.i(TAG, "🌐 Loading fresh page.");
+        }
+
         webViewInstance.onResume();
         webViewInstance.resumeTimers();
 
@@ -210,6 +242,10 @@ public final class RoyalWebViewHost {
         if (contextWrapper != null) {
             contextWrapper.setBaseContext(webViewInstance.getContext().getApplicationContext());
         }
+
+        // 🔥 [التحسين 7]: تجميد الجلسة قبل الخروج (Freeze)
+        RoyalSessionSentinel.freeze(webViewInstance);
+        Log.i(TAG, "❄️ Session frozen.");
 
         webViewInstance.onPause();
         webViewInstance.pauseTimers();
@@ -253,4 +289,4 @@ public final class RoyalWebViewHost {
     public static WebView getWebView() {
         return webViewInstance;
     }
-        }
+}
