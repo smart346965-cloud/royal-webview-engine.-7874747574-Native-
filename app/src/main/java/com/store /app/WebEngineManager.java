@@ -116,12 +116,15 @@ public class WebEngineManager {
                     RoyalPanopticon.recordMetric("FCP", durationMillis);
                 }
 
-                // ✅ تم حذف onLargestContentfulPaintMillis (غير موجود في 1.16.0)
-                // ✅ تم حذف onDOMContentLoaded (غير موجود في 1.16.0)
-                // ✅ تم حذف onPerformanceMarkMillis (غير موجود في 1.16.0)
-
+                // ✅ تم تصحيح اسم الدالة
                 @Override
-                public void onLoad(@NonNull Page page) {
+                public void onPageDomContentLoadedEvent(@NonNull Page page) {
+                    Log.i("Performance", "📄 DOMContentLoaded");
+                }
+
+                // ✅ تم تصحيح اسم الدالة
+                @Override
+                public void onPageLoadEvent(@NonNull Page page) {
                     Log.i("Performance", "📦 Load event fired");
                 }
 
@@ -140,9 +143,23 @@ public class WebEngineManager {
                     Log.i("Performance", "✅ Navigation completed");
                 }
 
+                // ✅ تم تصحيح اسم الدالة
                 @Override
-                public void onPageEvicted(@NonNull Page page) {
+                public void onPageDeleted(@NonNull Page page) {
                     Log.i("Performance", "🗑️ Page evicted");
+                }
+
+                // ✅ إضافة الدالة المفقودة
+                @Override
+                public void onLargestContentfulPaintMillis(@NonNull Page page, long durationMillis) {
+                    Log.i("Performance", "🏆 LCP: " + durationMillis + "ms");
+                    RoyalPanopticon.recordMetric("LCP", durationMillis);
+                }
+
+                // ✅ إضافة الدالة المفقودة
+                @Override
+                public void onPerformanceMarkMillis(@NonNull Page page, @NonNull String markName, long markTimeMillis) {
+                    Log.i("Performance", "📊 Performance mark: " + markName + " at " + markTimeMillis + "ms");
                 }
             });
             Log.i("RoyalEngine", "📊 NavigationListener added for performance metrics.");
