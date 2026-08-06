@@ -9,7 +9,7 @@ activity = "1.9.3"
 constraintlayout = "2.1.4"
 onesignal = "5.1.13"
 coreSplash = "1.0.1"
-webkit = "1.17.0"
+webkit = "1.16.0"
 
 [libraries]
 junit = { group = "junit", name = "junit", version.ref = "junit" }
