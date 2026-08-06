@@ -107,8 +107,6 @@ public class WebEngineManager {
 
         attachClients();
 
-        // تم حذف كتلة try-catch الخاصة بـ Profile و Preconnect
-
         // 🔥 [التحسين الجديد]: مراقبة مقاييس الأداء (FCP, LCP)
         if (WebViewFeature.isFeatureSupported(WebViewFeature.NAVIGATION_LISTENER)) {
             WebViewCompat.addNavigationListener(webView, new NavigationListener() {
@@ -118,16 +116,9 @@ public class WebEngineManager {
                     RoyalPanopticon.recordMetric("FCP", durationMillis);
                 }
 
-                @Override
-                public void onLargestContentfulPaintMillis(@NonNull Page page, long durationMillis) {
-                    Log.i("Performance", "🏆 LCP: " + durationMillis + "ms");
-                    RoyalPanopticon.recordMetric("LCP", durationMillis);
-                }
-
-                @Override
-                public void onDOMContentLoaded(@NonNull Page page) {
-                    Log.i("Performance", "📄 DOMContentLoaded");
-                }
+                // ✅ تم حذف onLargestContentfulPaintMillis (غير موجود في 1.16.0)
+                // ✅ تم حذف onDOMContentLoaded (غير موجود في 1.16.0)
+                // ✅ تم حذف onPerformanceMarkMillis (غير موجود في 1.16.0)
 
                 @Override
                 public void onLoad(@NonNull Page page) {
@@ -152,12 +143,6 @@ public class WebEngineManager {
                 @Override
                 public void onPageEvicted(@NonNull Page page) {
                     Log.i("Performance", "🗑️ Page evicted");
-                }
-
-                @Override
-                public void onPerformanceMarkMillis(@NonNull Page page, @NonNull String markName, long markTimeMillis) {
-                    // اختياري: تتبع علامات الأداء المخصصة
-                    Log.i("Performance", "📊 Performance mark: " + markName + " at " + markTimeMillis + "ms");
                 }
             });
             Log.i("RoyalEngine", "📊 NavigationListener added for performance metrics.");
@@ -739,4 +724,4 @@ public class WebEngineManager {
     public boolean isPageValid() {
         return isPageValid;
     }
-                            }
+            }
