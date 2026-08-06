@@ -106,6 +106,14 @@ public final class RoyalPanopticon {
         browserState.memoryHistory.push(memory);
     }
 
+    // =====================================================================
+    // 📊 METRIC RECORDER
+    // =====================================================================
+    public static void recordMetric(String name, long value) {
+        Log.i(TAG, "📊 Metric - " + name + ": " + value + "ms");
+        // يمكنك إضافة منطق لتخزين هذه القيم أو إرسالها للتحليلات لاحقاً
+    }
+
     private RoyalPanopticon() {}
 
     // =====================================================================
@@ -419,4 +427,4 @@ public final class RoyalPanopticon {
             for (String child : children) printNode(sb, child, depth + 1);
         }
     }
-}
+        }
