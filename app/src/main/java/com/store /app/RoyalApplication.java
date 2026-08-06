@@ -27,6 +27,41 @@ public class RoyalApplication extends Application {
         // 👁️ تشغيل عقل الفحص الملكي
         RoyalPanopticon.startAwareness();
 
+        // 🔥 [التحسين 11]: startUpWebView - تسخين WebView بشكل غير متزامن (API رسمي من Jetpack Webkit 1.16.0)
+        // ينقل عبء التهيئة لخيط خلفي ويجزئ عمل الخيط الرئيسي، مما يقلل ANR ويحسن الأداء
+        // يجب أن يكون قبل أي استدعاء آخر لـ WebView APIs
+        try {
+            if (WebViewFeature.isFeatureSupported(WebViewFeature.START_UP_WEB_VIEW)) {
+                // استخدام BACKGROUND_EXECUTOR الموجود بالفعل في RoyalWebViewHost
+                androidx.webkit.WebViewStartUpConfig config = new androidx.webkit.WebViewStartUpConfig.Builder(
+                        RoyalWebViewHost.getBackgroundExecutor()
+                ).build();
+
+                WebViewCompat.startUpWebView(
+                        this,
+                        config,
+                        new androidx.webkit.WebViewOutcomeReceiver<
+                                androidx.webkit.WebViewStartUpResult,
+                                androidx.webkit.WebViewStartupException>() {
+                            @Override
+                            public void onSuccess(androidx.webkit.WebViewStartUpResult result) {
+                                Log.i("RoyalEngine", "✅ startUpWebView succeeded.");
+                            }
+
+                            @Override
+                            public void onFailure(androidx.webkit.WebViewStartupException exception) {
+                                Log.w("RoyalEngine", "⚠️ startUpWebView failed: " + exception.getMessage());
+                            }
+                        }
+                );
+                Log.i("RoyalEngine", "🚀 startUpWebView triggered asynchronously.");
+            } else {
+                Log.w("RoyalEngine", "⚠️ START_UP_WEB_VIEW not supported on this device.");
+            }
+        } catch (Exception e) {
+            Log.w("RoyalEngine", "startUpWebView not available: " + e.getMessage());
+        }
+
         // 🔥 الخطوة الأولى: تسخين نواة كروميوم بشكل غير متزامن
         // هذا يقلل وقت التهيئة بشكل كبير ويوزع الحمل على خيط خلفي
         RoyalWebViewHost.startEngineAsync(this);
