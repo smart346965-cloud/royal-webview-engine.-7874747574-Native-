@@ -140,6 +140,11 @@ public class WebEngineManager {
                 }
 
                 @Override
+                public void onNavigationRedirected(@NonNull Navigation navigation) {
+                    Log.i("Performance", "↪️ Navigation redirected");
+                }
+
+                @Override
                 public void onNavigationCompleted(@NonNull Navigation navigation) {
                     Log.i("Performance", "✅ Navigation completed");
                 }
@@ -147,6 +152,12 @@ public class WebEngineManager {
                 @Override
                 public void onPageEvicted(@NonNull Page page) {
                     Log.i("Performance", "🗑️ Page evicted");
+                }
+
+                @Override
+                public void onPerformanceMarkMillis(@NonNull Page page, @NonNull String markName, long markTimeMillis) {
+                    // اختياري: تتبع علامات الأداء المخصصة
+                    Log.i("Performance", "📊 Performance mark: " + markName + " at " + markTimeMillis + "ms");
                 }
             });
             Log.i("RoyalEngine", "📊 NavigationListener added for performance metrics.");
@@ -728,4 +739,4 @@ public class WebEngineManager {
     public boolean isPageValid() {
         return isPageValid;
     }
-        }
+                            }
