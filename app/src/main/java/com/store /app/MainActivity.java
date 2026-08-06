@@ -184,17 +184,48 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onResume() {
         super.onResume();
-        // استئناف العمليات الرسومية والـ JavaScript فور عودة المستخدم للتطبيق
         if (activeWebView != null) {
             activeWebView.onResume();
         }
-        // إلغاء مؤقت تفريغ الذاكرة عند العودة
         cancelMemoryPurge();
 
-        // 🔥 [تحسين تأخير تحميل الصفحة]: التحميل في onResume لتسريع بدء النشاط
-        if (!isPageLoaded && activeWebView != null && activeWebView.getUrl() == null) {
-            activeWebView.loadUrl(BuildConfig.CLIENT_URL);
-            isPageLoaded = true;
+        // 🔥 عند العودة للتطبيق، تحقق من حالة الشبكة
+        if (!NetworkMonitor.isInternetAvailable(this)) {
+            // إذا كان الإنترنت مقطوعاً
+            if (activeWebView != null && activeWebView.getUrl() == null) {
+                toggleOfflineUI(true);
+            } else if (engineManager != null && !engineManager.isPageValid()) {
+                toggleOfflineUI(true);
+            } else {
+                // صفحة موجودة ولكن الإنترنت مقطوع → إظهار الشريط النحيف
+                if (offlineBar != null && offlineBar.getVisibility() != View.VISIBLE) {
+                    offlineBar.setBackgroundColor(Color.parseColor("#323232"));
+                    offlineBar.setText("لا يتوفر اتصال بالإنترنت");
+                    offlineBar.setVisibility(View.VISIBLE);
+                    offlineBar.animate().translationY(0).setDuration(400).start();
+                }
+            }
+        } else {
+            // الإنترنت موجود
+            if (isOfflineUIVisible) {
+                toggleOfflineUI(false);
+            }
+            if (offlineBar != null && offlineBar.getVisibility() == View.VISIBLE) {
+                // إخفاء الشريط بلون مميز عند عودة الإنترنت
+                offlineBar.setBackgroundColor(Color.parseColor("#1A237E"));
+                offlineBar.setText("🔄 تم استعادة الاتصال، جاري التحديث...");
+                offlineBar.animate().translationY(100).setDuration(400)
+                    .withEndAction(() -> {
+                        offlineBar.setVisibility(View.GONE);
+                        offlineBar.setBackgroundColor(Color.parseColor("#323232"));
+                        offlineBar.setText("لا يتوفر اتصال بالإنترنت");
+                    }).start();
+            }
+            // إذا كانت الصفحة فارغة وتحتاج تحميل
+            if (!isPageLoaded && activeWebView != null && activeWebView.getUrl() == null) {
+                activeWebView.loadUrl(BuildConfig.CLIENT_URL);
+                isPageLoaded = true;
+            }
         }
     }
 
@@ -321,39 +352,10 @@ public class MainActivity extends AppCompatActivity {
      * 🔥 مراقبة الشبكة المحسّنة
      */
     private void setupNetworkListener() {
-        // ربط الشريط بمراقب الشبكة
+        // ربط المستمع بـ NetworkMonitor (يتم التعامل معه في WebEngineManager)
         NetworkMonitor.setListener(connected -> {
-            try {
-                if (connected) {
-                    if (isOfflineUIVisible) toggleOfflineUI(false);
-                    // إخفاء الشريط النحيف أيضاً إذا كان ظاهراً
-                    if (offlineBar != null) {
-                        offlineBar.animate().translationY(100).setDuration(400)
-                            .withEndAction(() -> offlineBar.setVisibility(View.GONE)).start();
-                    }
-
-                    // إعادة تحميل الموقع تلقائياً إذا كنا في صفحة بيضاء
-                    if (activeWebView != null && 
-                        (activeWebView.getUrl() == null || activeWebView.getUrl().equals("about:blank"))) {
-                        runOnUiThread(() -> {
-                            activeWebView.loadUrl(BuildConfig.CLIENT_URL);
-                            isPageLoaded = true;
-                        });
-                    }
-                } else {
-                    // إذا كنا في بداية التشغيل، اظهر الواجهة الكبيرة، وإلا اظهر الشريط النحيف فقط
-                    if (activeWebView == null || 
-                        activeWebView.getUrl() == null || 
-                        activeWebView.getUrl().equals("about:blank")) {
-                        toggleOfflineUI(true);
-                    } else if (offlineBar != null) {
-                        offlineBar.setVisibility(View.VISIBLE);
-                        offlineBar.animate().translationY(0).setDuration(400).start();
-                    }
-                }
-            } catch (Exception e) {
-                Log.e(TAG, "Network listener error: " + e.getMessage());
-            }
+            // WebEngineManager هو المسؤول عن كل شيء
+            Log.i(TAG, "📡 Network state changed: " + connected);
         });
         Log.i(TAG, "✅ Network listener configured.");
     }
@@ -621,6 +623,10 @@ public class MainActivity extends AppCompatActivity {
         isOfflineUIVisible = show;
         runOnUiThread(() -> {
             if (show) {
+                // إخفاء الشريط النحيف إذا كان ظاهراً
+                if (offlineBar != null && offlineBar.getVisibility() == View.VISIBLE) {
+                    offlineBar.setVisibility(View.GONE);
+                }
                 pureOfflineUI.setVisibility(View.VISIBLE);
                 pureOfflineUI.setAlpha(0f);
                 pureOfflineUI.animate().alpha(1f).setDuration(500).start();
@@ -632,6 +638,52 @@ public class MainActivity extends AppCompatActivity {
                         .withEndAction(() -> pureOfflineUI.setVisibility(View.GONE)).start();
                 if (activeWebView != null) {
                     activeWebView.setVisibility(View.VISIBLE);
+                }
+            }
+        });
+    }
+
+    // =========================================================
+    // 🔥 دوال عامة للتحكم بواجهات الأوفلاين (التعديل 3.1)
+    // =========================================================
+
+    /**
+     * 🔥 تُستدعى من WebEngineManager لإظهار/إخفاء الواجهة الكبيرة (pureOfflineUI)
+     */
+    public void setOfflineUIVisibility(boolean show) {
+        runOnUiThread(() -> {
+            if (show && !isOfflineUIVisible) {
+                toggleOfflineUI(true);
+            } else if (!show && isOfflineUIVisible) {
+                toggleOfflineUI(false);
+            }
+        });
+    }
+
+    /**
+     * 🔥 تُستدعى من WebEngineManager لإظهار/إخفاء الشريط النحيف (offlineBar)
+     * عند العودة للاتصال، يتم تغيير لونه إلى سماوي داكن/بنفسجي جليدي
+     */
+    public void setOfflineBarVisibility(boolean show) {
+        runOnUiThread(() -> {
+            if (offlineBar != null) {
+                if (show) {
+                    // لون عادي عند الانقطاع
+                    offlineBar.setBackgroundColor(Color.parseColor("#323232"));
+                    offlineBar.setText("لا يتوفر اتصال بالإنترنت");
+                    offlineBar.setVisibility(View.VISIBLE);
+                    offlineBar.animate().translationY(0).setDuration(400).start();
+                } else {
+                    // 🔥 عند عودة الإنترنت: تغيير اللون إلى سماوي داكن/بنفسجي جليدي قبل الإخفاء
+                    offlineBar.setBackgroundColor(Color.parseColor("#1A237E")); // بنفسجي جليدي داكن
+                    offlineBar.setText("🔄 تم استعادة الاتصال، جاري التحديث...");
+                    offlineBar.animate().translationY(100).setDuration(400)
+                        .withEndAction(() -> {
+                            offlineBar.setVisibility(View.GONE);
+                            // إعادة اللون الأصلي للاستخدام المستقبلي
+                            offlineBar.setBackgroundColor(Color.parseColor("#323232"));
+                            offlineBar.setText("لا يتوفر اتصال بالإنترنت");
+                        }).start();
                 }
             }
         });
@@ -722,4 +774,4 @@ public class MainActivity extends AppCompatActivity {
             }
         }
     }
-                }
+                    }
