@@ -93,7 +93,7 @@ public final class RoyalHybridEngine {
         // 🔥 [التحسين الجديد]: دعم WebAuthn للدخول بالبصمة
         if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_AUTHENTICATION)) {
             WebSettingsCompat.setWebAuthenticationSupport(settings,
-                    WebSettingsCompat.WEB_AUTHENTICATION_SUPPORT_AUTOMATIC);
+                    WebSettingsCompat.WEB_AUTHENTICATION_SUPPORT_FOR_APP);
             Log.i(TAG, "🔐 WebAuthn support enabled.");
         }
 
@@ -137,4 +137,4 @@ public final class RoyalHybridEngine {
     public static void reset() {
         isEnginePrimed = false;
     }
-            }
+}
