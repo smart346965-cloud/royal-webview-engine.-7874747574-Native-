@@ -12,8 +12,13 @@ import androidx.webkit.WebViewFeature;
 
 import java.util.HashSet;
 import java.util.Set;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public class RoyalApplication extends Application {
+
+    // 👑 Executor خاص بـ startUpWebView
+    private static final ExecutorService STARTUP_EXECUTOR = Executors.newSingleThreadExecutor();
 
     @Override
     public void onCreate() {
@@ -31,32 +36,32 @@ public class RoyalApplication extends Application {
         // 🔥 المرحلة 1: startUpWebView (يجب أن يكون الأول)
         // ==========================================
         try {
-            if (WebViewFeature.isFeatureSupported(WebViewFeature.START_UP_WEB_VIEW)) {
-                androidx.webkit.WebViewStartUpConfig config = new androidx.webkit.WebViewStartUpConfig.Builder(
-                        RoyalWebViewHost.getBackgroundExecutor()
-                ).build();
+            // ✅ لا حاجة للتحقق بـ isFeatureSupported() لأنها API مستقرة في 1.16.0
+            androidx.webkit.WebViewStartUpConfig config = new androidx.webkit.WebViewStartUpConfig.Builder(
+                    STARTUP_EXECUTOR
+            ).build();
 
-                WebViewCompat.startUpWebView(
-                        this,
-                        config,
-                        new androidx.webkit.WebViewOutcomeReceiver<
-                                androidx.webkit.WebViewStartUpResult,
-                                androidx.webkit.WebViewStartupException>() {
-                            @Override
-                            public void onSuccess(androidx.webkit.WebViewStartUpResult result) {
-                                Log.i("RoyalEngine", "✅ startUpWebView succeeded.");
-                            }
-
-                            @Override
-                            public void onFailure(androidx.webkit.WebViewStartupException exception) {
-                                Log.w("RoyalEngine", "⚠️ startUpWebView failed: " + exception.getMessage());
-                            }
+            WebViewCompat.startUpWebView(
+                    this,
+                    config,
+                    new androidx.webkit.WebViewOutcomeReceiver<
+                            androidx.webkit.WebViewStartUpResult,
+                            androidx.webkit.WebViewStartupException>() {
+                        @Override
+                        public void onResult(androidx.webkit.WebViewStartUpResult result) {
+                            Log.i("RoyalEngine", "✅ startUpWebView succeeded.");
+                            // يمكنك هنا فحص مواقع الحظر باستخدام:
+                            // result.getUiThreadBlockingStartUpLocations()
+                            // result.getNonUiThreadBlockingStartUpLocations()
                         }
-                );
-                Log.i("RoyalEngine", "🚀 startUpWebView triggered asynchronously.");
-            } else {
-                Log.w("RoyalEngine", "⚠️ START_UP_WEB_VIEW not supported on this device.");
-            }
+
+                        @Override
+                        public void onError(androidx.webkit.WebViewStartupException exception) {
+                            Log.w("RoyalEngine", "⚠️ startUpWebView failed: " + exception.getMessage());
+                        }
+                    }
+            );
+            Log.i("RoyalEngine", "🚀 startUpWebView triggered asynchronously.");
         } catch (Exception e) {
             Log.w("RoyalEngine", "startUpWebView not available: " + e.getMessage());
         }
@@ -93,7 +98,7 @@ public class RoyalApplication extends Application {
         try {
             if (WebViewFeature.isFeatureSupported(WebViewFeature.ADD_QUIC_HINTS_V1)) {
                 Set<String> origins = new HashSet<>();
-                origins.add("https://kith.com");
+                origins.add("https://bellroy.com");
                 androidx.webkit.ProfileStore.getInstance()
                         .getOrCreateProfile("Default")
                         .addQuicHints(origins);
@@ -152,4 +157,4 @@ public class RoyalApplication extends Application {
 
         super.onTerminate();
     }
-    }
+            }
