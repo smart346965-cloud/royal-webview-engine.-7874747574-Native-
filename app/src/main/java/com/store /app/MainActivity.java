@@ -149,6 +149,7 @@ public class MainActivity extends AppCompatActivity {
         createOfflineBar();
 
         // 8️⃣ مراقبة الشبكة
+        NetworkMonitor.init(this);
         setupNetworkListener();
 
         // 🚀 فحص الإنترنت الأولي (عند الإقلاع)
@@ -774,4 +775,4 @@ public class MainActivity extends AppCompatActivity {
             }
         }
     }
-                    }
+    }
