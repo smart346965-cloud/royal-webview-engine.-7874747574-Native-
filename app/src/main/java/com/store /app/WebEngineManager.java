@@ -27,14 +27,8 @@ public class WebEngineManager {
 
     private static final String TAG = "RoyalEngine";
 
-    // ==========================================
-    // 🔥 المتغيرات الجديدة المطلوبة
-    // ==========================================
-    private boolean isOnErrorPage = false;
-    private boolean isPageValid = false;
-    private String lastFailedUrl = null;
-    private boolean isNetworkAvailable = true;
-    private boolean isOfflineBarVisible = false;
+    // ❌ تم حذف المتغيرات: isOnErrorPage, isPageValid, lastFailedUrl, isNetworkAvailable, isOfflineBarVisible
+    // تم نقلها إلى OfflineStateManager
 
     private final Context context;
     private final android.app.Activity activity;
@@ -89,7 +83,6 @@ public class WebEngineManager {
         this.splashStartTime = startTime;
     }
 
-    // [تعديل جراحي 1: WebEngineManager.java]
     public void init() {
         // 🛡️ تم تعطيل حذف السبلاش التلقائي هنا لضمان السيادة الزمنية لـ FIXED_SPLASH_TIME
         if (RoyalWebViewHost.isReady() && webView.getUrl() != null && !webView.getUrl().equals("about:blank")) {
@@ -98,12 +91,8 @@ public class WebEngineManager {
 
         configureSettings();
 
-        // 🔥 ربط WebEngineManager بتغيرات الشبكة
-        NetworkMonitor.setWebView(webView);
-        NetworkMonitor.setListener(connected -> {
-            isNetworkAvailable = connected;
-            handleNetworkChange(connected);
-        });
+        // 🔥 تم نقل منطق مراقبة الشبكة إلى OfflineStateManager و OfflineUIController
+        // لم يعد هناك حاجة لربط NetworkMonitor هنا
 
         attachClients();
 
@@ -116,13 +105,11 @@ public class WebEngineManager {
                     RoyalPanopticon.recordMetric("FCP", durationMillis);
                 }
 
-                // ✅ تم تصحيح اسم الدالة
                 @Override
                 public void onPageDomContentLoadedEvent(@NonNull Page page) {
                     Log.i("Performance", "📄 DOMContentLoaded");
                 }
 
-                // ✅ تم تصحيح اسم الدالة
                 @Override
                 public void onPageLoadEvent(@NonNull Page page) {
                     Log.i("Performance", "📦 Load event fired");
@@ -143,20 +130,17 @@ public class WebEngineManager {
                     Log.i("Performance", "✅ Navigation completed");
                 }
 
-                // ✅ تم تصحيح اسم الدالة
                 @Override
                 public void onPageDeleted(@NonNull Page page) {
                     Log.i("Performance", "🗑️ Page evicted");
                 }
 
-                // ✅ إضافة الدالة المفقودة
                 @Override
                 public void onLargestContentfulPaintMillis(@NonNull Page page, long durationMillis) {
                     Log.i("Performance", "🏆 LCP: " + durationMillis + "ms");
                     RoyalPanopticon.recordMetric("LCP", durationMillis);
                 }
 
-                // ✅ إضافة الدالة المفقودة
                 @Override
                 public void onPerformanceMarkMillis(@NonNull Page page, @NonNull String markName, long markTimeMillis) {
                     Log.i("Performance", "📊 Performance mark: " + markName + " at " + markTimeMillis + "ms");
@@ -174,72 +158,7 @@ public class WebEngineManager {
         }
     }
 
-    /**
-     * 🔥 معالجة تغير حالة الشبكة (محاكاة NetErrorAutoReloader)
-     * يتم استدعاؤها عند تغير حالة الاتصال
-     */
-    private void handleNetworkChange(boolean connected) {
-        if (connected) {
-            // ✅ الإنترنت عاد
-            if (isOnErrorPage || !isPageValid) {
-                // إذا كنا على صفحة خطأ أو صفحة غير صالحة → إعادة تحميل وإخفاء الدرع النيتف
-                Log.i(TAG, "🌐 Network restored. Reloading invalid page...");
-                webView.reload();
-                isOnErrorPage = false;
-                isPageValid = true;
-                // إخفاء الواجهة النيتف الكبيرة
-                if (activity != null) {
-                    activity.runOnUiThread(() -> {
-                        if (activity instanceof MainActivity) {
-                            ((MainActivity) activity).setOfflineUIVisibility(false);
-                        }
-                    });
-                }
-            } else if (isPageValid) {
-                // إذا كانت الصفحة سليمة → إرسال حدث online للـ JS فقط
-                Log.i(TAG, "🌐 Network restored. Dispatching online event to JS.");
-                webView.evaluateJavascript(
-                    "window.dispatchEvent(new Event('online'));",
-                    null
-                );
-                // إخفاء الشريط النحيف إن كان ظاهراً (مع تغيير لونه)
-                if (activity != null) {
-                    activity.runOnUiThread(() -> {
-                        if (activity instanceof MainActivity) {
-                            ((MainActivity) activity).setOfflineBarVisibility(false);
-                        }
-                    });
-                }
-            }
-        } else {
-            // ❌ الإنترنت انقطع
-            if (isPageValid) {
-                // صفحة سليمة → إظهار الشريط النحيف وإرسال حدث offline
-                Log.i(TAG, "📡 Network lost. Dispatching offline event to JS.");
-                webView.evaluateJavascript(
-                    "window.dispatchEvent(new Event('offline'));",
-                    null
-                );
-                if (activity != null) {
-                    activity.runOnUiThread(() -> {
-                        if (activity instanceof MainActivity) {
-                            ((MainActivity) activity).setOfflineBarVisibility(true);
-                        }
-                    });
-                }
-            } else {
-                // صفحة غير سليمة (فارغة أو خطأ) → إظهار الواجهة الكبيرة فوراً
-                Log.i(TAG, "📡 Network lost and page invalid. Showing native offline UI.");
-                if (activity != null) {
-                    activity.runOnUiThread(() -> {
-                        if (activity instanceof MainActivity) {
-                            ((MainActivity) activity).setOfflineUIVisibility(true);
-                        }
-                    });
-                }
-            }
-        }
-    }
+    // ❌ تم حذف دالة handleNetworkChange() بالكامل
 
     private void removeSplashInstantly() {
         if (activity == null) return;
@@ -287,7 +206,6 @@ public class WebEngineManager {
         }, remaining);
     }
 
-    // [تعديل جراحي في WebEngineManager.java]
     private void configureSettings() {
         WebSettings settings = webView.getSettings();
 
@@ -305,7 +223,6 @@ public class WebEngineManager {
             webView.setVerticalScrollbarThumbDrawable(null);
         }
 
-        // [إضافة جراحية في WebEngineManager.java]
         webView.setOverScrollMode(View.OVER_SCROLL_NEVER);
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -355,53 +272,33 @@ public class WebEngineManager {
                 RoyalPanopticon.recordRequestSent();
             }
 
-            // [تعديل 2.5: onPageFinished]
             @Override
             public void onPageFinished(WebView view, String url) {
                 RoyalPanopticon.recordNavigationComplete();
                 RoyalNetworkEngine.notifyRenderIdle();
                 
-                // ✅ إذا كانت الصفحة اكتملت وليست صفحة خطأ، تأكد من صحة الحالة
+                // ✅ تحديث حالة الصفحة في OfflineStateManager
                 if (url != null && !url.startsWith("data:") && !url.startsWith("about:") && !url.contains("chromewebdata")) {
-                    isPageValid = true;
-                    isOnErrorPage = false;
+                    OfflineStateManager.getInstance().setPageValid(true);
                     Log.i(TAG, "✅ Page finished successfully. Page is valid.");
                 } else {
-                    isPageValid = false;
+                    OfflineStateManager.getInstance().setPageValid(false);
                     Log.w(TAG, "⚠️ Page finished but URL is invalid or error page.");
                 }
-
-                if (isPageValid && activity != null) {
-                    activity.runOnUiThread(() -> {
-                        if (activity instanceof MainActivity) {
-                            ((MainActivity) activity).setOfflineUIVisibility(false);
-                            ((MainActivity) activity).setOfflineBarVisibility(false);
-                        }
-                    });
-                }
+                // إزالة استدعاء إخفاء الواجهات هنا، لأن OfflineStateManager سيتعامل معها
             }
 
-            // [تعديل 2.4: onPageCommitVisible]
             @Override
             public void onPageCommitVisible(WebView view, String url) {
-                // ✅ التحقق من أن الصفحة ليست صفحة خطأ داخلية
+                // ✅ تحديث حالة الصفحة في OfflineStateManager
                 if (url != null && !url.startsWith("data:") && !url.startsWith("about:") && !url.contains("chromewebdata")) {
-                    isPageValid = true;
-                    isOnErrorPage = false;
+                    OfflineStateManager.getInstance().setPageValid(true);
                     Log.i(TAG, "✅ Page committed successfully. Page is valid.");
                 } else {
-                    isPageValid = false;
+                    OfflineStateManager.getInstance().setPageValid(false);
                     Log.w(TAG, "⚠️ Page commit but URL is invalid or error page.");
                 }
-
-                if (isPageValid && activity != null) {
-                    activity.runOnUiThread(() -> {
-                        if (activity instanceof MainActivity) {
-                            ((MainActivity) activity).setOfflineUIVisibility(false);
-                            ((MainActivity) activity).setOfflineBarVisibility(false);
-                        }
-                    });
-                }
+                // إزالة استدعاء إخفاء الواجهات هنا، لأن OfflineStateManager سيتعامل معها
 
                 if (trustedHost == null && url != null) {
                     setTrustedOrigin(url);
@@ -430,43 +327,24 @@ public class WebEngineManager {
                 return true;
             }
 
-            // [تعديل 2.3: onReceivedError]
             @Override
             public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
                 if (request != null && request.isForMainFrame()) {
-                    // 🚀 إيقاف رندر كروم فوراً عند اكتشاف خطأ الشبكة
-                    view.stopLoading(); // <-- إضافة هذا السطر
-
-                    isOnErrorPage = true;
-                    lastFailedUrl = request.getUrl().toString();
-                    isPageValid = false;
+                    view.stopLoading();
+                    // ✅ إبلاغ OfflineStateManager بحدوث خطأ
+                    OfflineStateManager.getInstance().setErrorPage(true, request.getUrl().toString());
                     Log.w(TAG, "🛡️ Main frame error detected. Page invalid.");
-                    
-                    if (activity != null) {
-                        activity.runOnUiThread(() -> {
-                            if (activity instanceof MainActivity) {
-                                ((MainActivity) activity).setOfflineUIVisibility(true);
-                            }
-                        });
-                    }
+                    // إزالة استدعاء إظهار الواجهة هنا، لأن OfflineStateManager سيتعامل معها
                 }
             }
 
             @SuppressWarnings("deprecation")
             @Override
             public void onReceivedError(WebView view, int errorCode, String description, String failingUrl) {
-                isOnErrorPage = true;
-                lastFailedUrl = failingUrl;
-                isPageValid = false;
+                // ✅ إبلاغ OfflineStateManager بحدوث خطأ
+                OfflineStateManager.getInstance().setErrorPage(true, failingUrl);
                 Log.w(TAG, "🛡️ Legacy main frame error detected. Page invalid.");
-                
-                if (activity != null) {
-                    activity.runOnUiThread(() -> {
-                        if (activity instanceof MainActivity) {
-                            ((MainActivity) activity).setOfflineUIVisibility(true);
-                        }
-                    });
-                }
+                // إزالة استدعاء إظهار الواجهة هنا، لأن OfflineStateManager سيتعامل معها
             }
 
             @Override
@@ -551,7 +429,9 @@ public class WebEngineManager {
                 }
 
                 if (!NetworkMonitor.isInternetAvailable(context) && request.isForMainFrame()) {
-                    // 🚀 منع Chromium من رسم صفحة الخطأ البيضاء
+                    // ✅ إعلام OfflineStateManager بحدوث خطأ
+                    OfflineStateManager.getInstance().setErrorPage(true, request.getUrl().toString());
+                    // منع Chromium من رسم صفحة الخطأ البيضاء
                     InputStream emptyStream = new ByteArrayInputStream("".getBytes());
                     return new WebResourceResponse("text/html", "UTF-8", emptyStream);
                 }
@@ -736,13 +616,13 @@ public class WebEngineManager {
     }
 
     // ==========================================
-    // 🔥 دوال حالة الصفحة
+    // 🔥 دوال حالة الصفحة (تستخدم OfflineStateManager)
     // ==========================================
     public boolean isOnErrorPage() {
-        return isOnErrorPage;
+        return OfflineStateManager.getInstance().isOnErrorPage();
     }
 
     public boolean isPageValid() {
-        return isPageValid;
+        return OfflineStateManager.getInstance().isPageValid();
     }
-            }
+    }
