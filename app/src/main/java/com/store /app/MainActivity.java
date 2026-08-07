@@ -149,9 +149,6 @@ public class MainActivity extends AppCompatActivity {
         // 🔥 ربط OfflineStateManager بعد تهيئة OfflineUIController
         OfflineStateManager.getInstance().bind(activeWebView, offlineController);
 
-        // 🔥 تزويد الرادار بالويب فيو لتنفيذ الـ JS
-        NetworkMonitor.setWebView(activeWebView);
-
         // 🚀 فحص الإنترنت الأولي (عند الإقلاع)
         if (!NetworkMonitor.isInternetAvailable(this)) {
             if (offlineController != null) {
@@ -528,4 +525,4 @@ public class MainActivity extends AppCompatActivity {
             }
         }
     }
-    }
+            }
