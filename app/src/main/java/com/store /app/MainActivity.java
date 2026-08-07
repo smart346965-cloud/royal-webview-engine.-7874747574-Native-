@@ -2,6 +2,7 @@ package com.store.app;
 
 import android.graphics.Color;
 import android.graphics.drawable.ColorDrawable;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
@@ -21,6 +22,9 @@ import android.widget.ProgressBar;
 import androidx.activity.OnBackPressedCallback;
 import androidx.appcompat.app.AppCompatActivity;
 
+import com.store.app.offline.OfflineUIController;
+import com.store.app.offline.OfflineStateManager;
+
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -32,7 +36,7 @@ import java.util.concurrent.Executors;
  * - Time-Based Memory Purge (تفريغ الذاكرة الاستباقي)
  * - shouldInterceptRequest Short Circuit (تحسين اعتراض الطلبات)
  * - Renderer Importance API (أولوية معالج العرض)
- * - onTrimMemory Optimization (تحسين استجابة ضغط الذ内存رة)
+ * - onTrimMemory Optimization (تحسين استجابة ضغط الذاكررة)
  * - saveState/restoreState (تسريع حفظ واستعادة الحالة)
  * - Prefetch Native Library (تحميل المكتبات الأصلية مسبقاً)
  * - Threading Optimization (تحسين إدارة الخيوط)
