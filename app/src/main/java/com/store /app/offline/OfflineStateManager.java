@@ -1,6 +1,8 @@
 package com.store.app.offline;
 
 import android.app.Activity;
+import android.os.Handler;
+import android.os.Looper;
 import android.util.Log;
 import android.webkit.WebView;
 
@@ -36,6 +38,9 @@ public class OfflineStateManager {
     private WebView webView;
     private OfflineUIController uiController;
 
+    // معالج الخيط الرئيسي
+    private final Handler mainHandler = new Handler(Looper.getMainLooper());
+
     // ==========================================
     // 🔒 Singleton
     // ==========================================
@@ -67,57 +72,42 @@ public class OfflineStateManager {
     }
 
     // ==========================================
-    // 📡 معالجة تغيرات الشبكة
+    // 📡 معالجة تغيرات الشبكة (معدلة)
     // ==========================================
 
+    // [تعديل جراحي في OfflineStateManager.java - دالة handleNetworkChange]
     private void handleNetworkChange(boolean connected) {
-        if (webView == null) {
-            Log.w(TAG, "⚠️ WebView is null, cannot handle network change");
-            return;
-        }
+        if (webView == null) return;
 
         if (connected) {
-            // ✅ الإنترنت عاد
-            if (isOnErrorPage || !isPageValid) {
-                // صفحة خطأ أو غير صالحة → إعادة تحميل وإخفاء الدرع
-                Log.i(TAG, "🌐 Network restored. Reloading invalid page...");
-                webView.reload();
-                isOnErrorPage = false;
-                isPageValid = true;
-                // إخفاء الواجهة الكبيرة
-                if (uiController != null) {
-                    uiController.setOfflineUIVisibility(false);
+            // ✅ الإنترنت عاد: تنفيذ بروتوكول الاستعادة
+            mainHandler.postDelayed(() -> {
+                // فحص إضافي للتأكد من استقرار الشبكة (Vitality Check)
+                if (NetworkMonitor.isInternetAvailable(webView.getContext())) {
+                    
+                    if (isOnErrorPage || !isPageValid) {
+                        Log.i(TAG, "🌐 Restoration: Loading original target URL...");
+                        // إذا فشل التحميل سابقاً، نعيد المحاولة للرابط الأصلي
+                        webView.reload(); 
+                    } else {
+                        // إرسال نبضة للجافا سكريبت لتحديث البيانات ديناميكياً
+                        webView.evaluateJavascript("window.dispatchEvent(new Event('online'));", null);
+                    }
+
+                    // إخفاء كافة واجهات الأوفلاين بنعومة
+                    if (uiController != null) {
+                        uiController.setOfflineUIVisibility(false);
+                        uiController.setOfflineBarVisibility(false);
+                    }
                 }
-            } else if (isPageValid) {
-                // صفحة سليمة → إرسال حدث online للـ JS
-                Log.i(TAG, "🌐 Network restored. Dispatching online event to JS.");
-                webView.evaluateJavascript(
-                    "window.dispatchEvent(new Event('online'));",
-                    null
-                );
-                // إخفاء الشريط النحيف
-                if (uiController != null) {
-                    uiController.setOfflineBarVisibility(false);
-                }
-            }
+            }, 500); // تأخير بسيط لضمان استقرار الـ DNS بعد عودة الشبكة
         } else {
-            // ❌ الإنترنت انقطع
+            // ❌ الإنترنت انقطع: تفعيل بروتوكول الحماية
             if (isPageValid) {
-                // صفحة سليمة → إظهار الشريط النحيف
-                Log.i(TAG, "📡 Network lost. Showing offline bar.");
-                webView.evaluateJavascript(
-                    "window.dispatchEvent(new Event('offline'));",
-                    null
-                );
-                if (uiController != null) {
-                    uiController.setOfflineBarVisibility(true);
-                }
+                if (uiController != null) uiController.setOfflineBarVisibility(true);
+                webView.evaluateJavascript("window.dispatchEvent(new Event('offline'));", null);
             } else {
-                // صفحة غير سليمة → إظهار الواجهة الكبيرة
-                Log.i(TAG, "📡 Network lost and page invalid. Showing native offline UI.");
-                if (uiController != null) {
-                    uiController.setOfflineUIVisibility(true);
-                }
+                if (uiController != null) uiController.setOfflineUIVisibility(true);
             }
         }
     }
@@ -198,4 +188,4 @@ public class OfflineStateManager {
             uiController.shakeOfflineBar();
         }
     }
-                      }
+    }
