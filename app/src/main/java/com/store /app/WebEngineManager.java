@@ -19,6 +19,7 @@ import androidx.webkit.Page;
 import androidx.webkit.WebSettingsCompat;
 import androidx.webkit.WebViewCompat;
 import androidx.webkit.WebViewFeature;
+
 import com.store.app.offline.OfflineStateManager;
 
 import java.io.ByteArrayInputStream;
@@ -27,9 +28,6 @@ import java.io.InputStream;
 public class WebEngineManager {
 
     private static final String TAG = "RoyalEngine";
-
-    // ❌ تم حذف المتغيرات: isOnErrorPage, isPageValid, lastFailedUrl, isNetworkAvailable, isOfflineBarVisible
-    // تم نقلها إلى OfflineStateManager
 
     private final Context context;
     private final android.app.Activity activity;
@@ -85,19 +83,14 @@ public class WebEngineManager {
     }
 
     public void init() {
-        // 🛡️ تم تعطيل حذف السبلاش التلقائي هنا لضمان السيادة الزمنية لـ FIXED_SPLASH_TIME
         if (RoyalWebViewHost.isReady() && webView.getUrl() != null && !webView.getUrl().equals("about:blank")) {
             android.util.Log.i("RoyalEngine", "🔥 Warm Resume Detected, but enforcing fixed splash time.");
         }
 
         configureSettings();
 
-        // 🔥 تم نقل منطق مراقبة الشبكة إلى OfflineStateManager و OfflineUIController
-        // لم يعد هناك حاجة لربط NetworkMonitor هنا
-
         attachClients();
 
-        // 🔥 [التحسين الجديد]: مراقبة مقاييس الأداء (FCP, LCP)
         if (WebViewFeature.isFeatureSupported(WebViewFeature.NAVIGATION_LISTENER)) {
             WebViewCompat.addNavigationListener(webView, new NavigationListener() {
                 @Override
@@ -158,8 +151,6 @@ public class WebEngineManager {
             });
         }
     }
-
-    // ❌ تم حذف دالة handleNetworkChange() بالكامل
 
     private void removeSplashInstantly() {
         if (activity == null) return;
@@ -278,7 +269,6 @@ public class WebEngineManager {
                 RoyalPanopticon.recordNavigationComplete();
                 RoyalNetworkEngine.notifyRenderIdle();
                 
-                // ✅ تحديث حالة الصفحة في OfflineStateManager
                 if (url != null && !url.startsWith("data:") && !url.startsWith("about:") && !url.contains("chromewebdata")) {
                     OfflineStateManager.getInstance().setPageValid(true);
                     Log.i(TAG, "✅ Page finished successfully. Page is valid.");
@@ -286,12 +276,10 @@ public class WebEngineManager {
                     OfflineStateManager.getInstance().setPageValid(false);
                     Log.w(TAG, "⚠️ Page finished but URL is invalid or error page.");
                 }
-                // إزالة استدعاء إخفاء الواجهات هنا، لأن OfflineStateManager سيتعامل معها
             }
 
             @Override
             public void onPageCommitVisible(WebView view, String url) {
-                // ✅ تحديث حالة الصفحة في OfflineStateManager
                 if (url != null && !url.startsWith("data:") && !url.startsWith("about:") && !url.contains("chromewebdata")) {
                     OfflineStateManager.getInstance().setPageValid(true);
                     Log.i(TAG, "✅ Page committed successfully. Page is valid.");
@@ -299,7 +287,6 @@ public class WebEngineManager {
                     OfflineStateManager.getInstance().setPageValid(false);
                     Log.w(TAG, "⚠️ Page commit but URL is invalid or error page.");
                 }
-                // إزالة استدعاء إخفاء الواجهات هنا، لأن OfflineStateManager سيتعامل معها
 
                 if (trustedHost == null && url != null) {
                     setTrustedOrigin(url);
@@ -332,20 +319,16 @@ public class WebEngineManager {
             public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
                 if (request != null && request.isForMainFrame()) {
                     view.stopLoading();
-                    // ✅ إبلاغ OfflineStateManager بحدوث خطأ
                     OfflineStateManager.getInstance().setErrorPage(true, request.getUrl().toString());
                     Log.w(TAG, "🛡️ Main frame error detected. Page invalid.");
-                    // إزالة استدعاء إظهار الواجهة هنا، لأن OfflineStateManager سيتعامل معها
                 }
             }
 
             @SuppressWarnings("deprecation")
             @Override
             public void onReceivedError(WebView view, int errorCode, String description, String failingUrl) {
-                // ✅ إبلاغ OfflineStateManager بحدوث خطأ
                 OfflineStateManager.getInstance().setErrorPage(true, failingUrl);
                 Log.w(TAG, "🛡️ Legacy main frame error detected. Page invalid.");
-                // إزالة استدعاء إظهار الواجهة هنا، لأن OfflineStateManager سيتعامل معها
             }
 
             @Override
@@ -429,12 +412,15 @@ public class WebEngineManager {
                     }
                 }
 
+                // 🔥 [تعديل جراحي] معالجة الأوفلاين مع الكاش أولاً
                 if (!NetworkMonitor.isInternetAvailable(context) && request.isForMainFrame()) {
-                    // ✅ إعلام OfflineStateManager بحدوث خطأ
-                    OfflineStateManager.getInstance().setErrorPage(true, request.getUrl().toString());
-                    // منع Chromium من رسم صفحة الخطأ البيضاء
-                    InputStream emptyStream = new ByteArrayInputStream("".getBytes());
-                    return new WebResourceResponse("text/html", "UTF-8", emptyStream);
+                    // ❌ لا ترجع Null أبداً هنا لأنه يسبب بياضاً
+                    // ✅ الحل: ابحث في الـ Vault، إذا لم تجد، لا ترجع شيئاً (سيصمت المحرك)
+                    WebResourceResponse vaultResponse = RoyalCacheManager.intercept(request);
+                    if (vaultResponse != null) return vaultResponse;
+                    
+                    // إذا لم يوجد في الكاش، نقتل الطلب قبل أن يمسح الشاشة الحالية
+                    return null; 
                 }
 
                 boolean isCoreResource = request.isForMainFrame() || url.contains(".js") || url.contains(".css") || url.contains(".wasm");
@@ -455,9 +441,23 @@ public class WebEngineManager {
                 return super.shouldInterceptRequest(view, request);
             }
 
+            // [تعديل جراحي في WebEngineManager.java - دالة shouldOverrideUrlLoading]
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
-                return handleUriLogic(request.getUrl(), request.isForMainFrame());
+                if (request == null || request.getUrl() == null) return false;
+                Uri uri = request.getUrl();
+
+                // 🛡️ القفل الاستراتيجي: منع مغادرة الصفحة في وضع الأوفلاين
+                if (!NetworkMonitor.isInternetAvailable(context)) {
+                    if (isSameOrigin(uri)) {
+                        // الإنترنت مقطوع والعميل يحاول فتح صفحة داخلية
+                        // 🚀 الإجراء: ابقَ في مكانك + هز الشريط السفلي لتنبيه العميل
+                        OfflineStateManager.getInstance().notifyOfflineClickAttempt();
+                        return true; // تعني: "تم استهلاك الحدث، لا تتحرك يا ويب فيو"
+                    }
+                }
+
+                return handleUriLogic(uri, request.isForMainFrame());
             }
 
             @SuppressWarnings("deprecation")
@@ -626,4 +626,4 @@ public class WebEngineManager {
     public boolean isPageValid() {
         return OfflineStateManager.getInstance().isPageValid();
     }
-    }
+                            }
