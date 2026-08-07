@@ -182,4 +182,20 @@ public class OfflineStateManager {
         NetworkMonitor.setListener(null);
         Log.i(TAG, "🔓 Unbound from WebView and UIController");
     }
-                }
+
+    // ==========================================
+    // 💥 إشعار محاولة النقر الفاشلة
+    // ==========================================
+
+    /**
+     * [إضافة جراحية في OfflineStateManager.java]
+     * يُستدعى عند محاولة النقر على رابط أثناء انقطاع الشبكة
+     * لإعلام المستخدم بهز الشريط السفلي
+     */
+    public void notifyOfflineClickAttempt() {
+        if (uiController != null) {
+            // هز الشريط السفلي لجذب انتباه العميل دون تجميد الصفحة
+            uiController.shakeOfflineBar();
+        }
+    }
+                      }
