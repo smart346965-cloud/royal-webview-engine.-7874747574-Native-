@@ -34,6 +34,9 @@ public class OfflineStateManager {
     private boolean isNetworkAvailable = true;
     private boolean isOfflineBarVisible = false;
 
+    // 👑 الرابط الذي فشل تحميله وسنفتحه عند عودة الشبكة
+    private String pendingUrl = null;
+
     // مراجع للتحكم
     private WebView webView;
     private OfflineUIController uiController;
@@ -80,32 +83,34 @@ public class OfflineStateManager {
         if (webView == null) return;
 
         if (connected) {
-            // ✅ الإنترنت عاد: تنفيذ بروتوكول الاستعادة
+            // ✅ الإنترنت عاد: تنفيذ بروتوكول "الاستعادة القسرية"
             mainHandler.postDelayed(() -> {
-                // فحص إضافي للتأكد من استقرار الشبكة (Vitality Check)
                 if (NetworkMonitor.isInternetAvailable(webView.getContext())) {
                     
-                    if (isOnErrorPage || !isPageValid) {
-                        Log.i(TAG, "🌐 Restoration: Loading original target URL...");
-                        // إذا فشل التحميل سابقاً، نعيد المحاولة للرابط الأصلي
-                        webView.reload(); 
+                    // إذا كنا في صفحة خطأ أو الموقع لم يحمل بعد
+                    if (isOnErrorPage || !isPageValid || webView.getUrl() == null) {
+                        String urlToLoad = (pendingUrl != null) ? pendingUrl : webView.getUrl();
+                        if (urlToLoad == null) urlToLoad = com.store.app.BuildConfig.CLIENT_URL;
+
+                        Log.i(TAG, "🌐 Auto-Restoration: Forcing load of -> " + urlToLoad);
+                        webView.loadUrl(urlToLoad); // تحميل قسري للرابط لتجاوز صفحة الخطأ
                     } else {
-                        // إرسال نبضة للجافا سكريبت لتحديث البيانات ديناميكياً
+                        // الموقع شغال؟ أرسل نبضة تحديث للبيانات فقط
                         webView.evaluateJavascript("window.dispatchEvent(new Event('online'));", null);
                     }
 
-                    // إخفاء كافة واجهات الأوفلاين بنعومة
+                    // إخفاء الواجهات
                     if (uiController != null) {
                         uiController.setOfflineUIVisibility(false);
                         uiController.setOfflineBarVisibility(false);
                     }
+                    isOnErrorPage = false;
                 }
-            }, 500); // تأخير بسيط لضمان استقرار الـ DNS بعد عودة الشبكة
+            }, 800); // مهلة 800ms لضمان استقرار الشبكة في نظام أندرويد
         } else {
-            // ❌ الإنترنت انقطع: تفعيل بروتوكول الحماية
+            // ❌ الإنترنت انقطع
             if (isPageValid) {
                 if (uiController != null) uiController.setOfflineBarVisibility(true);
-                webView.evaluateJavascript("window.dispatchEvent(new Event('offline'));", null);
             } else {
                 if (uiController != null) uiController.setOfflineUIVisibility(true);
             }
@@ -128,9 +133,9 @@ public class OfflineStateManager {
         this.isOnErrorPage = error;
         this.isPageValid = !error;
         if (error) {
-            this.lastFailedUrl = url;
+            this.pendingUrl = url; // حفظ الرابط فوراً لإعادة المحاولة لاحقاً
         }
-        Log.d(TAG, "🛡️ Error page set to: " + error + ", URL: " + url);
+        Log.d(TAG, "🛡️ Error tracking: " + error + " for URL: " + url);
     }
 
     public void setOfflineBarVisible(boolean visible) {
@@ -188,4 +193,4 @@ public class OfflineStateManager {
             uiController.shakeOfflineBar();
         }
     }
-    }
+                    }
