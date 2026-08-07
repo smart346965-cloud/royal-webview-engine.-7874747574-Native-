@@ -434,7 +434,9 @@ public class WebEngineManager {
             @Override
             public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
                 if (request != null && request.isForMainFrame()) {
-                    // 🚀 لا نستخدم stopLoading()، بل نُخفي الـ WebView ونظهر الواجهة النيتف فوراً
+                    // 🚀 إيقاف رندر كروم فوراً عند اكتشاف خطأ الشبكة
+                    view.stopLoading(); // <-- إضافة هذا السطر
+
                     isOnErrorPage = true;
                     lastFailedUrl = request.getUrl().toString();
                     isPageValid = false;
@@ -549,7 +551,9 @@ public class WebEngineManager {
                 }
 
                 if (!NetworkMonitor.isInternetAvailable(context) && request.isForMainFrame()) {
-                    return new WebResourceResponse("text/html", "UTF-8", null);
+                    // 🚀 منع Chromium من رسم صفحة الخطأ البيضاء
+                    InputStream emptyStream = new ByteArrayInputStream("".getBytes());
+                    return new WebResourceResponse("text/html", "UTF-8", emptyStream);
                 }
 
                 boolean isCoreResource = request.isForMainFrame() || url.contains(".js") || url.contains(".css") || url.contains(".wasm");
