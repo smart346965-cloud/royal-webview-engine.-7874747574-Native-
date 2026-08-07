@@ -152,7 +152,7 @@ public class MainActivity extends AppCompatActivity {
         // 🚀 فحص الإنترنت الأولي (عند الإقلاع)
         if (!NetworkMonitor.isInternetAvailable(this)) {
             if (offlineController != null) {
-                offlineController.showOfflineUI(true);
+                offlineController.setOfflineUIVisibility(true);
             }
         }
     }
@@ -525,4 +525,4 @@ public class MainActivity extends AppCompatActivity {
             }
         }
     }
-    }
+}
