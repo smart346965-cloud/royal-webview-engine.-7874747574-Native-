@@ -170,4 +170,16 @@ public class OfflineStateManager {
     public boolean isOfflineBarVisible() {
         return isOfflineBarVisible;
     }
-  }
+
+    // ==========================================
+    // 🔓 إلغاء الربط
+    // ==========================================
+
+    public void unbind() {
+        this.webView = null;
+        this.uiController = null;
+        // إزالة المستمع من NetworkMonitor
+        NetworkMonitor.setListener(null);
+        Log.i(TAG, "🔓 Unbound from WebView and UIController");
+    }
+                }
