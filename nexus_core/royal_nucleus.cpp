@@ -200,6 +200,20 @@ public:
         return false;
     }
 
+    // [إضافة جراحية في royal_core.cpp]
+    /**
+     * 🛰️ فحص صحة الرابط المعلق (Pending URL Validator)
+     * يتأكد من أن الرابط الذي حاول المستخدم فتحه أوفلاين هو رابط آمن للتحميل التلقائي
+     */
+    bool is_safe_for_auto_reload(const std::string& url) {
+        if (url.empty()) return false;
+        // إذا كان الرابط هو صفحة دفع أو خروج، لا نحمله تلقائياً (للأمان)
+        if (url.find("checkout") != std::string::npos || url.find("pay") != std::string::npos) {
+            return false;
+        }
+        return true;
+    }
+
     // عرض عنوان الذاكرة للجافا سكريبت
     uintptr_t get_shared_buffer_ptr() {
         return reinterpret_cast<uintptr_t>(shared_buffer);
@@ -440,7 +454,8 @@ EMSCRIPTEN_BINDINGS(royal_nucleus_module) {
         .function("get_shared_buffer_ptr", &RoyalCoreEngine::get_shared_buffer_ptr)
         .function("process_raw_touch", &RoyalCoreEngine::process_raw_touch)
         .function("is_same_site_navigation", &RoyalCoreEngine::is_same_site_navigation)
-        .function("check_commit_navigation_readiness", &RoyalCoreEngine::check_commit_navigation_readiness);
+        .function("check_commit_navigation_readiness", &RoyalCoreEngine::check_commit_navigation_readiness)
+        .function("is_safe_for_auto_reload", &RoyalCoreEngine::is_safe_for_auto_reload);
     
     // كلاس الـ Network
     class_<RoyalNetworkCore>("RoyalNetworkCore")
@@ -455,4 +470,4 @@ EMSCRIPTEN_BINDINGS(royal_nucleus_module) {
         .constructor()
         .function("getPredictor", &RoyalNucleus::getPredictor, allow_raw_pointers())
         .function("getGuardian", &RoyalNucleus::getGuardian, allow_raw_pointers());
-    }
+}
