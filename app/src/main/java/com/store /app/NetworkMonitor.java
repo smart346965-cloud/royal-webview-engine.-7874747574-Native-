@@ -78,4 +78,4 @@ public class NetworkMonitor {
     public static boolean isInternetAvailable(Context context) {
         return isConnected.get();
     }
-                }
+                                    }
