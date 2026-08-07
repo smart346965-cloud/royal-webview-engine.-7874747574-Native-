@@ -32,7 +32,7 @@ import java.util.concurrent.Executors;
  * - Time-Based Memory Purge (تفريغ الذاكرة الاستباقي)
  * - shouldInterceptRequest Short Circuit (تحسين اعتراض الطلبات)
  * - Renderer Importance API (أولوية معالج العرض)
- * - onTrimMemory Optimization (تحسين استجابة ضغط الذاكرة)
+ * - onTrimMemory Optimization (تحسين استجابة ضغط الذ内存رة)
  * - saveState/restoreState (تسريع حفظ واستعادة الحالة)
  * - Prefetch Native Library (تحميل المكتبات الأصلية مسبقاً)
  * - Threading Optimization (تحسين إدارة الخيوط)
@@ -142,6 +142,9 @@ public class MainActivity extends AppCompatActivity {
         offlineController = new OfflineUIController(this, activeWebView, engineManager);
         offlineController.init();
 
+        // 🔥 ربط OfflineStateManager بعد تهيئة OfflineUIController
+        OfflineStateManager.getInstance().bind(activeWebView, offlineController);
+
         // 🚀 فحص الإنترنت الأولي (عند الإقلاع)
         if (!NetworkMonitor.isInternetAvailable(this)) {
             if (offlineController != null) {
@@ -209,6 +212,9 @@ public class MainActivity extends AppCompatActivity {
             offlineController.destroy();
             offlineController = null;
         }
+
+        // 🔥 إلغاء ربط OfflineStateManager
+        OfflineStateManager.getInstance().unbind();
 
         RoyalWebViewHost.detach();
         super.onDestroy();
@@ -515,4 +521,4 @@ public class MainActivity extends AppCompatActivity {
             }
         }
     }
-            }
+    }
