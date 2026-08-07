@@ -21,7 +21,7 @@ import com.store.app.NetworkMonitor;
 import com.store.app.R;
 import com.store.app.RoyalNetworkEngine;
 import com.store.app.WebEngineManager;
-import com.store.app.OfflineStateManager; // ✅ استيراد OfflineStateManager
+import com.store.app.offline.OfflineStateManager; // ✅ صحيح
 
 /**
  * 👑 OfflineUIController - المسؤول عن إدارة واجهات الأوفلاين
