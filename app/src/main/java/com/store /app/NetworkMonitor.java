@@ -23,13 +23,6 @@ public class NetworkMonitor {
     }
     private static NetworkStateListener listener;
 
-    // 👑 كائن الويب فيو (احتفظنا به للاستخدام المستقبلي لكن لم نعد نرسل منه أحداثاً مباشرة)
-    private static WebView webView;
-
-    public static void setWebView(WebView wv) {
-        webView = wv;
-    }
-
     public static void setListener(NetworkStateListener l) { listener = l; }
 
     public static void init(Context context) {
@@ -53,7 +46,7 @@ public class NetworkMonitor {
                         isConnected.set(true);
                         RoyalNetworkEngine.setNetworkPrefetchAllowed(true);
                         
-                        // 🚀 الإجراء الموحد: إبلاغ العقل المدبر فقط
+                        // 🚀 بث الإشارة الموحد للعقل المدبر فقط
                         new Handler(Looper.getMainLooper()).post(() -> {
                             if (listener != null) listener.onNetworkChanged(true);
                         });
@@ -64,7 +57,7 @@ public class NetworkMonitor {
                         isConnected.set(false);
                         RoyalNetworkEngine.setNetworkPrefetchAllowed(false);
                         
-                        // 🚀 الإجراء الموحد: إبلاغ العقل المدبر فقط
+                        // 🚀 بث الإشارة الموحد للعقل المدبر فقط
                         new Handler(Looper.getMainLooper()).post(() -> {
                             if (listener != null) listener.onNetworkChanged(false);
                         });
@@ -78,4 +71,4 @@ public class NetworkMonitor {
     public static boolean isInternetAvailable(Context context) {
         return isConnected.get();
     }
-                                    }
+}
