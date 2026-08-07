@@ -2,9 +2,6 @@ package com.store.app;
 
 import android.graphics.Color;
 import android.graphics.drawable.ColorDrawable;
-import android.graphics.drawable.Drawable;
-import android.graphics.drawable.GradientDrawable;
-import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
@@ -13,16 +10,13 @@ import android.util.Log;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.ViewTreeObserver;
-import android.webkit.WebSettings;
-import android.webkit.WebView;
-import android.webkit.WebViewClient;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
+import android.webkit.WebView;
+import android.webkit.WebViewClient;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
-import android.widget.LinearLayout;
 import android.widget.ProgressBar;
-import android.widget.TextView;
 
 import androidx.activity.OnBackPressedCallback;
 import androidx.appcompat.app.AppCompatActivity;
@@ -56,11 +50,6 @@ public class MainActivity extends AppCompatActivity {
     private WebEngineManager engineManager;
     private WebView activeWebView;
     private ProgressBar progressBar;
-    private TextView offlineBar;
-
-    // [تعديل في MainActivity.java - منطقة التعريفات]
-    private FrameLayout pureOfflineUI; // الحاوية الكبرى لواجهة أوفلاين
-    private boolean isOfflineUIVisible = false;
 
     private long splashStartTime = 0;
     private Handler memoryPurgeHandler;
@@ -68,6 +57,9 @@ public class MainActivity extends AppCompatActivity {
 
     // 🔥 تحسين الخيوط: استخدام ThreadPool لإدارة المهام الخلفية
     private static final ExecutorService backgroundExecutor = Executors.newFixedThreadPool(2);
+
+    // 🔥 مدير واجهات الأوفلاين
+    private OfflineUIController offlineController;
 
     // =========================================================
     // 🚀 دورة الحياة الأساسية
@@ -139,22 +131,22 @@ public class MainActivity extends AppCompatActivity {
         SystemUI.applyKingMode(this, activeWebView);
         SystemUI.setDynamicIcons(this.getWindow(), true);
 
-        // [بناء واجهة الأوفلاين الناتيف فوراً]
-        createPureOfflineUI();
-
         // 6️⃣ بناء وتجهيز طبقة شاشة التحميل (Splash Screen Overlay)
         setupSplashScreen();
 
-        // 7️⃣ إنشاء شريط الأوفلاين السينمائي
-        createOfflineBar();
-
-        // 8️⃣ مراقبة الشبكة
+        // 7️⃣ مراقبة الشبكة وتهيئة مدير الأوفلاين
         NetworkMonitor.init(this);
         setupNetworkListener();
 
+        // 🔥 تهيئة OfflineUIController
+        offlineController = new OfflineUIController(this, activeWebView, engineManager);
+        offlineController.init();
+
         // 🚀 فحص الإنترنت الأولي (عند الإقلاع)
         if (!NetworkMonitor.isInternetAvailable(this)) {
-            toggleOfflineUI(true);
+            if (offlineController != null) {
+                offlineController.showOfflineUI(true);
+            }
         }
     }
 
@@ -190,43 +182,15 @@ public class MainActivity extends AppCompatActivity {
         }
         cancelMemoryPurge();
 
-        // 🔥 عند العودة للتطبيق، تحقق من حالة الشبكة
-        if (!NetworkMonitor.isInternetAvailable(this)) {
-            // إذا كان الإنترنت مقطوعاً
-            if (activeWebView != null && activeWebView.getUrl() == null) {
-                toggleOfflineUI(true);
-            } else if (engineManager != null && !engineManager.isPageValid()) {
-                toggleOfflineUI(true);
-            } else {
-                // صفحة موجودة ولكن الإنترنت مقطوع → إظهار الشريط النحيف
-                if (offlineBar != null && offlineBar.getVisibility() != View.VISIBLE) {
-                    offlineBar.setBackgroundColor(Color.parseColor("#323232"));
-                    offlineBar.setText("لا يتوفر اتصال بالإنترنت");
-                    offlineBar.setVisibility(View.VISIBLE);
-                    offlineBar.animate().translationY(0).setDuration(400).start();
-                }
-            }
-        } else {
-            // الإنترنت موجود
-            if (isOfflineUIVisible) {
-                toggleOfflineUI(false);
-            }
-            if (offlineBar != null && offlineBar.getVisibility() == View.VISIBLE) {
-                // إخفاء الشريط بلون مميز عند عودة الإنترنت
-                offlineBar.setBackgroundColor(Color.parseColor("#1A237E"));
-                offlineBar.setText("🔄 تم استعادة الاتصال، جاري التحديث...");
-                offlineBar.animate().translationY(100).setDuration(400)
-                    .withEndAction(() -> {
-                        offlineBar.setVisibility(View.GONE);
-                        offlineBar.setBackgroundColor(Color.parseColor("#323232"));
-                        offlineBar.setText("لا يتوفر اتصال بالإنترنت");
-                    }).start();
-            }
-            // إذا كانت الصفحة فارغة وتحتاج تحميل
-            if (!isPageLoaded && activeWebView != null && activeWebView.getUrl() == null) {
-                activeWebView.loadUrl(BuildConfig.CLIENT_URL);
-                isPageLoaded = true;
-            }
+        // 🔥 تفويض منطق الأوفلاين إلى OfflineUIController
+        if (offlineController != null) {
+            offlineController.onResume();
+        }
+
+        // إذا كانت الصفحة فارغة وتحتاج تحميل (مع عدم وجود إنترنت)
+        if (!isPageLoaded && activeWebView != null && activeWebView.getUrl() == null) {
+            activeWebView.loadUrl(BuildConfig.CLIENT_URL);
+            isPageLoaded = true;
         }
     }
 
@@ -239,6 +203,13 @@ public class MainActivity extends AppCompatActivity {
         }
         // إلغاء مؤقت تفريغ الذاكرة
         cancelMemoryPurge();
+
+        // 🔥 تنظيف OfflineUIController
+        if (offlineController != null) {
+            offlineController.destroy();
+            offlineController = null;
+        }
+
         RoyalWebViewHost.detach();
         super.onDestroy();
     }
@@ -350,15 +321,11 @@ public class MainActivity extends AppCompatActivity {
     }
 
     /**
-     * 🔥 مراقبة الشبكة المحسّنة
+     * 🔥 مراقبة الشبكة المحسّنة (تم تفويضها إلى OfflineUIController)
      */
     private void setupNetworkListener() {
-        // ربط المستمع بـ NetworkMonitor (يتم التعامل معه في WebEngineManager)
-        NetworkMonitor.setListener(connected -> {
-            // WebEngineManager هو المسؤول عن كل شيء
-            Log.i(TAG, "📡 Network state changed: " + connected);
-        });
-        Log.i(TAG, "✅ Network listener configured.");
+        // ✅ تم نقل المسؤولية بالكامل إلى OfflineUIController
+        Log.i(TAG, "✅ Network listener is now handled by OfflineUIController.");
     }
 
     /**
@@ -464,233 +431,6 @@ public class MainActivity extends AppCompatActivity {
     }
 
     // =========================================================
-    // 📡 شريط الأوفلاين (بدون تغيير)
-    // =========================================================
-
-    private void createOfflineBar() {
-        offlineBar = new TextView(this);
-        offlineBar.setText("لا يتوفر اتصال بالإنترنت");
-        offlineBar.setTextColor(Color.WHITE);
-        offlineBar.setBackgroundColor(Color.parseColor("#323232")); // أسود يوتيوب الأنيق
-        offlineBar.setGravity(android.view.Gravity.CENTER);
-        offlineBar.setPadding(0, 12, 0, 12);
-        offlineBar.setTextSize(14f);
-        offlineBar.setVisibility(View.GONE); // مخفي في البداية
-
-        FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, 80, android.view.Gravity.BOTTOM);
-        // وضعه فوق أزرار التنقل قليلاً
-        params.bottomMargin = 0;
-        addContentView(offlineBar, params);
-    }
-
-    // =========================================================
-    // 🍏 واجهة الأوفلاين الناتيف (بدون تغيير)
-    // =========================================================
-
-    private void createPureOfflineUI() {
-        // 1. الحاوية الرئيسية الشاملة
-        pureOfflineUI = new FrameLayout(this);
-        pureOfflineUI.setBackgroundColor(Color.parseColor("#F3F4F6"));
-        pureOfflineUI.setVisibility(View.GONE);
-
-        // ☁️ أ- أيقونة السحابة في الجهة العلوية اليسرى (Top-Left Cloud Icon)
-        ImageView cloudIcon = new ImageView(this);
-        // يمكنك ربط رمز السحابة بملف الـ drawable لديك أو أيقونة ناتيف
-        cloudIcon.setImageResource(R.drawable.ic_cloud_off); // تأكد من وجود ic_cloud_off في مجلد drawable
-        cloudIcon.setAlpha(0.6f);
-        FrameLayout.LayoutParams cloudParams = new FrameLayout.LayoutParams(90, 90, android.view.Gravity.TOP | android.view.Gravity.START);
-        cloudParams.setMargins(60, 80, 0, 0); // ضبط الهوامش من الأعلى واليسار
-        pureOfflineUI.addView(cloudIcon, cloudParams);
-
-        // 🖼️ ب- شعار المتجر في المنتصف (Store Logo)
-        ImageView logo = new ImageView(this);
-        logo.setImageResource(R.mipmap.ic_launcher);
-        FrameLayout.LayoutParams logoParams = new FrameLayout.LayoutParams(280, 280, android.view.Gravity.CENTER);
-        logoParams.bottomMargin = 200; // إزاحة خفيفة للأعلى لإعطاء مساحة للنافذة السفلي
-        pureOfflineUI.addView(logo, logoParams);
-
-        // 💳 ج- النافذة المنبثقة السفلية (Bottom Card Sheet)
-        LinearLayout bottomCard = new LinearLayout(this);
-        bottomCard.setOrientation(LinearLayout.VERTICAL);
-        bottomCard.setBackground(createCardDrawable());
-        bottomCard.setPadding(64, 72, 64, 88);
-        bottomCard.setGravity(android.view.Gravity.CENTER_HORIZONTAL);
-
-        // 1. العنوان الرئيسي: بخط عريض وحجم 18sp
-        TextView titleMsg = new TextView(this);
-        titleMsg.setText("لا يوجد اتصال بالإنترنت");
-        titleMsg.setTextColor(Color.WHITE);
-        titleMsg.setTextSize(18f);
-        titleMsg.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
-        titleMsg.setGravity(android.view.Gravity.CENTER);
-        LinearLayout.LayoutParams titleParams = new LinearLayout.LayoutParams(-1, -2);
-        titleParams.bottomMargin = 20;
-        bottomCard.addView(titleMsg, titleParams);
-
-        // 2. الوصف الفرعي: بخط خفيف ولون رمادي متناسق (#9CA3AF / 14sp)
-        TextView subMsg = new TextView(this);
-        subMsg.setText("يبدو أنك غير متصل بالشبكة. يرجى التحقق من الواي فاي أو بيانات الهاتف والمحاولة مجدداً.");
-        subMsg.setTextColor(Color.parseColor("#9CA3AF")); // رمادي داكن ناعم ومتناسق مع الخلفية الداكنة
-        subMsg.setTextSize(14f);
-        subMsg.setGravity(android.view.Gravity.CENTER);
-        subMsg.setLineSpacing(10f, 1.1f);
-        LinearLayout.LayoutParams subParams = new LinearLayout.LayoutParams(-1, -2);
-        subParams.bottomMargin = 56;
-        bottomCard.addView(subMsg, subParams);
-
-        // 3. زر الإجراء الرئيسي (Pill Button - Radius: 12dp / #007AFF)
-        FrameLayout btnContainer = new FrameLayout(this);
-        
-        // تصميم حواف ورسم الزر الدائري (Pill)
-        GradientDrawable btnBg = new GradientDrawable();
-        btnBg.setColor(Color.parseColor("#007AFF")); // أزرق نظام ناتيف
-        btnBg.setCornerRadius(36f); // ما يعادل 12dp لتدوير الزوايا بالكامل
-        btnContainer.setBackground(btnBg);
-        btnContainer.setPadding(0, 32, 0, 32);
-
-        LinearLayout btnContent = new LinearLayout(this);
-        btnContent.setOrientation(LinearLayout.HORIZONTAL);
-        btnContent.setGravity(android.view.Gravity.CENTER);
-
-        // نص الزر الرئيسي
-        TextView retryText = new TextView(this);
-        retryText.setText("🔄  إعادة المحاولة");
-        retryText.setTextColor(Color.WHITE);
-        retryText.setTextSize(15f);
-        retryText.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
-
-        // مؤشر التحميل الناعم (Progress Spinner) مخفي افتراضياً
-        ProgressBar btnSpinner = new ProgressBar(this, null, android.R.attr.progressBarStyleSmall);
-        btnSpinner.setVisibility(View.GONE);
-        btnSpinner.getIndeterminateDrawable().setColorFilter(Color.WHITE, android.graphics.PorterDuff.Mode.SRC_IN);
-
-        btnContent.addView(retryText);
-        btnContent.addView(btnSpinner);
-        
-        FrameLayout.LayoutParams contentParams = new FrameLayout.LayoutParams(-2, -2, android.view.Gravity.CENTER);
-        btnContainer.addView(btnContent, contentParams);
-
-        // ⚡ التفاعل الذكي للزر عند الضغط
-        btnContainer.setOnClickListener(v -> {
-            // أ- إخفاء النص وإظهار مؤشر التحميل (Spinner) داخل الزر
-            retryText.setVisibility(View.GONE);
-            btnSpinner.setVisibility(View.VISIBLE);
-            btnContainer.setEnabled(false); // منع الضغط المتكرر أثناء الفحص
-
-            // ب- إجراء محاكاة فحص الاتصال الحقيقي
-            new Handler(Looper.getMainLooper()).postDelayed(() -> {
-                if (NetworkMonitor.isInternetAvailable(this)) {
-                    toggleOfflineUI(false);
-                    if (activeWebView != null) {
-                        activeWebView.reload();
-                    }
-                } else {
-                    // إعادة الزر لوضعه الطبيعي عند فشل الاتصال مع أنيميشن اهتزاز
-                    btnSpinner.setVisibility(View.GONE);
-                    retryText.setVisibility(View.VISIBLE);
-                    btnContainer.setEnabled(true);
-
-                    v.animate().translationX(12).setDuration(50)
-                            .withEndAction(() -> v.animate().translationX(-12).setDuration(50)
-                                    .withEndAction(() -> v.setTranslationX(0)).start()).start();
-                }
-            }, 1000); // إعطاء مهلة 1 ثانية لإشعار المستخدم بالتحقق الفعلي
-        });
-
-        LinearLayout.LayoutParams btnLayoutParams = new LinearLayout.LayoutParams(-1, -2);
-        btnLayoutParams.setMargins(16, 0, 16, 0);
-        bottomCard.addView(btnContainer, btnLayoutParams);
-
-        // 4. وضع النافذة في أسفل الشاشة بالكامل
-        FrameLayout.LayoutParams cardParams = new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, android.view.Gravity.BOTTOM);
-        pureOfflineUI.addView(bottomCard, cardParams);
-
-        addContentView(pureOfflineUI, new ViewGroup.LayoutParams(-1, -1));
-    }
-
-    // دالة لرسم خلفية الكرت المنحنية بامتياز
-    private Drawable createCardDrawable() {
-        GradientDrawable gd = new GradientDrawable();
-        gd.setColor(Color.parseColor("#1C1C1E")); // رمادي داكن فاخر (Dark Sheet Background)
-        // انحناء الزوايا العلوية بمقدار 24dp (72px) لتصميم أنيق للغاية
-        gd.setCornerRadii(new float[]{72, 72, 72, 72, 0, 0, 0, 0}); 
-        return gd;
-    }
-
-    // محرك التبديل بين الـ WebView والواجهة الناتيف
-    private void toggleOfflineUI(boolean show) {
-        isOfflineUIVisible = show;
-        runOnUiThread(() -> {
-            if (show) {
-                // إخفاء الشريط النحيف إذا كان ظاهراً
-                if (offlineBar != null && offlineBar.getVisibility() == View.VISIBLE) {
-                    offlineBar.setVisibility(View.GONE);
-                }
-                pureOfflineUI.setVisibility(View.VISIBLE);
-                pureOfflineUI.setAlpha(0f);
-                pureOfflineUI.animate().alpha(1f).setDuration(500).start();
-                if (activeWebView != null) {
-                    activeWebView.setVisibility(View.GONE);
-                }
-            } else {
-                pureOfflineUI.animate().alpha(0f).setDuration(500)
-                        .withEndAction(() -> pureOfflineUI.setVisibility(View.GONE)).start();
-                if (activeWebView != null) {
-                    activeWebView.setVisibility(View.VISIBLE);
-                }
-            }
-        });
-    }
-
-    // =========================================================
-    // 🔥 دوال عامة للتحكم بواجهات الأوفلاين (التعديل 3.1)
-    // =========================================================
-
-    /**
-     * 🔥 تُستدعى من WebEngineManager لإظهار/إخفاء الواجهة الكبيرة (pureOfflineUI)
-     */
-    public void setOfflineUIVisibility(boolean show) {
-        runOnUiThread(() -> {
-            if (show && !isOfflineUIVisible) {
-                toggleOfflineUI(true);
-            } else if (!show && isOfflineUIVisible) {
-                toggleOfflineUI(false);
-            }
-        });
-    }
-
-    /**
-     * 🔥 تُستدعى من WebEngineManager لإظهار/إخفاء الشريط النحيف (offlineBar)
-     * عند العودة للاتصال، يتم تغيير لونه إلى سماوي داكن/بنفسجي جليدي
-     */
-    public void setOfflineBarVisibility(boolean show) {
-        runOnUiThread(() -> {
-            if (offlineBar != null) {
-                if (show) {
-                    // لون عادي عند الانقطاع
-                    offlineBar.setBackgroundColor(Color.parseColor("#323232"));
-                    offlineBar.setText("لا يتوفر اتصال بالإنترنت");
-                    offlineBar.setVisibility(View.VISIBLE);
-                    offlineBar.animate().translationY(0).setDuration(400).start();
-                } else {
-                    // 🔥 عند عودة الإنترنت: تغيير اللون إلى سماوي داكن/بنفسجي جليدي قبل الإخفاء
-                    offlineBar.setBackgroundColor(Color.parseColor("#1A237E")); // بنفسجي جليدي داكن
-                    offlineBar.setText("🔄 تم استعادة الاتصال، جاري التحديث...");
-                    offlineBar.animate().translationY(100).setDuration(400)
-                        .withEndAction(() -> {
-                            offlineBar.setVisibility(View.GONE);
-                            // إعادة اللون الأصلي للاستخدام المستقبلي
-                            offlineBar.setBackgroundColor(Color.parseColor("#323232"));
-                            offlineBar.setText("لا يتوفر اتصال بالإنترنت");
-                        }).start();
-                }
-            }
-        });
-    }
-
-    // =========================================================
     // 🔄 نتائج النشاطات والصلاحيات (بدون تغيير)
     // =========================================================
 
@@ -775,4 +515,4 @@ public class MainActivity extends AppCompatActivity {
             }
         }
     }
-    }
+            }
