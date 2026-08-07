@@ -369,10 +369,9 @@ async function handlePageRequest(request, preloadResponsePromise) {
         return cachedResponse;
     }
 
-    // 4. 🔥 آخر خيار: إرجاع خطأ شبكة لتفعيل onReceivedError في الجافا
-    // هذا يمنع ظهور صفحة 404 البيضاء ويُفعّل الدرع النيتف
-    console.warn("[Nexus X] 🚨 No cache and network failed. Returning network error.");
-    return Response.error(); // <-- هذا هو التصحيح الأساسي
+    // 4. 🔥 آخر خيار: إرجاع استجابة معطلة نظيفة بدلاً من Response.error()
+    console.warn("[Nexus X] 🚨 No cache and network failed. Returning fallback empty response.");
+    return new Response('', { status: 503, statusText: 'Service Unavailable' });
 }
 
 /**
