@@ -23,7 +23,7 @@ public class NetworkMonitor {
     }
     private static NetworkStateListener listener;
 
-    // 👑 كائن الويب فيو لنقل الأحداث للجافا سكريبت
+    // 👑 كائن الويب فيو (احتفظنا به للاستخدام المستقبلي لكن لم نعد نرسل منه أحداثاً مباشرة)
     private static WebView webView;
 
     public static void setWebView(WebView wv) {
@@ -50,57 +50,24 @@ public class NetworkMonitor {
                 cm.registerDefaultNetworkCallback(new ConnectivityManager.NetworkCallback() {
                     @Override
                     public void onAvailable(Network network) {
-
-                        NetworkCapabilities caps =
-                                cm.getNetworkCapabilities(network);
-
-                        boolean ok =
-                                caps != null
-                                && caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
-                                && caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED);
-
-                        isConnected.set(ok);
-
-                        RoyalNetworkEngine.setNetworkPrefetchAllowed(ok);
-
-                        if (listener != null) {
-                            new Handler(Looper.getMainLooper()).post(() -> {
-                                listener.onNetworkChanged(ok);
-                                
-                                // 🔥 إرسال حدث للجافا سكريبت (دائماً، لأن WebEngineManager سيتحقق من الصلاحية)
-                                if (webView != null) {
-                                    try {
-                                        webView.evaluateJavascript(
-                                            "window.dispatchEvent(new Event('" + (ok ? "online" : "offline") + "'));",
-                                            null
-                                        );
-                                    } catch (Exception ignored) {}
-                                }
-                            });
-                        }
+                        isConnected.set(true);
+                        RoyalNetworkEngine.setNetworkPrefetchAllowed(true);
+                        
+                        // 🚀 الإجراء الموحد: إبلاغ العقل المدبر فقط
+                        new Handler(Looper.getMainLooper()).post(() -> {
+                            if (listener != null) listener.onNetworkChanged(true);
+                        });
                     }
+
                     @Override
                     public void onLost(Network network) {
-
                         isConnected.set(false);
-
                         RoyalNetworkEngine.setNetworkPrefetchAllowed(false);
-
-                        if (listener != null) {
-                            new Handler(Looper.getMainLooper()).post(() -> {
-                                listener.onNetworkChanged(false);
-                                
-                                // 🔥 إرسال حدث للجافا سكريبت (دائماً، لأن WebEngineManager سيتحقق من الصلاحية)
-                                if (webView != null) {
-                                    try {
-                                        webView.evaluateJavascript(
-                                            "window.dispatchEvent(new Event('offline'));",
-                                            null
-                                        );
-                                    } catch (Exception ignored) {}
-                                }
-                            });
-                        }
+                        
+                        // 🚀 الإجراء الموحد: إبلاغ العقل المدبر فقط
+                        new Handler(Looper.getMainLooper()).post(() -> {
+                            if (listener != null) listener.onNetworkChanged(false);
+                        });
                     }
                 });
             }
@@ -111,4 +78,4 @@ public class NetworkMonitor {
     public static boolean isInternetAvailable(Context context) {
         return isConnected.get();
     }
-}
+                }
