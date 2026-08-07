@@ -21,6 +21,7 @@ import com.store.app.NetworkMonitor;
 import com.store.app.R;
 import com.store.app.RoyalNetworkEngine;
 import com.store.app.WebEngineManager;
+import com.store.app.OfflineStateManager; // ✅ استيراد OfflineStateManager
 
 /**
  * 👑 OfflineUIController - المسؤول عن إدارة واجهات الأوفلاين
@@ -86,6 +87,9 @@ public class OfflineUIController {
             Log.i(TAG, "📡 Network state changed: " + connected);
             handleNetworkChange(connected);
         });
+
+        // 🔥 ربط OfflineStateManager
+        OfflineStateManager.getInstance().bind(webView, this);
 
         Log.i(TAG, "✅ OfflineUIController initialized.");
     }
@@ -476,4 +480,4 @@ public class OfflineUIController {
     public void setCallback(OfflineUICallback callback) {
         this.callback = callback;
     }
-}
+                           }
