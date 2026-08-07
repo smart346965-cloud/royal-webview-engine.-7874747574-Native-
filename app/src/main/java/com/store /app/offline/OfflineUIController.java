@@ -461,6 +461,27 @@ public class OfflineUIController {
         Log.d(TAG, "📡 Offline bar hidden with animation.");
     }
 
+    // [إضافة جراحية في OfflineUIController.java]
+    public void shakeOfflineBar() {
+        if (offlineBar == null || offlineBar.getVisibility() != View.VISIBLE) {
+            showOfflineBar(); // أظهره إذا كان مخفياً
+        }
+        
+        activity.runOnUiThread(() -> {
+            // أنيميشن هز "أبل" الشهير (Shake Animation)
+            offlineBar.animate()
+                    .translationX(20f).setDuration(50)
+                    .withEndAction(() -> offlineBar.animate().translationX(-20f).setDuration(50)
+                    .withEndAction(() -> offlineBar.animate().translationX(0f).setDuration(50).start())
+                    .start()).start();
+                    
+            // تغيير النص لحظياً
+            String originalText = offlineBar.getText().toString();
+            offlineBar.setText("⚠️ لا يمكن التحميل، تحقق من الاتصال");
+            new Handler(Looper.getMainLooper()).postDelayed(() -> offlineBar.setText(originalText), 2000);
+        });
+    }
+
     // ==========================================
     // 🔗 الدوال العامة للاستعلام عن الحالة
     // ==========================================
@@ -480,4 +501,4 @@ public class OfflineUIController {
     public void setCallback(OfflineUICallback callback) {
         this.callback = callback;
     }
-                           }
+    }
