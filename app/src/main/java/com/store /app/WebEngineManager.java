@@ -19,6 +19,7 @@ import androidx.webkit.Page;
 import androidx.webkit.WebSettingsCompat;
 import androidx.webkit.WebViewCompat;
 import androidx.webkit.WebViewFeature;
+import com.store.app.offline.OfflineStateManager;
 
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
