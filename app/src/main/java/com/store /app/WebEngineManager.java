@@ -414,13 +414,13 @@ public class WebEngineManager {
 
                 // 🔥 [تعديل جراحي] معالجة الأوفلاين مع الكاش أولاً
                 if (!NetworkMonitor.isInternetAvailable(context) && request.isForMainFrame()) {
-                    // ❌ لا ترجع Null أبداً هنا لأنه يسبب بياضاً
-                    // ✅ الحل: ابحث في الـ Vault، إذا لم تجد، لا ترجع شيئاً (سيصمت المحرك)
+                    // 🏗️ محاولة السحب من المستودع الملكي (Royal Vault)
                     WebResourceResponse vaultResponse = RoyalCacheManager.intercept(request);
                     if (vaultResponse != null) return vaultResponse;
-                    
-                    // إذا لم يوجد في الكاش، نقتل الطلب قبل أن يمسح الشاشة الحالية
-                    return null; 
+
+                    // ❌ لا ترجع Null أبداً هنا لأنه يطلق الصفحة البيضاء
+                    // ✅ الحل: إذا لم نجد في الكاش، نطلب من المحرك الصمت والبقاء في مكانه
+                    return new WebResourceResponse("text/plain", "UTF-8", null); 
                 }
 
                 boolean isCoreResource = request.isForMainFrame() || url.contains(".js") || url.contains(".css") || url.contains(".wasm");
@@ -447,14 +447,12 @@ public class WebEngineManager {
                 if (request == null || request.getUrl() == null) return false;
                 Uri uri = request.getUrl();
 
-                // 🛡️ القفل الاستراتيجي: منع مغادرة الصفحة في وضع الأوفلاين
-                if (!NetworkMonitor.isInternetAvailable(context)) {
-                    if (isSameOrigin(uri)) {
-                        // الإنترنت مقطوع والعميل يحاول فتح صفحة داخلية
-                        // 🚀 الإجراء: ابقَ في مكانك + هز الشريط السفلي لتنبيه العميل
-                        OfflineStateManager.getInstance().notifyOfflineClickAttempt();
-                        return true; // تعني: "تم استهلاك الحدث، لا تتحرك يا ويب فيو"
-                    }
+                // 🛡️ قفل الأوفلاين الحتمي: منع المغادرة لأي رابط داخلي إذا انقطع النت
+                if (!NetworkMonitor.isInternetAvailable(context) && isSameOrigin(uri)) {
+                    // 🚀 الحركة العبقرية: نوقف المحرك قبل أن يبدأ في مسح البكسلات الحالية
+                    view.stopLoading(); 
+                    OfflineStateManager.getInstance().notifyOfflineClickAttempt();
+                    return true; // نستهلك الحدث ونمنع الانتقال تماماً
                 }
 
                 return handleUriLogic(uri, request.isForMainFrame());
@@ -626,4 +624,4 @@ public class WebEngineManager {
     public boolean isPageValid() {
         return OfflineStateManager.getInstance().isPageValid();
     }
-                            }
+    }
