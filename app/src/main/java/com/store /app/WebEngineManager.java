@@ -283,6 +283,9 @@ public class WebEngineManager {
             // =========================================================
             @Override
             public void onPageCommitVisible(WebView view, String url) {
+                // إبلاغ OfflineStateManager بأن الصفحة جاهزة للإخفاء
+                if (capabilitiesEngine != null) OfflineStateManager.getInstance().notifyPageReadyToHide();
+
                 // 🚀 [الحل العبقري]: الإنترنت عاد والموقع بدأ بالظهور فعلياً
                 // الآن فقط نخفي واجهة الأوفلاين الكبيرة ليكون الانتقال 0ms بياض
                 if (OfflineStateManager.getInstance().isNetworkAvailable()) {
@@ -644,4 +647,4 @@ public class WebEngineManager {
     public boolean isPageValid() {
         return OfflineStateManager.getInstance().isPageValid();
     }
-            }
+                    }
