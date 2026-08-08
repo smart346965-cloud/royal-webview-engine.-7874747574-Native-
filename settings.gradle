@@ -1,17 +1,16 @@
-pluginManagement {
-    repositories {
-        google()
-        mavenCentral()
-        gradlePluginPortal()
-    }
-}
 dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.PREFER_SETTINGS)
     repositories {
         google()
         mavenCentral()
         
-        // 💳 Braintree / CardinalCommerce (بيانات الاعتماد مطلوبة)
+        // ✅ مستودع Microsoft المطلوب لـ display-mask
+        maven {
+            url "https://pkgs.dev.azure.com/MicrosoftDeviceSDK/DuoSDK-Public/_packaging/Duo-SDK-Feed/maven/v1"
+            name "DuoSDK"
+        }
+        
+        // 💳 Braintree / CardinalCommerce
         maven {
             url "https://cardinalcommerceprod.jfrog.io/artifactory/android"
             name "CardinalCommerce"
@@ -21,12 +20,9 @@ dependencyResolutionManagement {
             }
         }
         
-        // 💳 PayPal (بعض الإصدارات موجودة في JitPack)
+        // 💳 PayPal (JitPack)
         maven {
             url "https://jitpack.io"
         }
     }
 }
-
-rootProject.name = "TWA-mra"
-include ':app'
