@@ -197,4 +197,4 @@ public class OfflineStateManager {
             uiController.shakeOfflineBar();
         }
     }
-                            }
+                }
