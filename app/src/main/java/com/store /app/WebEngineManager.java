@@ -278,8 +278,24 @@ public class WebEngineManager {
                 }
             }
 
+            // =========================================================
+            // 🔥 [تعديل جراحي مطلوب] onPageCommitVisible
+            // =========================================================
             @Override
             public void onPageCommitVisible(WebView view, String url) {
+                // 🚀 [الحل العبقري]: الإنترنت عاد والموقع بدأ بالظهور فعلياً
+                // الآن فقط نخفي واجهة الأوفلاين الكبيرة ليكون الانتقال 0ms بياض
+                if (OfflineStateManager.getInstance().isNetworkAvailable()) {
+                    OfflineStateManager.getInstance().setPageValid(true);
+                    if (activity != null) {
+                        activity.runOnUiThread(() -> {
+                            // إخفاء الدرع الناتيف الكبير الآن فقط
+                            // يتم التعامل معه عبر OfflineStateManager المتصل بـ OfflineUIController
+                        });
+                    }
+                }
+
+                // باقي الكود الحالي
                 if (url != null && !url.startsWith("data:") && !url.startsWith("about:") && !url.contains("chromewebdata")) {
                     OfflineStateManager.getInstance().setPageValid(true);
                     Log.i(TAG, "✅ Page committed successfully. Page is valid.");
@@ -441,18 +457,22 @@ public class WebEngineManager {
                 return super.shouldInterceptRequest(view, request);
             }
 
-            // [تعديل جراحي في WebEngineManager.java - دالة shouldOverrideUrlLoading]
+            // =========================================================
+            // 🔥 [تعديل جراحي مطلوب] shouldOverrideUrlLoading
+            // =========================================================
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
                 if (request == null || request.getUrl() == null) return false;
                 Uri uri = request.getUrl();
 
                 // 🛡️ قفل الأوفلاين الحتمي: منع المغادرة لأي رابط داخلي إذا انقطع النت
-                if (!NetworkMonitor.isInternetAvailable(context) && isSameOrigin(uri)) {
-                    // 🚀 الحركة العبقرية: نوقف المحرك قبل أن يبدأ في مسح البكسلات الحالية
-                    view.stopLoading(); 
-                    OfflineStateManager.getInstance().notifyOfflineClickAttempt();
-                    return true; // نستهلك الحدث ونمنع الانتقال تماماً
+                if (!NetworkMonitor.isInternetAvailable(context)) {
+                    if (isSameOrigin(uri)) {
+                        // [تحسين]: لا نستخدم stopLoading() هنا لأنها قد تسبب ومضة في بعض الأجهزة
+                        // نكتفي بـ return true لمنع المتصفح من محاولة الانتقال أصلاً
+                        OfflineStateManager.getInstance().notifyOfflineClickAttempt();
+                        return true; 
+                    }
                 }
 
                 return handleUriLogic(uri, request.isForMainFrame());
@@ -624,4 +644,4 @@ public class WebEngineManager {
     public boolean isPageValid() {
         return OfflineStateManager.getInstance().isPageValid();
     }
-    }
+            }
