@@ -223,4 +223,4 @@ public final class RoyalAuthManager {
                 return null;
         }
     }
-                    }
+}
