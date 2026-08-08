@@ -23,7 +23,11 @@ public class NetworkMonitor {
     }
     private static NetworkStateListener listener;
 
+    // 🔥 مرجع للـ WebView لإرسال الأحداث مباشرة إلى الصفحة
+    private static WebView webView;
+
     public static void setListener(NetworkStateListener l) { listener = l; }
+    public static void setWebView(WebView wv) { webView = wv; }
 
     public static void init(Context context) {
         if (isRegistered) return;
@@ -41,6 +45,37 @@ public class NetworkMonitor {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
                 cm.registerDefaultNetworkCallback(new ConnectivityManager.NetworkCallback() {
                     
+                    // 🛡️ يتم استدعاؤها عند توفر شبكة جديدة (إشارة online)
+                    @Override
+                    public void onAvailable(Network network) {
+                        // نحتاج للحصول على الـ NetworkCapabilities للتحقق من الصلاحية
+                        ConnectivityManager cmLocal = (ConnectivityManager) context.getSystemService(Context.CONNECTIVITY_SERVICE);
+                        if (cmLocal == null) return;
+                        
+                        NetworkCapabilities caps = cmLocal.getNetworkCapabilities(network);
+                        if (caps == null) return;
+                        
+                        boolean hasInternet = caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) 
+                                           && caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED);
+                        
+                        // تحديث الحالة وإرسال الإشارة فقط عند تغير حقيقي
+                        boolean oldState = isConnected.getAndSet(hasInternet);
+                        RoyalNetworkEngine.setNetworkPrefetchAllowed(hasInternet);
+                        
+                        if (oldState != hasInternet && webView != null) {
+                            // 🔥 إرسال حدث online مباشرة للصفحة عبر evaluateJavascript
+                            webView.evaluateJavascript(
+                                "window.dispatchEvent(new Event('online'));",
+                                null
+                            );
+                        }
+                        
+                        // إبلاغ المستمع إن وجد
+                        if (oldState != hasInternet && listener != null) {
+                            new Handler(Looper.getMainLooper()).post(() -> listener.onNetworkChanged(hasInternet));
+                        }
+                    }
+
                     // 🛡️ يتم استدعاؤها عند تغير خصائص الشبكة (هنا يكمن سر التحقق من الإنترنت الحقيقي)
                     @Override
                     public void onCapabilitiesChanged(Network network, NetworkCapabilities caps) {
@@ -77,4 +112,4 @@ public class NetworkMonitor {
     public static boolean isInternetAvailable(Context context) {
         return isConnected.get();
     }
-    }
+                                                                     }
