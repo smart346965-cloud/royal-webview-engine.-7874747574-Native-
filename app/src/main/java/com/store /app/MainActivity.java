@@ -24,6 +24,7 @@ import androidx.appcompat.app.AppCompatActivity;
 
 import com.store.app.offline.OfflineUIController;
 import com.store.app.offline.OfflineStateManager;
+import com.store.app.RoyalAuthManager;
 
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -64,6 +65,9 @@ public class MainActivity extends AppCompatActivity {
 
     // 🔥 مدير واجهات الأوفلاين
     private OfflineUIController offlineController;
+
+    // 🔥 مدير المصادقة والدفع
+    private RoyalAuthManager royalAuthManager;
 
     // =========================================================
     // 🚀 دورة الحياة الأساسية
@@ -149,6 +153,9 @@ public class MainActivity extends AppCompatActivity {
         // 🔥 ربط OfflineStateManager بعد تهيئة OfflineUIController
         OfflineStateManager.getInstance().bind(activeWebView, offlineController);
 
+        // 🔥 تهيئة مدير المصادقة والدفع
+        royalAuthManager = new RoyalAuthManager(this, getApplicationContext());
+
         // 🚀 فحص الإنترنت الأولي (عند الإقلاع)
         if (!NetworkMonitor.isInternetAvailable(this)) {
             if (offlineController != null) {
@@ -219,6 +226,12 @@ public class MainActivity extends AppCompatActivity {
 
         // 🔥 إلغاء ربط OfflineStateManager
         OfflineStateManager.getInstance().unbind();
+
+        // 🔥 تنظيف مدير المصادقة والدفع
+        if (royalAuthManager != null) {
+            royalAuthManager.destroy();
+            royalAuthManager = null;
+        }
 
         RoyalWebViewHost.detach();
         super.onDestroy();
@@ -441,57 +454,108 @@ public class MainActivity extends AppCompatActivity {
     }
 
     // =========================================================
-    // 🔄 نتائج النشاطات والصلاحيات (بدون تغيير)
+    // 🔄 نتائج النشاطات والصلاحيات (محسّن)
     // =========================================================
 
-    // 👑 [تعديل جراحي]: الجسر المفقود لاستقبال نتائج الاستوديو ومدير الملفات
-    // هذه الدالة تلتقط الملف/الصورة التي اختارها المستخدم وتعيدها مباشرة إلى محرك الويب
     @Override
     protected void onActivityResult(int requestCode, int resultCode, android.content.Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
 
+        // 🔥 معالجة اختيار الملفات (رفع الصور)
         if (requestCode == RoyalCapabilitiesEngine.FILECHOOSER_RESULTCODE) {
             if (RoyalCapabilitiesEngine.filePathCallback == null) return;
 
             Uri[] results = null;
 
-            // التحقق من أن المستخدم اختار ملفاً بالفعل ولم يتراجع
             if (resultCode == android.app.Activity.RESULT_OK) {
                 if (data != null) {
                     String dataString = data.getDataString();
                     android.content.ClipData clipData = data.getClipData();
 
-                    // دعم رفع ملفات متعددة (Multiple Files Upload)
                     if (clipData != null) {
                         results = new Uri[clipData.getItemCount()];
                         for (int i = 0; i < clipData.getItemCount(); i++) {
                             results[i] = clipData.getItemAt(i).getUri();
                         }
-                    }
-                    // دعم رفع ملف واحد
-                    else if (dataString != null) {
+                    } else if (dataString != null) {
                         results = new Uri[]{Uri.parse(dataString)};
                     }
                 }
             }
 
-            // إرسال النتيجة إلى الويب فيو (سواء كانت ملفات أو null إذا ألغى المستخدم)
             RoyalCapabilitiesEngine.filePathCallback.onReceiveValue(results);
             RoyalCapabilitiesEngine.filePathCallback = null;
+            return;
+        }
+
+        // 🔥 معالجة نتائج المصادقة (Google Sign-In)
+        if (royalAuthManager != null) {
+            royalAuthManager.handleGoogleSignInResult(requestCode, resultCode, data, new RoyalAuthManager.AuthCallback() {
+                @Override
+                public void onAuthSuccess(String token, String userId) {
+                    Log.i(TAG, "✅ Google Sign-In success: " + userId);
+                    // هنا يمكنك تمرير token إلى WebView عبر evaluateJavascript
+                    if (activeWebView != null) {
+                        activeWebView.evaluateJavascript(
+                            "window.dispatchEvent(new CustomEvent('auth-success', { detail: { token: '" + token + "', userId: '" + userId + "' } }));",
+                            null
+                        );
+                    }
+                }
+
+                @Override
+                public void onAuthError(Exception exception) {
+                    Log.e(TAG, "❌ Google Sign-In error", exception);
+                    if (activeWebView != null) {
+                        activeWebView.evaluateJavascript(
+                            "window.dispatchEvent(new CustomEvent('auth-error', { detail: { message: '" + exception.getMessage() + "' } }));",
+                            null
+                        );
+                    }
+                }
+
+                @Override
+                public void onAuthCancel() {
+                    Log.w(TAG, "⚠️ Google Sign-In cancelled");
+                    if (activeWebView != null) {
+                        activeWebView.evaluateJavascript(
+                            "window.dispatchEvent(new Event('auth-cancel'));",
+                            null
+                        );
+                    }
+                }
+            });
         }
     }
 
-    // [تعديل جراحي في MainActivity.java - جسر الصلاحيات]
+    // =========================================================
+    // 🔗 معالجة الروابط العميقة (Deep Links)
+    // =========================================================
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        // إذا كان intent يحتوي على بيانات من Auth Tab أو Custom Tabs
+        if (intent != null && intent.getData() != null) {
+            Uri data = intent.getData();
+            Log.i(TAG, "🔗 Deep link received: " + data.toString());
+            // يمكن معالجتها حسب الحاجة
+        }
+    }
+
+    // =========================================================
+    // 🔐 صلاحيات التطبيق (مدمجة مع محرك القدرات)
+    // =========================================================
+
     @Override
     public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
-
-        // 🛡️ تمرير نتيجة موافقة المستخدم إلى محرك القدرات
+        // تمرير النتيجة إلى محرك القدرات (لرفع الملفات)
         if (engineManager != null && engineManager.getCapabilitiesHandler() != null) {
-            // إذا كنت تستخدم اسم الكلاس من المهندس (RoyalCapabilitiesEngine)
-            // تأكد من إضافة دالة getCapabilitiesHandler() في WebEngineManager
             engineManager.getCapabilitiesHandler().handlePermissionResult(requestCode, grantResults);
         }
+        // هنا يمكن تمرير النتائج إلى RoyalAuthManager إذا لزم الأمر
+        // حالياً لا يوجد استخدام مباشر
     }
 
     // =========================================================
@@ -525,4 +589,4 @@ public class MainActivity extends AppCompatActivity {
             }
         }
     }
-            }
+                            }
