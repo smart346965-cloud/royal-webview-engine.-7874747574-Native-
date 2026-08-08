@@ -55,6 +55,34 @@ dependencies {
     // 🔔 الإشعارات (جاهزة ومربوطة متى ما أردت تفعيلها)
     implementation libs.onesignal
 
+    // 🔐 Auth Tab
+    implementation libs.androidx.browser
+    
+    // 🔐 Firebase Authentication
+    implementation libs.firebase.auth
+    implementation libs.play.services.auth
+    
+    // 🔐 Facebook Login
+    implementation libs.facebook.login
+    
+    // 🔐 Microsoft Authentication Library (MSAL)
+    implementation libs.msal
+    
+    // 💳 Stripe
+    implementation libs.stripe.android
+    
+    // 💳 PayPal
+    implementation libs.paypal.android
+    
+    // 💳 Braintree Drop-in
+    implementation libs.braintree.dropin
+    
+    // 💳 Razorpay
+    implementation libs.razorpay.checkout
+    
+    // 💳 Google Pay
+    implementation libs.play.services.wallet
+
     // 🧪 مكتبات الاختبار والتأكد من الجودة
     testImplementation libs.junit
     androidTestImplementation libs.ext.junit
