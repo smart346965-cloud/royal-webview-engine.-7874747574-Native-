@@ -107,11 +107,10 @@ public class OfflineStateManager {
                         webView.evaluateJavascript("window.dispatchEvent(new Event('online'));", null);
                     }
 
-                    // إخفاء الدرع والشريط فوراً
-                    if (uiController != null) {
-                        uiController.setOfflineUIVisibility(false);
-                        uiController.setOfflineBarVisibility(false);
-                    }
+                    // ❌ تم حذف السطرين التاليين لمنع إزالة الستار قبل اكتمال التحميل
+                    // uiController.setOfflineUIVisibility(false);
+                    // uiController.setOfflineBarVisibility(false);
+                    
                     isOnErrorPage = false;
                 }
             }, 1000); // زيادة المهلة لـ 1000ms لضمان استقرار جلسة الـ SSL بعد التصديق
@@ -203,4 +202,22 @@ public class OfflineStateManager {
             uiController.shakeOfflineBar();
         }
     }
-                            }
+
+    // ==========================================
+    // 🚀 إخطار جاهزية الصفحة (الإضافة الجديدة)
+    // ==========================================
+
+    /**
+     * 🎯 تُستدعى من WebEngineManager عند اكتمال تحميل الصفحة بنجاح
+     * لإخفاء واجهات الأوفلاين بشكل آمن
+     */
+    public void notifyPageReadyToHide() {
+        mainHandler.post(() -> {
+            if (uiController != null) {
+                uiController.forceHideAllInternal(); // 🚀 الآن فقط نزيح الستار بأمان
+                isOnErrorPage = false;
+                Log.i(TAG, "✅ Page ready, offline UI hidden.");
+            }
+        });
+    }
+            }
