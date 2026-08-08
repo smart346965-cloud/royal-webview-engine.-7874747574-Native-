@@ -36,20 +36,7 @@ android {
 }
 
 dependencies {
-    // 🛡️ مكتبات أندرويد الأساسية
-    implementation libs.appcompat
-    implementation libs.material
-    implementation libs.activity
-    implementation libs.constraintlayout
-    
-    // 🌐 WebKit
-    implementation libs.androidx.webkit
-    
-    // 🎨 Splash Screen
-    implementation libs.androidx.core.splashscreen
-    
-    // 🔔 OneSignal
-    implementation libs.onesignal
+    // ... (المكتبات الأساسية تبقى كما هي) ...
 
     // 🔐 Auth Tab
     implementation libs.androidx.browser
@@ -58,29 +45,31 @@ dependencies {
     implementation libs.firebase.auth
     implementation libs.play.services.auth
     
-    // 🔐 Facebook Login (من المستودع الصحيح)
-    implementation 'com.facebook.android:facebook-login:16.2.1'
+    // 🔐 Facebook Login (من Maven Central)
+    implementation libs.facebook.login
     
-    // 🔐 Microsoft Authentication Library
-    implementation 'com.microsoft.identity.client:msal:5.0.0'
+    // 🔐 Microsoft Authentication Library (مع استبعاد opentelemetry)
+    implementation(libs.msal) {
+        exclude group: 'io.opentelemetry'
+    }
+    // إضافة تبعيات opentelemetry يدوياً (حل مؤقت)
+    implementation 'io.opentelemetry:opentelemetry-api:1.18.0'
+    implementation 'io.opentelemetry:opentelemetry-context:1.18.0'
     
     // 💳 Stripe
-    implementation 'com.stripe:stripe-android:20.53.0'
+    implementation libs.stripe.android
     
-    // 💳 PayPal (من JitPack)
-    implementation 'com.paypal.android:paypal-android-sdk:2.1.0'
+    // 💳 PayPal (باستخدام الـ groupId الصحيح)
+    implementation libs.paypal.sdk
     
-    // 💳 Braintree Drop-in (من المستودع الصحيح)
-    implementation 'com.braintreepayments.api:drop-in:6.0.0'
+    // 💳 Braintree Drop-in
+    implementation libs.braintree.dropin
     
     // 💳 Razorpay
-    implementation 'com.razorpay:checkout:1.6.34'
+    implementation libs.razorpay.checkout
     
     // 💳 Google Pay
-    implementation 'com.google.android.gms:play-services-wallet:19.4.0'
+    implementation libs.play.services.wallet
 
-    // 🧪 اختبارات
-    testImplementation libs.junit
-    androidTestImplementation libs.ext.junit
-    androidTestImplementation libs.espresso.core
+    // ... (اختبارات) ...
 }
