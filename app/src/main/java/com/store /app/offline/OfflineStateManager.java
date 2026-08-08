@@ -87,36 +87,20 @@ public class OfflineStateManager {
     // [تعديل جراحي في OfflineStateManager.java - الإحياء المصدق]
     private void handleNetworkChange(boolean connected) {
         if (webView == null) return;
-
         if (connected) {
-            // ✅ الإنترنت حقيقي ومصدق (Validated): تنفيذ بروتوكول الاستعادة
             mainHandler.postDelayed(() -> {
-                // فحص الرمق الأخير: التأكد أن الحالة ما زالت Validated
                 if (NetworkMonitor.isInternetAvailable(webView.getContext())) {
-                    
-                    Log.i(TAG, "🌐 Restoration: Verified Internet access detected.");
-
-                    if (isOnErrorPage || !isPageValid || webView.getUrl() == null) {
-                        // إذا كنا في حالة خطأ، نقوم بالتحميل القسري للرابط المطلوب
-                        String urlToLoad = (pendingUrl != null) ? pendingUrl : webView.getUrl();
-                        if (urlToLoad == null) urlToLoad = com.store.app.BuildConfig.CLIENT_URL;
-
+                    // 🚀 قرار التحديث القسري: إذا كانت الصفحة بيضاء أو خطأ، اشحن الرابط الأصلي فوراً
+                    if (isOnErrorPage || !isPageValid || webView.getUrl() == null || webView.getUrl().equals("about:blank")) {
+                        String urlToLoad = (pendingUrl != null) ? pendingUrl : com.store.app.BuildConfig.CLIENT_URL;
                         webView.loadUrl(urlToLoad); 
                     } else {
-                        // الموقع شغال؟ نكتفي بإبلاغ الـ JS ليعيد تفعيل وظائفه
                         webView.evaluateJavascript("window.dispatchEvent(new Event('online'));", null);
                     }
-
-                    // ❌ تم حذف السطرين التاليين لمنع إزالة الستار قبل اكتمال التحميل
-                    // uiController.setOfflineUIVisibility(false);
-                    // uiController.setOfflineBarVisibility(false);
-                    
-                    isOnErrorPage = false;
+                    // 🛡️ ملاحظة: لا نخفي الواجهات هنا! الإخفاء سيتم عبر notifyPageReadyToHide
                 }
-            }, 1000); // زيادة المهلة لـ 1000ms لضمان استقرار جلسة الـ SSL بعد التصديق
+            }, 1000); // ثانية استقرار
         } else {
-            // ❌ الإنترنت انقطع أو "وهمي" (No Validation)
-            Log.w(TAG, "📡 Pulse Lost: Connection is either dead or fake.");
             if (isPageValid && !isOnErrorPage) {
                 if (uiController != null) uiController.setOfflineBarVisibility(true);
                 webView.evaluateJavascript("window.dispatchEvent(new Event('offline'));", null);
@@ -220,4 +204,4 @@ public class OfflineStateManager {
             }
         });
     }
-            }
+        }
