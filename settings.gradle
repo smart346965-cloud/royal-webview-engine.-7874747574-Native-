@@ -12,16 +12,10 @@ pluginManagement {
     }
 }
 dependencyResolutionManagement {
-    // 🔥 تغيير الوضع إلى PREFER_SETTINGS لتجنب التعارض
     repositoriesMode.set(RepositoriesMode.PREFER_SETTINGS)
     repositories {
         google()
         mavenCentral()
-        
-        // 🔐 Facebook Login
-        maven {
-            url "https://maven.facebook.com/repository"
-        }
         
         // 🔐 Microsoft MSAL
         maven {
@@ -32,10 +26,14 @@ dependencyResolutionManagement {
             url "https://maven.microsoft.com/artifactory/public"
         }
         
-        // 💳 Braintree / CardinalCommerce
+        // 💳 Braintree / CardinalCommerce (مع بيانات الاعتماد الصحيحة)
         maven {
             url "https://cardinalcommerceprod.jfrog.io/artifactory/android"
             name "CardinalCommerce"
+            credentials {
+                username = 'braintree_team_sdk'
+                password = 'AKCp8jQcoDy2hxSWhDAUQKXLDPDx6NYRkqrgFLRc3qDrayg6rrCbJpsKKyMwaykVL8FWusJpp'
+            }
         }
         
         // 💳 PayPal (JitPack)
