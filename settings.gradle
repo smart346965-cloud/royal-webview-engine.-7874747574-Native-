@@ -1,12 +1,6 @@
 pluginManagement {
     repositories {
-        google {
-            content {
-                includeGroupByRegex("com\\.android.*")
-                includeGroupByRegex("com\\.google.*")
-                includeGroupByRegex("androidx.*")
-            }
-        }
+        google()
         mavenCentral()
         gradlePluginPortal()
     }
@@ -17,16 +11,7 @@ dependencyResolutionManagement {
         google()
         mavenCentral()
         
-        // 🔐 Microsoft MSAL
-        maven {
-            url "https://pkgs.dev.azure.com/MicrosoftDeviceSDK/DuoSDK-Public/_packaging/Duo-SDK-Feed/maven/v1"
-            name "Duo-SDK-Feed"
-        }
-        maven {
-            url "https://maven.microsoft.com/artifactory/public"
-        }
-        
-        // 💳 Braintree / CardinalCommerce (مع بيانات الاعتماد الصحيحة)
+        // 💳 Braintree / CardinalCommerce (بيانات الاعتماد مطلوبة)
         maven {
             url "https://cardinalcommerceprod.jfrog.io/artifactory/android"
             name "CardinalCommerce"
@@ -36,7 +21,7 @@ dependencyResolutionManagement {
             }
         }
         
-        // 💳 PayPal (JitPack)
+        // 💳 PayPal (بعض الإصدارات موجودة في JitPack)
         maven {
             url "https://jitpack.io"
         }
