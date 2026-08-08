@@ -283,6 +283,11 @@ public class WebEngineManager {
             // =========================================================
             @Override
             public void onPageCommitVisible(WebView view, String url) {
+                // 🎯 الإشارة الذهبية: الموقع أصبح جاهزاً خلف الدرع، الآن نزيحه
+                if (NetworkMonitor.isInternetAvailable(context)) {
+                    OfflineStateManager.getInstance().notifyPageReadyToHide();
+                }
+
                 // إبلاغ OfflineStateManager بأن الصفحة جاهزة للإخفاء
                 if (capabilitiesEngine != null) OfflineStateManager.getInstance().notifyPageReadyToHide();
 
@@ -471,8 +476,8 @@ public class WebEngineManager {
                 // 🛡️ قفل الأوفلاين الحتمي: منع المغادرة لأي رابط داخلي إذا انقطع النت
                 if (!NetworkMonitor.isInternetAvailable(context)) {
                     if (isSameOrigin(uri)) {
-                        // [تحسين]: لا نستخدم stopLoading() هنا لأنها قد تسبب ومضة في بعض الأجهزة
-                        // نكتفي بـ return true لمنع المتصفح من محاولة الانتقال أصلاً
+                        // 🛡️ قفل "الحصانة": أوقف المحرك فوراً قبل أن يفرغ الذاكرة الرسومية
+                        view.stopLoading(); 
                         OfflineStateManager.getInstance().notifyOfflineClickAttempt();
                         return true; 
                     }
@@ -647,4 +652,4 @@ public class WebEngineManager {
     public boolean isPageValid() {
         return OfflineStateManager.getInstance().isPageValid();
     }
-                    }
+            }
