@@ -1,28 +1,23 @@
+pluginManagement {
+    repositories {
+        google {
+            content {
+                includeGroupByRegex("com\\.android.*")
+                includeGroupByRegex("com\\.google.*")
+                includeGroupByRegex("androidx.*")
+            }
+        }
+        mavenCentral()
+        gradlePluginPortal()
+    }
+}
 dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.PREFER_SETTINGS)
     repositories {
         google()
         mavenCentral()
-        
-        // ✅ مستودع Microsoft المطلوب لـ display-mask
-        maven {
-            url "https://pkgs.dev.azure.com/MicrosoftDeviceSDK/DuoSDK-Public/_packaging/Duo-SDK-Feed/maven/v1"
-            name "DuoSDK"
-        }
-        
-        // 💳 Braintree / CardinalCommerce
-        maven {
-            url "https://cardinalcommerceprod.jfrog.io/artifactory/android"
-            name "CardinalCommerce"
-            credentials {
-                username = 'braintree_team_sdk'
-                password = 'AKCp8jQcoDy2hxSWhDAUQKXLDPDx6NYRkqrgFLRc3qDrayg6rrCbJpsKKyMwaykVL8FWusJpp'
-            }
-        }
-        
-        // 💳 PayPal (JitPack)
-        maven {
-            url "https://jitpack.io"
-        }
     }
 }
+
+rootProject.name = "TWA-mra"
+include ':app'
