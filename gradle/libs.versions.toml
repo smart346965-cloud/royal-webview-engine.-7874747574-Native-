@@ -11,15 +11,6 @@ onesignal = "5.1.13"
 coreSplash = "1.0.1"
 webkit = "1.16.0"
 androidx-browser = "1.8.0"
-firebase-auth = "23.0.0"
-play-services-auth = "21.2.0"
-facebook-login = "17.0.2"
-msal = "5.0.0"
-stripe-android = "20.53.0"
-paypal-sdk = "2.16.0"                       # تم التحديث
-braintree-dropin = "6.0.0"
-razorpay-checkout = "1.6.34"
-play-services-wallet = "19.4.0"
 
 [libraries]
 junit = { group = "junit", name = "junit", version.ref = "junit" }
@@ -33,15 +24,6 @@ onesignal = { group = "com.onesignal", name = "OneSignal", version.ref = "onesig
 androidx-core-splashscreen = { group = "androidx.core", name = "core-splashscreen", version.ref = "coreSplash" }
 androidx-webkit = { group = "androidx.webkit", name = "webkit", version.ref = "webkit" }
 androidx-browser = { group = "androidx.browser", name = "browser", version.ref = "androidx-browser" }
-firebase-auth = { group = "com.google.firebase", name = "firebase-auth", version.ref = "firebase-auth" }
-play-services-auth = { group = "com.google.android.gms", name = "play-services-auth", version.ref = "play-services-auth" }
-facebook-login = { group = "com.facebook.android", name = "facebook-login", version.ref = "facebook-login" }
-msal = { group = "com.microsoft.identity.client", name = "msal", version.ref = "msal" }
-stripe-android = { group = "com.stripe", name = "stripe-android", version.ref = "stripe-android" }
-paypal-sdk = { group = "com.paypal.sdk", name = "paypal-android-sdk", version.ref = "paypal-sdk" } # تم التحديث
-braintree-dropin = { group = "com.braintreepayments.api", name = "drop-in", version.ref = "braintree-dropin" }
-razorpay-checkout = { group = "com.razorpay", name = "checkout", version.ref = "razorpay-checkout" }
-play-services-wallet = { group = "com.google.android.gms", name = "play-services-wallet", version.ref = "play-services-wallet" }
 
 [plugins]
 androidApplication = { id = "com.android.application", version.ref = "agp" }
