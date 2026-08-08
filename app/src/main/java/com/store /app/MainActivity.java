@@ -145,13 +145,11 @@ public class MainActivity extends AppCompatActivity {
 
         // 7️⃣ مراقبة الشبكة وتهيئة مدير الأوفلاين
         NetworkMonitor.init(this);
-        setupNetworkListener();
 
-        // 🔥 تهيئة OfflineUIController
+        // 🔗 الربط الثلاثي الموحد
+        NetworkMonitor.setWebView(activeWebView);
         offlineController = new OfflineUIController(this, activeWebView, engineManager);
         offlineController.init();
-
-        // 🔥 ربط OfflineStateManager بعد تهيئة OfflineUIController
         OfflineStateManager.getInstance().bind(activeWebView, offlineController);
 
         // 🔥 تهيئة مدير المصادقة والدفع
@@ -342,14 +340,6 @@ public class MainActivity extends AppCompatActivity {
             }
         });
         Log.i(TAG, "✅ Back navigation optimized.");
-    }
-
-    /**
-     * 🔥 مراقبة الشبكة المحسّنة (تم تفويضها إلى OfflineUIController)
-     */
-    private void setupNetworkListener() {
-        // ✅ تم نقل المسؤولية بالكامل إلى OfflineUIController
-        Log.i(TAG, "✅ Network listener is now handled by OfflineUIController.");
     }
 
     /**
@@ -557,4 +547,4 @@ public class MainActivity extends AppCompatActivity {
             }
         }
     }
-            }
+    }
