@@ -2,37 +2,6 @@ plugins {
     alias(libs.plugins.androidApplication)
 }
 
-// 🔥 إضافة المستودعات المفقودة
-repositories {
-    google()
-    mavenCentral()
-    
-    // 🔐 Facebook Login
-    maven {
-        url "https://maven.facebook.com/repository"
-    }
-    
-    // 🔐 Microsoft MSAL
-    maven {
-        url "https://pkgs.dev.azure.com/MicrosoftDeviceSDK/DuoSDK-Public/_packaging/Duo-SDK-Feed/maven/v1"
-        name "Duo-SDK-Feed"
-    }
-    maven {
-        url "https://maven.microsoft.com/artifactory/public"
-    }
-    
-    // 💳 Braintree / CardinalCommerce
-    maven {
-        url "https://cardinalcommerceprod.jfrog.io/artifactory/android"
-        name "CardinalCommerce"
-    }
-    
-    // 💳 PayPal (JitPack)
-    maven {
-        url "https://jitpack.io"
-    }
-}
-
 android {
     namespace 'com.store.app'
     compileSdk 34
