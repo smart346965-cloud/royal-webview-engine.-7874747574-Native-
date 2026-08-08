@@ -16,8 +16,8 @@ play-services-auth = "21.2.0"
 facebook-login = "16.2.1"
 msal = "5.0.0"
 stripe-android = "20.53.0"
-paypal-android = "2.0.0"
-braintree-dropin = "5.0.0"
+paypal-android = "2.1.0"      # تم التحديث
+braintree-dropin = "6.0.0"    # تم التحديث
 razorpay-checkout = "1.6.34"
 play-services-wallet = "19.4.0"
 
