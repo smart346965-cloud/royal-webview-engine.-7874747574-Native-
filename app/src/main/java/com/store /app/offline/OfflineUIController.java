@@ -21,7 +21,7 @@ import com.store.app.NetworkMonitor;
 import com.store.app.R;
 import com.store.app.RoyalNetworkEngine;
 import com.store.app.WebEngineManager;
-import com.store.app.offline.OfflineStateManager; // ✅ صحيح
+import com.store.app.offline.OfflineStateManager;
 
 /**
  * 👑 OfflineUIController - المسؤول عن إدارة واجهات الأوفلاين
@@ -156,26 +156,33 @@ public class OfflineUIController {
         }
     }
 
+    // [تعديل جراحي في OfflineUIController.java]
     private void handleOnlineState() {
-        Log.i(TAG, "🌐 Network restored. Handling online state...");
+        Log.i(TAG, "🌐 Network restored. Synchronizing UI...");
 
         if (webView == null) return;
 
-        // إخفاء الواجهة الكبيرة إن كانت ظاهرة
-        if (isOfflineUIVisible) {
-            hideOfflineUI();
-        }
-
-        // إخفاء الشريط النحيف إن كان ظاهراً (مع تأثير بصري)
+        // ❌ [تعديل]: لا نخفي الواجهة الكبيرة هنا فوراً، سنتركها حتى يكتمل التحميل
+        // لكي لا يرى المستخدم صفحة بيضاء أثناء انتظار رد السيرفر
+        
         if (offlineBar != null && offlineBar.getVisibility() == View.VISIBLE) {
             hideOfflineBarWithAnimation();
         }
 
-        // إذا كانت الصفحة فارغة وتحتاج تحميل
-        if (!isPageLoaded && webView.getUrl() == null) {
+        if (webView.getUrl() == null || webView.getUrl().equals("about:blank")) {
+            // نستخدم loadUrl بدلاً من reload لضمان كسر حالة الأوفلاين
             webView.loadUrl(BuildConfig.CLIENT_URL);
-            isPageLoaded = true;
+        } else if (!isPageLoaded) {
+            webView.reload();
         }
+    }
+
+    // أضف هذه الدالة ليتم استدعاؤها من WebEngineManager عند نجاح التحميل
+    public void forceHideAllInternal() {
+        activity.runOnUiThread(() -> {
+            if (isOfflineUIVisible) hideOfflineUI();
+            setOfflineBarVisibility(false);
+        });
     }
 
     // ==========================================
@@ -501,4 +508,4 @@ public class OfflineUIController {
     public void setCallback(OfflineUICallback callback) {
         this.callback = callback;
     }
-    }
+}
