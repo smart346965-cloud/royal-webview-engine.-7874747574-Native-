@@ -38,7 +38,7 @@ import java.util.concurrent.Executors;
  * - Time-Based Memory Purge (تفريغ الذاكرة الاستباقي)
  * - shouldInterceptRequest Short Circuit (تحسين اعتراض الطلبات)
  * - Renderer Importance API (أولوية معالج العرض)
- * - onTrimMemory Optimization (تحسين استجابة ضغط الذاكررة)
+ * - onTrimMemory Optimization (تحسين استجابة ضغط الذاكرة)
  * - saveState/restoreState (تسريع حفظ واستعادة الحالة)
  * - Prefetch Native Library (تحميل المكتبات الأصلية مسبقاً)
  * - Threading Optimization (تحسين إدارة الخيوط)
@@ -489,10 +489,10 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
 
-        // 🔥 معالجة نتائج Auth Tab و Custom Tabs
+        // 🔥 معالجة نتائج المصادقة والدفع
         if (royalAuthManager != null) {
-            royalAuthManager.handleAuthTabResult(resultCode, data);
-            royalAuthManager.handleCustomTabsResult(resultCode, data);
+            royalAuthManager.handleAuthResult(resultCode, data);
+            royalAuthManager.handlePaymentResult(resultCode, data);
         }
     }
 
