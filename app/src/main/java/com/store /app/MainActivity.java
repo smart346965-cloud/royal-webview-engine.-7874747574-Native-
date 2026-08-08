@@ -1,5 +1,6 @@
 package com.store.app;
 
+import android.content.Intent;
 import android.graphics.Color;
 import android.graphics.drawable.ColorDrawable;
 import android.net.Uri;
@@ -488,43 +489,10 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
 
-        // 🔥 معالجة نتائج المصادقة (Google Sign-In)
+        // 🔥 معالجة نتائج Auth Tab و Custom Tabs
         if (royalAuthManager != null) {
-            royalAuthManager.handleGoogleSignInResult(requestCode, resultCode, data, new RoyalAuthManager.AuthCallback() {
-                @Override
-                public void onAuthSuccess(String token, String userId) {
-                    Log.i(TAG, "✅ Google Sign-In success: " + userId);
-                    // هنا يمكنك تمرير token إلى WebView عبر evaluateJavascript
-                    if (activeWebView != null) {
-                        activeWebView.evaluateJavascript(
-                            "window.dispatchEvent(new CustomEvent('auth-success', { detail: { token: '" + token + "', userId: '" + userId + "' } }));",
-                            null
-                        );
-                    }
-                }
-
-                @Override
-                public void onAuthError(Exception exception) {
-                    Log.e(TAG, "❌ Google Sign-In error", exception);
-                    if (activeWebView != null) {
-                        activeWebView.evaluateJavascript(
-                            "window.dispatchEvent(new CustomEvent('auth-error', { detail: { message: '" + exception.getMessage() + "' } }));",
-                            null
-                        );
-                    }
-                }
-
-                @Override
-                public void onAuthCancel() {
-                    Log.w(TAG, "⚠️ Google Sign-In cancelled");
-                    if (activeWebView != null) {
-                        activeWebView.evaluateJavascript(
-                            "window.dispatchEvent(new Event('auth-cancel'));",
-                            null
-                        );
-                    }
-                }
-            });
+            royalAuthManager.handleAuthTabResult(resultCode, data);
+            royalAuthManager.handleCustomTabsResult(resultCode, data);
         }
     }
 
@@ -589,4 +557,4 @@ public class MainActivity extends AppCompatActivity {
             }
         }
     }
-                            }
+            }
