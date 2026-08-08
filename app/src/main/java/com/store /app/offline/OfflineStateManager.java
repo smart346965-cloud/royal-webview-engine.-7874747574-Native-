@@ -61,9 +61,15 @@ public class OfflineStateManager {
     // 🔗 الربط مع المكونات الأخرى
     // ==========================================
 
+    // [تعديل جراحي في OfflineStateManager.java]
     public void bind(WebView webView, OfflineUIController uiController) {
         this.webView = webView;
         this.uiController = uiController;
+        
+        // 🚀 [إضافة]: تعيين الرابط الافتراضي كـ pendingUrl منذ البداية لضمان عدم الضياع
+        if (this.pendingUrl == null) {
+            this.pendingUrl = com.store.app.BuildConfig.CLIENT_URL;
+        }
 
         // تسجيل مستمع الشبكة
         NetworkMonitor.setListener(connected -> {
@@ -78,39 +84,37 @@ public class OfflineStateManager {
     // 📡 معالجة تغيرات الشبكة (معدلة)
     // ==========================================
 
-    // [تعديل جراحي في OfflineStateManager.java - دالة handleNetworkChange]
     private void handleNetworkChange(boolean connected) {
         if (webView == null) return;
 
         if (connected) {
-            // ✅ الإنترنت عاد: تنفيذ بروتوكول "الاستعادة القسرية"
+            // ✅ الإنترنت عاد: بروتوكول "الاستعادة الصارمة"
             mainHandler.postDelayed(() -> {
                 if (NetworkMonitor.isInternetAvailable(webView.getContext())) {
                     
-                    // إذا كنا في صفحة خطأ أو الموقع لم يحمل بعد
-                    if (isOnErrorPage || !isPageValid || webView.getUrl() == null) {
-                        String urlToLoad = (pendingUrl != null) ? pendingUrl : webView.getUrl();
-                        if (urlToLoad == null) urlToLoad = com.store.app.BuildConfig.CLIENT_URL;
-
-                        Log.i(TAG, "🌐 Auto-Restoration: Forcing load of -> " + urlToLoad);
-                        webView.loadUrl(urlToLoad); // تحميل قسري للرابط لتجاوز صفحة الخطأ
+                    // 🛡️ إذا كان الدرع الكبير ظاهراً (بداية تشغيل أوفلاين)
+                    if (uiController != null && uiController.isOfflineUIVisible()) {
+                        Log.i(TAG, "🌐 Cold Start Recovery: Loading -> " + pendingUrl);
+                        webView.loadUrl(pendingUrl);
+                        // لا نخفي الدرع هنا، بل ننتظر إشارة onPageCommitVisible في الـ Manager لضمان السلاسة
+                    } 
+                    // 🛡️ إذا كان الإنترنت انقطع أثناء التصفح (الشريط النحيف كان ظاهراً)
+                    else if (isOnErrorPage || !isPageValid) {
+                        webView.reload();
                     } else {
-                        // الموقع شغال؟ أرسل نبضة تحديث للبيانات فقط
                         webView.evaluateJavascript("window.dispatchEvent(new Event('online'));", null);
                     }
 
-                    // إخفاء الواجهات
                     if (uiController != null) {
-                        uiController.setOfflineUIVisibility(false);
                         uiController.setOfflineBarVisibility(false);
                     }
-                    isOnErrorPage = false;
                 }
-            }, 800); // مهلة 800ms لضمان استقرار الشبكة في نظام أندرويد
+            }, 600); // مهلة 600ms لضمان استقرار الشبكة في نظام أندرويد
         } else {
             // ❌ الإنترنت انقطع
-            if (isPageValid) {
+            if (isPageValid && !isOnErrorPage) {
                 if (uiController != null) uiController.setOfflineBarVisibility(true);
+                webView.evaluateJavascript("window.dispatchEvent(new Event('offline'));", null);
             } else {
                 if (uiController != null) uiController.setOfflineUIVisibility(true);
             }
@@ -193,4 +197,4 @@ public class OfflineStateManager {
             uiController.shakeOfflineBar();
         }
     }
-                    }
+                            }
