@@ -79,15 +79,9 @@ public class NetworkMonitor {
                     // 🛡️ يتم استدعاؤها عند تغير خصائص الشبكة (هنا يكمن سر التحقق من الإنترنت الحقيقي)
                     @Override
                     public void onCapabilitiesChanged(Network network, NetworkCapabilities caps) {
-                        // فحص الصلاحية: هل الشبكة تمتلك إنترنت فعلي ومصدق من جوجل؟
                         boolean hasInternet = caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) 
                                            && caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED);
-
-                        // تحديث الحالة الذرية
                         boolean oldState = isConnected.getAndSet(hasInternet);
-                        RoyalNetworkEngine.setNetworkPrefetchAllowed(hasInternet);
-
-                        // 🚀 لا نرسل الإشارة إلا إذا حدث "تغير حقيقي" في جودة الوصول للإنترنت
                         if (oldState != hasInternet && listener != null) {
                             new Handler(Looper.getMainLooper()).post(() -> listener.onNetworkChanged(hasInternet));
                         }
@@ -112,4 +106,4 @@ public class NetworkMonitor {
     public static boolean isInternetAvailable(Context context) {
         return isConnected.get();
     }
-                                                                     }
+                    }
