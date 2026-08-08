@@ -35,21 +35,27 @@ public class NetworkMonitor {
             boolean connected = activeNetwork != null && activeNetwork.isConnectedOrConnecting();
 
             isConnected.set(connected);
-
             RoyalNetworkEngine.setNetworkPrefetchAllowed(connected);
 
-            // مراقبة التغيرات اللحظية بدون استهلاك بطارية
+            // [تعديل جراحي في NetworkMonitor.java - الرادار الصارم]
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
                 cm.registerDefaultNetworkCallback(new ConnectivityManager.NetworkCallback() {
+                    
+                    // 🛡️ يتم استدعاؤها عند تغير خصائص الشبكة (هنا يكمن سر التحقق من الإنترنت الحقيقي)
                     @Override
-                    public void onAvailable(Network network) {
-                        isConnected.set(true);
-                        RoyalNetworkEngine.setNetworkPrefetchAllowed(true);
-                        
-                        // 🚀 بث الإشارة الموحد للعقل المدبر فقط
-                        new Handler(Looper.getMainLooper()).post(() -> {
-                            if (listener != null) listener.onNetworkChanged(true);
-                        });
+                    public void onCapabilitiesChanged(Network network, NetworkCapabilities caps) {
+                        // فحص الصلاحية: هل الشبكة تمتلك إنترنت فعلي ومصدق من جوجل؟
+                        boolean hasInternet = caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) 
+                                           && caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED);
+
+                        // تحديث الحالة الذرية
+                        boolean oldState = isConnected.getAndSet(hasInternet);
+                        RoyalNetworkEngine.setNetworkPrefetchAllowed(hasInternet);
+
+                        // 🚀 لا نرسل الإشارة إلا إذا حدث "تغير حقيقي" في جودة الوصول للإنترنت
+                        if (oldState != hasInternet && listener != null) {
+                            new Handler(Looper.getMainLooper()).post(() -> listener.onNetworkChanged(hasInternet));
+                        }
                     }
 
                     @Override
@@ -57,10 +63,10 @@ public class NetworkMonitor {
                         isConnected.set(false);
                         RoyalNetworkEngine.setNetworkPrefetchAllowed(false);
                         
-                        // 🚀 بث الإشارة الموحد للعقل المدبر فقط
-                        new Handler(Looper.getMainLooper()).post(() -> {
-                            if (listener != null) listener.onNetworkChanged(false);
-                        });
+                        // إبلاغ فوري عند فقدان السلك أو الإشارة
+                        if (listener != null) {
+                            new Handler(Looper.getMainLooper()).post(() -> listener.onNetworkChanged(false));
+                        }
                     }
                 });
             }
@@ -71,4 +77,4 @@ public class NetworkMonitor {
     public static boolean isInternetAvailable(Context context) {
         return isConnected.get();
     }
-}
+    }
