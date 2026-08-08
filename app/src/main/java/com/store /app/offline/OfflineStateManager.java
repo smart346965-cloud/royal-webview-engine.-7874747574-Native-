@@ -84,34 +84,40 @@ public class OfflineStateManager {
     // 📡 معالجة تغيرات الشبكة (معدلة)
     // ==========================================
 
+    // [تعديل جراحي في OfflineStateManager.java - الإحياء المصدق]
     private void handleNetworkChange(boolean connected) {
         if (webView == null) return;
 
         if (connected) {
-            // ✅ الإنترنت عاد: بروتوكول "الاستعادة الصارمة"
+            // ✅ الإنترنت حقيقي ومصدق (Validated): تنفيذ بروتوكول الاستعادة
             mainHandler.postDelayed(() -> {
+                // فحص الرمق الأخير: التأكد أن الحالة ما زالت Validated
                 if (NetworkMonitor.isInternetAvailable(webView.getContext())) {
                     
-                    // 🛡️ إذا كان الدرع الكبير ظاهراً (بداية تشغيل أوفلاين)
-                    if (uiController != null && uiController.isOfflineUIVisible()) {
-                        Log.i(TAG, "🌐 Cold Start Recovery: Loading -> " + pendingUrl);
-                        webView.loadUrl(pendingUrl);
-                        // لا نخفي الدرع هنا، بل ننتظر إشارة onPageCommitVisible في الـ Manager لضمان السلاسة
-                    } 
-                    // 🛡️ إذا كان الإنترنت انقطع أثناء التصفح (الشريط النحيف كان ظاهراً)
-                    else if (isOnErrorPage || !isPageValid) {
-                        webView.reload();
+                    Log.i(TAG, "🌐 Restoration: Verified Internet access detected.");
+
+                    if (isOnErrorPage || !isPageValid || webView.getUrl() == null) {
+                        // إذا كنا في حالة خطأ، نقوم بالتحميل القسري للرابط المطلوب
+                        String urlToLoad = (pendingUrl != null) ? pendingUrl : webView.getUrl();
+                        if (urlToLoad == null) urlToLoad = com.store.app.BuildConfig.CLIENT_URL;
+
+                        webView.loadUrl(urlToLoad); 
                     } else {
+                        // الموقع شغال؟ نكتفي بإبلاغ الـ JS ليعيد تفعيل وظائفه
                         webView.evaluateJavascript("window.dispatchEvent(new Event('online'));", null);
                     }
 
+                    // إخفاء الدرع والشريط فوراً
                     if (uiController != null) {
+                        uiController.setOfflineUIVisibility(false);
                         uiController.setOfflineBarVisibility(false);
                     }
+                    isOnErrorPage = false;
                 }
-            }, 600); // مهلة 600ms لضمان استقرار الشبكة في نظام أندرويد
+            }, 1000); // زيادة المهلة لـ 1000ms لضمان استقرار جلسة الـ SSL بعد التصديق
         } else {
-            // ❌ الإنترنت انقطع
+            // ❌ الإنترنت انقطع أو "وهمي" (No Validation)
+            Log.w(TAG, "📡 Pulse Lost: Connection is either dead or fake.");
             if (isPageValid && !isOnErrorPage) {
                 if (uiController != null) uiController.setOfflineBarVisibility(true);
                 webView.evaluateJavascript("window.dispatchEvent(new Event('offline'));", null);
@@ -197,4 +203,4 @@ public class OfflineStateManager {
             uiController.shakeOfflineBar();
         }
     }
-                }
+                            }
