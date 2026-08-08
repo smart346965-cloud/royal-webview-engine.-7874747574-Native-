@@ -264,67 +264,75 @@ public class WebEngineManager {
                 RoyalPanopticon.recordRequestSent();
             }
 
+            // =========================================================
+            // 🔥 [تعديل 1] onPageFinished المحسّن
+            // =========================================================
             @Override
             public void onPageFinished(WebView view, String url) {
+
                 RoyalPanopticon.recordNavigationComplete();
                 RoyalNetworkEngine.notifyRenderIdle();
-                
-                if (url != null && !url.startsWith("data:") && !url.startsWith("about:") && !url.contains("chromewebdata")) {
-                    OfflineStateManager.getInstance().setPageValid(true);
-                    Log.i(TAG, "✅ Page finished successfully. Page is valid.");
-                } else {
+
+                if (url == null
+                        || url.startsWith("data:")
+                        || url.startsWith("about:")
+                        || url.contains("chromewebdata")) {
+
                     OfflineStateManager.getInstance().setPageValid(false);
-                    Log.w(TAG, "⚠️ Page finished but URL is invalid or error page.");
+
+                    Log.w(TAG, "⚠️ Invalid/error page finished: " + url);
+                    return;
                 }
+
+                // إذا كان النظام سجل Error قبل onPageFinished
+                // لا نقلب الحالة إلى Valid مرة أخرى.
+                if (OfflineStateManager.getInstance().isOnErrorPage()) {
+                    Log.w(TAG, "⚠️ Ignoring onPageFinished because page is marked as error.");
+                    return;
+                }
+
+                OfflineStateManager.getInstance().setPageValid(true);
+
+                Log.i(TAG, "✅ Page finished successfully. Page is valid.");
             }
 
             // =========================================================
-            // 🔥 [تعديل جراحي مطلوب] onPageCommitVisible
+            // 🔥 [تعديل 2] onPageCommitVisible النهائي
             // =========================================================
             @Override
             public void onPageCommitVisible(WebView view, String url) {
-                // 🎯 الإشارة الذهبية: الموقع أصبح جاهزاً خلف الدرع، الآن نزيحه
-                if (NetworkMonitor.isInternetAvailable(context)) {
-                    OfflineStateManager.getInstance().notifyPageReadyToHide();
-                }
 
-                // إبلاغ OfflineStateManager بأن الصفحة جاهزة للإخفاء
-                if (capabilitiesEngine != null) OfflineStateManager.getInstance().notifyPageReadyToHide();
+                if (url != null
+                        && !url.startsWith("data:")
+                        && !url.startsWith("about:")
+                        && !url.contains("chromewebdata")) {
 
-                // 🚀 [الحل العبقري]: الإنترنت عاد والموقع بدأ بالظهور فعلياً
-                // الآن فقط نخفي واجهة الأوفلاين الكبيرة ليكون الانتقال 0ms بياض
-                if (OfflineStateManager.getInstance().isNetworkAvailable()) {
-                    OfflineStateManager.getInstance().setPageValid(true);
-                    if (activity != null) {
-                        activity.runOnUiThread(() -> {
-                            // إخفاء الدرع الناتيف الكبير الآن فقط
-                            // يتم التعامل معه عبر OfflineStateManager المتصل بـ OfflineUIController
-                        });
+                    Log.i(TAG, "✅ Page committed successfully: " + url);
+
+                    if (trustedHost == null) {
+                        setTrustedOrigin(url);
                     }
-                }
 
-                // باقي الكود الحالي
-                if (url != null && !url.startsWith("data:") && !url.startsWith("about:") && !url.contains("chromewebdata")) {
-                    OfflineStateManager.getInstance().setPageValid(true);
-                    Log.i(TAG, "✅ Page committed successfully. Page is valid.");
+                    if (activity != null) {
+                        activity.runOnUiThread(() ->
+                                WebEnhancer.apply(view, context)
+                        );
+                    }
+
+                    RoyalNetworkEngine.notifyRenderStart();
+                    syncStatusBarColor(view);
+
+                    if (NetworkMonitor.isInternetAvailable(context)
+                            && !OfflineStateManager.getInstance().isOnErrorPage()
+                            && OfflineStateManager.getInstance().isPageValid()) {
+
+                        OfflineStateManager.getInstance().notifyPageReadyToHide();
+                    }
+
                 } else {
-                    OfflineStateManager.getInstance().setPageValid(false);
-                    Log.w(TAG, "⚠️ Page commit but URL is invalid or error page.");
-                }
 
-                if (trustedHost == null && url != null) {
-                    setTrustedOrigin(url);
+                    Log.w(TAG, "⚠️ Invalid page committed: " + url);
                 }
-
-                if (activity != null) {
-                    activity.runOnUiThread(() -> {
-                        WebEnhancer.apply(view, context);
-                    });
-                }
-
-                RoyalNetworkEngine.notifyRenderStart();
-                syncStatusBarColor(view);
-                Log.i("RoyalEngine", "🎨 Page Committed. Content is ready.");
             }
 
             @Override
@@ -436,15 +444,27 @@ public class WebEngineManager {
                     }
                 }
 
-                // 🔥 [تعديل جراحي] معالجة الأوفلاين مع الكاش أولاً
-                if (!NetworkMonitor.isInternetAvailable(context) && request.isForMainFrame()) {
-                    // 🏗️ محاولة السحب من المستودع الملكي (Royal Vault)
-                    WebResourceResponse vaultResponse = RoyalCacheManager.intercept(request);
-                    if (vaultResponse != null) return vaultResponse;
+                // =========================================================
+                // 🔥 [تعديل 3] بلوك Offline المحسّن
+                // =========================================================
+                if (!NetworkMonitor.isInternetAvailable(context)
+                        && request.isForMainFrame()) {
 
-                    // ❌ لا ترجع Null أبداً هنا لأنه يطلق الصفحة البيضاء
-                    // ✅ الحل: إذا لم نجد في الكاش، نطلب من المحرك الصمت والبقاء في مكانه
-                    return new WebResourceResponse("text/plain", "UTF-8", null); 
+                    Log.i(TAG, "📴 Offline main-frame request blocked.");
+
+                    // لا نسمح بإنشاء صفحة خطأ أو صفحة بيضاء.
+                    // الصفحة الحالية تبقى كما هي.
+                    return new WebResourceResponse(
+                            "text/html",
+                            "UTF-8",
+                            200,
+                            "OK",
+                            new java.util.HashMap<>(),
+                            new ByteArrayInputStream(
+                                    "<!doctype html><html><head></head><body></body></html>"
+                                            .getBytes(java.nio.charset.StandardCharsets.UTF_8)
+                            )
+                    );
                 }
 
                 boolean isCoreResource = request.isForMainFrame() || url.contains(".js") || url.contains(".css") || url.contains(".wasm");
@@ -466,7 +486,7 @@ public class WebEngineManager {
             }
 
             // =========================================================
-            // 🔥 [تعديل جراحي مطلوب] shouldOverrideUrlLoading
+            // 🔥 [تعديل 4] shouldOverrideUrlLoading (الإصدار الجديد)
             // =========================================================
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
@@ -486,10 +506,31 @@ public class WebEngineManager {
                 return handleUriLogic(uri, request.isForMainFrame());
             }
 
+            // =========================================================
+            // 🔥 [تعديل 5] shouldOverrideUrlLoading (الإصدار القديم)
+            // =========================================================
             @SuppressWarnings("deprecation")
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, String url) {
-                return handleUriLogic(Uri.parse(url), true);
+
+                if (url == null) {
+                    return false;
+                }
+
+                Uri uri = Uri.parse(url);
+
+                if (!NetworkMonitor.isInternetAvailable(context)
+                        && isSameOrigin(uri)) {
+
+                    view.stopLoading();
+
+                    OfflineStateManager.getInstance()
+                            .notifyOfflineClickAttempt();
+
+                    return true;
+                }
+
+                return handleUriLogic(uri, true);
             }
         });
 
@@ -609,6 +650,9 @@ public class WebEngineManager {
         trustedPort = uri.getPort() == -1 ? (trustedScheme.equals("https") ? 443 : 80) : uri.getPort();
     }
 
+    // =========================================================
+    // 🔥 [تعديل 6] isSameOrigin() المُصحَّحة
+    // =========================================================
     private boolean isSameOrigin(Uri uri) {
         if (uri == null) {
             return false;
@@ -636,8 +680,12 @@ public class WebEngineManager {
             port = "https".equals(targetScheme) ? 443 : 80;
         }
 
-        return trusted.equalsIgnoreCase(targetHost)
-                || targetHost.endsWith("." + trusted)
+        // السماح بـ subdomains
+        boolean hostMatches =
+                trusted.equalsIgnoreCase(targetHost)
+                || targetHost.endsWith("." + trusted);
+
+        return hostMatches
                 && trustedScheme.equalsIgnoreCase(targetScheme)
                 && trustedPort == port;
     }
@@ -652,4 +700,4 @@ public class WebEngineManager {
     public boolean isPageValid() {
         return OfflineStateManager.getInstance().isPageValid();
     }
-            }
+        }
