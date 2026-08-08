@@ -79,22 +79,60 @@ public class NetworkMonitor {
                     // 🛡️ يتم استدعاؤها عند تغير خصائص الشبكة (هنا يكمن سر التحقق من الإنترنت الحقيقي)
                     @Override
                     public void onCapabilitiesChanged(Network network, NetworkCapabilities caps) {
-                        boolean hasInternet = caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) 
-                                           && caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED);
+
+                        boolean hasInternet =
+                                caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                                && caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED);
+
                         boolean oldState = isConnected.getAndSet(hasInternet);
-                        if (oldState != hasInternet && listener != null) {
-                            new Handler(Looper.getMainLooper()).post(() -> listener.onNetworkChanged(hasInternet));
+
+                        RoyalNetworkEngine.setNetworkPrefetchAllowed(hasInternet);
+
+                        if (oldState != hasInternet) {
+
+                            if (webView != null) {
+                                String event = hasInternet ? "online" : "offline";
+
+                                webView.post(() ->
+                                        webView.evaluateJavascript(
+                                                "window.dispatchEvent(new Event('" + event + "'));",
+                                                null
+                                        )
+                                );
+                            }
+
+                            if (listener != null) {
+                                new Handler(Looper.getMainLooper()).post(
+                                        () -> listener.onNetworkChanged(hasInternet)
+                                );
+                            }
                         }
                     }
 
                     @Override
                     public void onLost(Network network) {
-                        isConnected.set(false);
+
+                        boolean oldState = isConnected.getAndSet(false);
+
                         RoyalNetworkEngine.setNetworkPrefetchAllowed(false);
-                        
-                        // إبلاغ فوري عند فقدان السلك أو الإشارة
+
+                        if (!oldState) {
+                            return;
+                        }
+
+                        if (webView != null) {
+                            webView.post(() ->
+                                    webView.evaluateJavascript(
+                                            "window.dispatchEvent(new Event('offline'));",
+                                            null
+                                    )
+                            );
+                        }
+
                         if (listener != null) {
-                            new Handler(Looper.getMainLooper()).post(() -> listener.onNetworkChanged(false));
+                            new Handler(Looper.getMainLooper()).post(
+                                    () -> listener.onNetworkChanged(false)
+                            );
                         }
                     }
                 });
@@ -106,4 +144,4 @@ public class NetworkMonitor {
     public static boolean isInternetAvailable(Context context) {
         return isConnected.get();
     }
-                    }
+                                }
