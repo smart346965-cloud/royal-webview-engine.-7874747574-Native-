@@ -106,10 +106,9 @@ public class OfflineUIController {
         if (!NetworkMonitor.isInternetAvailable(activity)) {
             // الإنترنت مقطوع
             handleOfflineState();
-        } else {
-            // الإنترنت موجود
-            handleOnlineState();
         }
+        // ✅ لا تستدعِ handleOnlineState هنا مباشرة
+        // اتركها لـ OfflineStateManager عند تغير الشبكة
     }
 
     /**
@@ -156,25 +155,27 @@ public class OfflineUIController {
         }
     }
 
-    // [تعديل جراحي في OfflineUIController.java]
     private void handleOnlineState() {
         Log.i(TAG, "🌐 Network restored. Synchronizing UI...");
 
         if (webView == null) return;
 
-        // ❌ [تعديل]: لا نخفي الواجهة الكبيرة هنا فوراً، سنتركها حتى يكتمل التحميل
+        // ❌ لا نخفي الواجهة الكبيرة هنا فوراً، سنتركها حتى يكتمل التحميل
         // لكي لا يرى المستخدم صفحة بيضاء أثناء انتظار رد السيرفر
         
         if (offlineBar != null && offlineBar.getVisibility() == View.VISIBLE) {
             hideOfflineBarWithAnimation();
         }
 
+        // [تعديل]: لا تعمل reload إذا الصفحة صالحة
         if (webView.getUrl() == null || webView.getUrl().equals("about:blank")) {
             // نستخدم loadUrl بدلاً من reload لضمان كسر حالة الأوفلاين
             webView.loadUrl(BuildConfig.CLIENT_URL);
-        } else if (!isPageLoaded) {
+        } else if (!OfflineStateManager.getInstance().isPageValid()) {
+            // فقط إذا الصفحة غير صالحة
             webView.reload();
         }
+        // else: الصفحة صالحة، لا تفعل شيئاً
     }
 
     // أضف هذه الدالة ليتم استدعاؤها من WebEngineManager عند نجاح التحميل
@@ -477,9 +478,9 @@ public class OfflineUIController {
         activity.runOnUiThread(() -> {
             // أنيميشن هز "أبل" الشهير (Shake Animation)
             offlineBar.animate()
-                    .translationX(20f).setDuration(50)
-                    .withEndAction(() -> offlineBar.animate().translationX(-20f).setDuration(50)
-                    .withEndAction(() -> offlineBar.animate().translationX(0f).setDuration(50).start())
+                    .translationX(15f).setDuration(70)
+                    .withEndAction(() -> offlineBar.animate().translationX(-15f).setDuration(70)
+                    .withEndAction(() -> offlineBar.animate().translationX(0f).setDuration(70).start())
                     .start()).start();
                     
             // تغيير النص لحظياً
@@ -508,4 +509,4 @@ public class OfflineUIController {
     public void setCallback(OfflineUICallback callback) {
         this.callback = callback;
     }
-}
+    }
