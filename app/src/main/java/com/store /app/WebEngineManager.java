@@ -480,15 +480,14 @@ public class WebEngineManager {
                 if (request == null || request.getUrl() == null) return false;
                 Uri uri = request.getUrl();
 
-                // 🛡️ قفل الأوفلاين الحتمي: منع المغادرة لأي رابط داخلي إذا انقطع النت
                 if (!NetworkMonitor.isInternetAvailable(context)) {
                     if (isSameOrigin(uri)) {
-                        // ❌ حذف view.stopLoading();
+                        // ❌ لا تحفظ الرابط ولا توقف التحميل
+                        // ✅ فقط اهتز الشريط وأهمل النقر
                         OfflineStateManager.getInstance().notifyOfflineClickAttempt();
-                        return true; 
+                        return true; // تجاهل النقر تماماً
                     }
                 }
-
                 return handleUriLogic(uri, request.isForMainFrame());
             }
 
@@ -498,24 +497,15 @@ public class WebEngineManager {
             @SuppressWarnings("deprecation")
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, String url) {
-
-                if (url == null) {
-                    return false;
-                }
-
+                if (url == null) return false;
                 Uri uri = Uri.parse(url);
 
-                if (!NetworkMonitor.isInternetAvailable(context)
-                        && isSameOrigin(uri)) {
-
-                    // ❌ حذف view.stopLoading();
-
-                    OfflineStateManager.getInstance()
-                            .notifyOfflineClickAttempt();
-
-                    return true;
+                if (!NetworkMonitor.isInternetAvailable(context) && isSameOrigin(uri)) {
+                    // ❌ لا تحفظ الرابط ولا توقف التحميل
+                    // ✅ فقط اهتز الشريط وأهمل النقر
+                    OfflineStateManager.getInstance().notifyOfflineClickAttempt();
+                    return true; // تجاهل النقر تماماً
                 }
-
                 return handleUriLogic(uri, true);
             }
         });
@@ -686,4 +676,4 @@ public class WebEngineManager {
     public boolean isPageValid() {
         return OfflineStateManager.getInstance().isPageValid();
     }
-            }
+    }
