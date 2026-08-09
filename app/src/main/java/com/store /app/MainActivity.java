@@ -146,8 +146,7 @@ public class MainActivity extends AppCompatActivity {
         // 7️⃣ مراقبة الشبكة وتهيئة مدير الأوفلاين
         NetworkMonitor.init(this);
 
-        // 🔗 الربط الثلاثي الموحد
-        NetworkMonitor.setWebView(activeWebView);
+        // 🔗 الربط الثنائي الموحد (تم حذف NetworkMonitor.setWebView)
         offlineController = new OfflineUIController(this, activeWebView, engineManager);
         offlineController.init();
         OfflineStateManager.getInstance().bind(activeWebView, offlineController);
