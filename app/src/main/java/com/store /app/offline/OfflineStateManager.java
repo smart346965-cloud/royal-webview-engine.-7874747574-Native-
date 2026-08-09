@@ -252,4 +252,4 @@ public class OfflineStateManager {
             Log.i(TAG, "✅ Valid page ready. Offline UI hidden.");
         });
     }
-        }
+                }
