@@ -445,26 +445,13 @@ public class WebEngineManager {
                 }
 
                 // =========================================================
-                // 🔥 [تعديل 3] بلوك Offline المحسّن
+                // 🔥 [تعديل 3] بلوك Offline المحسّن (معدل)
                 // =========================================================
-                if (!NetworkMonitor.isInternetAvailable(context)
-                        && request.isForMainFrame()) {
-
-                    Log.i(TAG, "📴 Offline main-frame request blocked.");
-
-                    // لا نسمح بإنشاء صفحة خطأ أو صفحة بيضاء.
-                    // الصفحة الحالية تبقى كما هي.
-                    return new WebResourceResponse(
-                            "text/html",
-                            "UTF-8",
-                            200,
-                            "OK",
-                            new java.util.HashMap<>(),
-                            new ByteArrayInputStream(
-                                    "<!doctype html><html><head></head><body></body></html>"
-                                            .getBytes(java.nio.charset.StandardCharsets.UTF_8)
-                            )
-                    );
+                if (!NetworkMonitor.isInternetAvailable(context) && request.isForMainFrame()) {
+                    Log.i(TAG, "📴 Offline main-frame request blocked. Let current page remain.");
+                    // لا نعيد صفحة فارغة لأن ذلك يفرغ الـ WebView ويعطي صفحة بيضاء.
+                    // نعيد null للسماح للاحتفاظ بالمحتوى الحالي؛ منع التنقل يتم في shouldOverrideUrlLoading.
+                    return null;
                 }
 
                 boolean isCoreResource = request.isForMainFrame() || url.contains(".js") || url.contains(".css") || url.contains(".wasm");
@@ -700,4 +687,4 @@ public class WebEngineManager {
     public boolean isPageValid() {
         return OfflineStateManager.getInstance().isPageValid();
     }
-        }
+                    }
