@@ -8,7 +8,6 @@ import android.net.NetworkRequest;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
-import android.webkit.WebView;
 
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -23,11 +22,7 @@ public class NetworkMonitor {
     }
     private static NetworkStateListener listener;
 
-    // 🔥 مرجع للـ WebView لإرسال الأحداث مباشرة إلى الصفحة
-    private static WebView webView;
-
     public static void setListener(NetworkStateListener l) { listener = l; }
-    public static void setWebView(WebView wv) { webView = wv; }
 
     public static void init(Context context) {
         if (isRegistered) return;
@@ -62,13 +57,7 @@ public class NetworkMonitor {
                         boolean oldState = isConnected.getAndSet(hasInternet);
                         RoyalNetworkEngine.setNetworkPrefetchAllowed(hasInternet);
                         
-                        if (oldState != hasInternet && webView != null) {
-                            // 🔥 إرسال حدث online مباشرة للصفحة عبر evaluateJavascript
-                            webView.evaluateJavascript(
-                                "window.dispatchEvent(new Event('online'));",
-                                null
-                            );
-                        }
+                        // ❌ تم حذف webView.evaluateJavascript("window.dispatchEvent(new Event('online'));", null);
                         
                         // إبلاغ المستمع إن وجد
                         if (oldState != hasInternet && listener != null) {
@@ -90,16 +79,7 @@ public class NetworkMonitor {
 
                         if (oldState != hasInternet) {
 
-                            if (webView != null) {
-                                String event = hasInternet ? "online" : "offline";
-
-                                webView.post(() ->
-                                        webView.evaluateJavascript(
-                                                "window.dispatchEvent(new Event('" + event + "'));",
-                                                null
-                                        )
-                                );
-                            }
+                            // ❌ تم حذف webView.evaluateJavascript("window.dispatchEvent(new Event('" + event + "'));", null);
 
                             if (listener != null) {
                                 new Handler(Looper.getMainLooper()).post(
@@ -120,14 +100,7 @@ public class NetworkMonitor {
                             return;
                         }
 
-                        if (webView != null) {
-                            webView.post(() ->
-                                    webView.evaluateJavascript(
-                                            "window.dispatchEvent(new Event('offline'));",
-                                            null
-                                    )
-                            );
-                        }
+                        // ❌ تم حذف webView.evaluateJavascript("window.dispatchEvent(new Event('offline'));", null);
 
                         if (listener != null) {
                             new Handler(Looper.getMainLooper()).post(
@@ -144,4 +117,4 @@ public class NetworkMonitor {
     public static boolean isInternetAvailable(Context context) {
         return isConnected.get();
     }
-                                }
+}
