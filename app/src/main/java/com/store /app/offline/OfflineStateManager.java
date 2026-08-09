@@ -61,7 +61,6 @@ public class OfflineStateManager {
     // 🔗 الربط مع المكونات الأخرى
     // ==========================================
 
-    // [تعديل جراحي في OfflineStateManager.java - bind() محدثة]
     public void bind(WebView webView, OfflineUIController uiController) {
 
         this.webView = webView;
@@ -99,7 +98,6 @@ public class OfflineStateManager {
     // 📡 معالجة تغيرات الشبكة (معدلة)
     // ==========================================
 
-    // [تعديل جراحي في OfflineStateManager.java - handleNetworkChange() محدثة]
     private void handleNetworkChange(boolean connected) {
 
         if (webView == null) {
@@ -115,13 +113,7 @@ public class OfflineStateManager {
                     uiController.setOfflineBarVisibility(true);
                 }
 
-                webView.post(() ->
-                        webView.evaluateJavascript(
-                                "window.dispatchEvent(new Event('offline'));",
-                                null
-                        )
-                );
-
+                // ❌ تم حذف إرسال حدث 'offline' للـ JS
                 Log.i(TAG, "📴 Network lost. Keeping current valid page.");
 
             } else {
@@ -157,15 +149,8 @@ public class OfflineStateManager {
                     && webView.getUrl() != null
                     && !webView.getUrl().equals("about:blank")) {
 
-                webView.post(() ->
-                        webView.evaluateJavascript(
-                                "window.dispatchEvent(new Event('online'));",
-                                null
-                        )
-                );
-
+                // ❌ تم حذف إرسال حدث 'online' للـ JS
                 Log.i(TAG, "🌐 Internet restored. Keeping current page.");
-
                 return;
             }
 
@@ -189,7 +174,6 @@ public class OfflineStateManager {
     // 🔧 دوال تحديث حالة الصفحة
     // ==========================================
 
-    // [تعديل جراحي في OfflineStateManager.java - setPageValid() محدثة]
     public void setPageValid(boolean valid) {
 
         this.isPageValid = valid;
@@ -201,7 +185,6 @@ public class OfflineStateManager {
         Log.d(TAG, "📄 Page valid set to: " + valid);
     }
 
-    // [تعديل جراحي في OfflineStateManager.java - setErrorPage() محدثة]
     public void setErrorPage(boolean error, String url) {
 
         this.isOnErrorPage = error;
@@ -279,7 +262,6 @@ public class OfflineStateManager {
     // 🚀 إخطار جاهزية الصفحة (الإضافة الجديدة)
     // ==========================================
 
-    // [تعديل جراحي في OfflineStateManager.java - notifyPageReadyToHide() محدثة]
     public void notifyPageReadyToHide() {
 
         mainHandler.post(() -> {
