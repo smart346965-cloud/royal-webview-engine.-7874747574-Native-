@@ -60,8 +60,11 @@ public class NetworkMonitor {
                         // ❌ تم حذف webView.evaluateJavascript("window.dispatchEvent(new Event('online'));", null);
                         
                         // إبلاغ المستمع إن وجد
-                        if (oldState != hasInternet && listener != null) {
-                            new Handler(Looper.getMainLooper()).post(() -> listener.onNetworkChanged(hasInternet));
+                        if (oldState != hasInternet) {
+                            NetworkStateListener l = listener;
+                            if (l != null) {
+                                new Handler(Looper.getMainLooper()).post(() -> l.onNetworkChanged(hasInternet));
+                            }
                         }
                     }
 
@@ -81,9 +84,10 @@ public class NetworkMonitor {
 
                             // ❌ تم حذف webView.evaluateJavascript("window.dispatchEvent(new Event('" + event + "'));", null);
 
-                            if (listener != null) {
+                            NetworkStateListener l = listener;
+                            if (l != null) {
                                 new Handler(Looper.getMainLooper()).post(
-                                        () -> listener.onNetworkChanged(hasInternet)
+                                        () -> l.onNetworkChanged(hasInternet)
                                 );
                             }
                         }
@@ -102,9 +106,10 @@ public class NetworkMonitor {
 
                         // ❌ تم حذف webView.evaluateJavascript("window.dispatchEvent(new Event('offline'));", null);
 
-                        if (listener != null) {
+                        NetworkStateListener l = listener;
+                        if (l != null) {
                             new Handler(Looper.getMainLooper()).post(
-                                    () -> listener.onNetworkChanged(false)
+                                    () -> l.onNetworkChanged(false)
                             );
                         }
                     }
@@ -117,4 +122,4 @@ public class NetworkMonitor {
     public static boolean isInternetAvailable(Context context) {
         return isConnected.get();
     }
-}
+                                }
