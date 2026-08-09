@@ -483,8 +483,7 @@ public class WebEngineManager {
                 // 🛡️ قفل الأوفلاين الحتمي: منع المغادرة لأي رابط داخلي إذا انقطع النت
                 if (!NetworkMonitor.isInternetAvailable(context)) {
                     if (isSameOrigin(uri)) {
-                        // 🛡️ قفل "الحصانة": أوقف المحرك فوراً قبل أن يفرغ الذاكرة الرسومية
-                        view.stopLoading(); 
+                        // ❌ حذف view.stopLoading();
                         OfflineStateManager.getInstance().notifyOfflineClickAttempt();
                         return true; 
                     }
@@ -509,7 +508,7 @@ public class WebEngineManager {
                 if (!NetworkMonitor.isInternetAvailable(context)
                         && isSameOrigin(uri)) {
 
-                    view.stopLoading();
+                    // ❌ حذف view.stopLoading();
 
                     OfflineStateManager.getInstance()
                             .notifyOfflineClickAttempt();
@@ -687,4 +686,4 @@ public class WebEngineManager {
     public boolean isPageValid() {
         return OfflineStateManager.getInstance().isPageValid();
     }
-                    }
+            }
