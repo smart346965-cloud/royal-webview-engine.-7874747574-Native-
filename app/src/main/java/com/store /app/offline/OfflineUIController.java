@@ -82,7 +82,15 @@ public class OfflineUIController {
         createOfflineBar();
         createPureOfflineUI();
 
-        // 2. تسجيل مستمع الشبكة
+        // 2. إنشاء شريط التقدم (progressBar) مرة واحدة
+        progressBar = new ProgressBar(activity, null, android.R.attr.progressBarStyleHorizontal);
+        progressBar.setMax(100);
+        FrameLayout.LayoutParams p = new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, 6, android.view.Gravity.TOP);
+        activity.addContentView(progressBar, p);
+        progressBar.setVisibility(View.GONE);
+
+        // 3. تسجيل مستمع الشبكة
         NetworkMonitor.setListener(connected -> {
             Log.i(TAG, "📡 Network state changed: " + connected);
             handleNetworkChange(connected);
@@ -212,16 +220,13 @@ public class OfflineUIController {
     // عرض overlay تحميل فوق الويب فيو (بدون إخفاء الويب فيو)
     public void showLoadingOverlay() {
         activity.runOnUiThread(() -> {
-            if (progressBar == null) {
-                // إنشاء progressBar بسيط إذا لم يكن موجودا
-                progressBar = new ProgressBar(activity, null, android.R.attr.progressBarStyleHorizontal);
-                progressBar.setMax(100);
-                FrameLayout.LayoutParams p = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 6, android.view.Gravity.TOP);
-                activity.addContentView(progressBar, p);
+            if (progressBar != null) {
+                if (progressBar.getVisibility() != View.VISIBLE) {
+                    progressBar.setAlpha(0f);
+                    progressBar.setVisibility(View.VISIBLE);
+                    progressBar.animate().alpha(1f).setDuration(180).start();
+                }
             }
-            progressBar.setVisibility(View.VISIBLE);
-            progressBar.setAlpha(0f);
-            progressBar.animate().alpha(1f).setDuration(180).start();
         });
     }
 
@@ -557,4 +562,4 @@ public class OfflineUIController {
     public void setCallback(OfflineUICallback callback) {
         this.callback = callback;
     }
-    }
+            }
