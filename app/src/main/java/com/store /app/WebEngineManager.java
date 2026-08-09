@@ -516,19 +516,19 @@ public class WebEngineManager {
     }
 
     // ==========================================
-    // 🧠 محرك الروابط السيادي
+    // 🧠 محرك الروابط السيادي (معدل)
     // ==========================================
     private boolean handleUriLogic(Uri uri, boolean isMainFrame) {
+        if (uri == null) return false;
 
-        if (uri == null) {
-            return false;
+        // ✅ إذا كنا أوفلاين → تجاهل كل النقرات فوراً
+        if (!NetworkMonitor.isInternetAvailable(context)) {
+            OfflineStateManager.getInstance().notifyOfflineClickAttempt();
+            return true; // لا تنفذ أي رابط، لا داخلي ولا خارجي
         }
 
         String scheme = uri.getScheme();
-        if (scheme == null) {
-            return false;
-        }
-
+        if (scheme == null) return false;
         scheme = scheme.toLowerCase();
 
         if (isSameOrigin(uri)) {
