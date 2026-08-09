@@ -186,6 +186,54 @@ public class OfflineUIController {
         });
     }
 
+    // استدعاء عند عودة الشبكة بينما الصفحة صالحة
+    public void showOnlineBarTransition() {
+        if (offlineBar == null) return;
+        activity.runOnUiThread(() -> {
+            offlineBar.setBackgroundColor(Color.parseColor("#1A237E")); // لون الاستعادة
+            offlineBar.setText("🔄 تم استعادة الاتصال، جاري التحديث...");
+            if (offlineBar.getVisibility() != View.VISIBLE) {
+                offlineBar.setVisibility(View.VISIBLE);
+                offlineBar.setAlpha(0f);
+                offlineBar.animate().alpha(1f).setDuration(220).start();
+            } else {
+                offlineBar.animate().scaleX(1.02f).scaleY(1.02f).setDuration(110)
+                    .withEndAction(() -> offlineBar.animate().scaleX(1f).scaleY(1f).setDuration(110).start()).start();
+            }
+            // إخفاء تلقائي بعد مهلة قصيرة إذا لم يتم إخفاؤه من notifyPageReadyToHide
+            new Handler(Looper.getMainLooper()).postDelayed(() -> {
+                if (offlineBar != null && offlineBar.getVisibility() == View.VISIBLE) {
+                    hideOfflineBarWithAnimation();
+                }
+            }, 900);
+        });
+    }
+
+    // عرض overlay تحميل فوق الويب فيو (بدون إخفاء الويب فيو)
+    public void showLoadingOverlay() {
+        activity.runOnUiThread(() -> {
+            if (progressBar == null) {
+                // إنشاء progressBar بسيط إذا لم يكن موجودا
+                progressBar = new ProgressBar(activity, null, android.R.attr.progressBarStyleHorizontal);
+                progressBar.setMax(100);
+                FrameLayout.LayoutParams p = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 6, android.view.Gravity.TOP);
+                activity.addContentView(progressBar, p);
+            }
+            progressBar.setVisibility(View.VISIBLE);
+            progressBar.setAlpha(0f);
+            progressBar.animate().alpha(1f).setDuration(180).start();
+        });
+    }
+
+    public void hideLoadingOverlay() {
+        activity.runOnUiThread(() -> {
+            if (progressBar != null && progressBar.getVisibility() == View.VISIBLE) {
+                progressBar.animate().alpha(0f).setDuration(180)
+                    .withEndAction(() -> progressBar.setVisibility(View.GONE)).start();
+            }
+        });
+    }
+
     // ==========================================
     // 🎨 إنشاء الواجهات
     // ==========================================
@@ -449,7 +497,6 @@ public class OfflineUIController {
         if (offlineBar == null) return;
 
         activity.runOnUiThread(() -> {
-            // تغيير اللون إلى بنفسجي جليدي قبل الإخفاء
             offlineBar.setBackgroundColor(Color.parseColor("#1A237E"));
             offlineBar.setText("🔄 تم استعادة الاتصال، جاري التحديث...");
 
@@ -462,6 +509,9 @@ public class OfflineUIController {
                     }).start();
         });
 
+        // إخفاء أي overlay تحميل إن وُجد
+        hideLoadingOverlay();
+
         if (callback != null) {
             callback.onOfflineBarVisibilityChanged(false);
         }
@@ -472,21 +522,19 @@ public class OfflineUIController {
     // [إضافة جراحية في OfflineUIController.java]
     public void shakeOfflineBar() {
         if (offlineBar == null || offlineBar.getVisibility() != View.VISIBLE) {
-            showOfflineBar(); // أظهره إذا كان مخفياً
+            showOfflineBar();
         }
-        
+
         activity.runOnUiThread(() -> {
-            // أنيميشن هز "أبل" الشهير (Shake Animation)
             offlineBar.animate()
-                    .translationX(15f).setDuration(70)
-                    .withEndAction(() -> offlineBar.animate().translationX(-15f).setDuration(70)
-                    .withEndAction(() -> offlineBar.animate().translationX(0f).setDuration(70).start())
+                    .translationX(12f).setDuration(60)
+                    .withEndAction(() -> offlineBar.animate().translationX(-12f).setDuration(60)
+                    .withEndAction(() -> offlineBar.animate().translationX(0f).setDuration(60).start())
                     .start()).start();
-                    
-            // تغيير النص لحظياً
+
             String originalText = offlineBar.getText().toString();
             offlineBar.setText("⚠️ لا يمكن التحميل، تحقق من الاتصال");
-            new Handler(Looper.getMainLooper()).postDelayed(() -> offlineBar.setText(originalText), 2000);
+            new Handler(Looper.getMainLooper()).postDelayed(() -> offlineBar.setText(originalText), 1800);
         });
     }
 
