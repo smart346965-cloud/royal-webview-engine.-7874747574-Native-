@@ -168,8 +168,11 @@ public class OfflineStateManager {
         this.isPageValid = !error;
 
         if (error && url != null) {
-            this.pendingUrl = url;
-            this.lastFailedUrl = url;
+            // لا تحفظ الرابط إذا كنا أوفلاين (لتفادي تنفيذ النقرات لاحقاً)
+            if (webView != null && NetworkMonitor.isInternetAvailable(webView.getContext())) {
+                this.pendingUrl = url;
+                this.lastFailedUrl = url;
+            }
         }
 
         Log.d(TAG,
@@ -249,4 +252,4 @@ public class OfflineStateManager {
             Log.i(TAG, "✅ Valid page ready. Offline UI hidden.");
         });
     }
-                    }
+        }
