@@ -73,9 +73,13 @@ public class OfflineStateManager {
         isNetworkAvailable =
                 NetworkMonitor.isInternetAvailable(webView.getContext());
 
+        // حماية من تسجيل مستمع مكرر
         NetworkMonitor.setListener(connected -> {
-            isNetworkAvailable = connected;
-            handleNetworkChange(connected);
+            // تفادي استدعاءات متزامنة
+            mainHandler.post(() -> {
+                isNetworkAvailable = connected;
+                handleNetworkChange(connected);
+            });
         });
 
         // تشغيل واجهة الأوفلاين فوراً عند الإقلاع بدون شبكة
@@ -99,75 +103,48 @@ public class OfflineStateManager {
     // ==========================================
 
     private void handleNetworkChange(boolean connected) {
+        if (webView == null) return;
 
-        if (webView == null) {
-            return;
-        }
-
+        // فقدان الشبكة
         if (!connected) {
+            isNetworkAvailable = false;
 
-            // لا نلمس الصفحة الحالية إذا كانت صالحة
             if (isPageValid && !isOnErrorPage) {
-
-                if (uiController != null) {
-                    uiController.setOfflineBarVisibility(true);
-                }
-
-                // ❌ تم حذف إرسال حدث 'offline' للـ JS
-                Log.i(TAG, "📴 Network lost. Keeping current valid page.");
-
+                if (uiController != null) uiController.setOfflineBarVisibility(true);
+                Log.i(TAG, "📴 Network lost. Keeping current valid page and showing offline bar.");
             } else {
-
-                // لا توجد صفحة صالحة: Native Offline فقط
-                if (uiController != null) {
-                    uiController.setOfflineUIVisibility(true);
-                }
-
+                if (uiController != null) uiController.setOfflineUIVisibility(true);
                 Log.i(TAG, "📴 Network lost with no valid page. Showing Native Offline UI.");
             }
-
             return;
         }
 
-        // ==========================================
-        // 🌐 الإنترنت عاد
-        // ==========================================
+        // الإنترنت عاد
+        isNetworkAvailable = true;
 
+        // تأخير قصير للسماح لنظام الشبكة بالاستقرار
         mainHandler.postDelayed(() -> {
+            if (webView == null) return;
+            if (!NetworkMonitor.isInternetAvailable(webView.getContext())) return;
 
-            if (webView == null) {
+            // الحالة 1: الصفحة صالحة → لا تعيد تحميلها، بل حدث واحد للصفحة + تحديث الشريط بصرياً
+            if (isPageValid && !isOnErrorPage && webView.getUrl() != null && !webView.getUrl().equals("about:blank")) {
+                Log.i(TAG, "🌐 Internet restored. Page valid — notifying page and updating bar.");
+                if (uiController != null) uiController.showOnlineBarTransition(); // دالة جديدة في UIController
+                // إرسال حدث JS واحد فقط
+                webView.post(() -> webView.evaluateJavascript("window.dispatchEvent(new Event('online'));", null));
                 return;
             }
 
-            if (!NetworkMonitor.isInternetAvailable(webView.getContext())) {
-                return;
-            }
-
-            // إذا كانت الصفحة الحالية صالحة، لا تعيد تحميلها
-            if (isPageValid
-                    && !isOnErrorPage
-                    && webView.getUrl() != null
-                    && !webView.getUrl().equals("about:blank")) {
-
-                // ❌ تم حذف إرسال حدث 'online' للـ JS
-                Log.i(TAG, "🌐 Internet restored. Keeping current page.");
-                return;
-            }
-
-            // لا توجد صفحة صالحة → إعادة تحميل الرابط المحفوظ فقط
-            String urlToLoad =
-                    pendingUrl != null
-                            ? pendingUrl
-                            : com.store.app.BuildConfig.CLIENT_URL;
-
+            // الحالة 2: الصفحة غير صالحة → إعادة تحميل الرابط المحفوظ بسلاسة
+            String urlToLoad = pendingUrl != null ? pendingUrl : com.store.app.BuildConfig.CLIENT_URL;
             isOnErrorPage = false;
             isPageValid = false;
 
             Log.i(TAG, "🚀 Internet restored. Loading: " + urlToLoad);
-
-            webView.loadUrl(urlToLoad);
-
-        }, 1000);
+            if (uiController != null) uiController.showLoadingOverlay(); // دالة جديدة لعرض progress فوق الويب فيو
+            webView.post(() -> webView.loadUrl(urlToLoad));
+        }, 300);
     }
 
     // ==========================================
@@ -263,18 +240,13 @@ public class OfflineStateManager {
     // ==========================================
 
     public void notifyPageReadyToHide() {
-
         mainHandler.post(() -> {
-
-            if (!isPageValid || isOnErrorPage) {
-                return;
-            }
-
+            if (!isPageValid || isOnErrorPage) return;
             if (uiController != null) {
+                uiController.hideLoadingOverlay(); // دالة جديدة
                 uiController.forceHideAllInternal();
             }
-
             Log.i(TAG, "✅ Valid page ready. Offline UI hidden.");
         });
     }
-                }
+                    }
