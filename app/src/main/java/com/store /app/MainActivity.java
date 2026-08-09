@@ -61,6 +61,11 @@ public class MainActivity extends AppCompatActivity {
     private Handler memoryPurgeHandler;
     private Runnable memoryPurgeRunnable;
 
+    // متغيرات للتحكم في نقرتي الرجوع
+    private boolean doubleBackToExitPressedOnce = false;
+    private Handler backPressHandler = new Handler(Looper.getMainLooper());
+    private Runnable resetBackPressFlag = () -> doubleBackToExitPressedOnce = false;
+
     // 🔥 تحسين الخيوط: استخدام ThreadPool لإدارة المهام الخلفية
     private static final ExecutorService backgroundExecutor = Executors.newFixedThreadPool(2);
 
@@ -318,7 +323,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
     /**
-     * 🔥 نظام التحكم بالرجوع المحسّن (بدون تغيير وضع الكاش مؤقتاً)
+     * 🔥 نظام التحكم بالرجوع المحسّن مع نقرتين للخروج
      */
     private void setupBackNavigation() {
         getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
@@ -326,11 +331,27 @@ public class MainActivity extends AppCompatActivity {
             public void handleOnBackPressed() {
                 try {
                     if (activeWebView != null && activeWebView.canGoBack()) {
-                        // استخدام LOAD_DEFAULT دائماً والاعتماد على RoyalCacheManager
+                        // إذا يمكن الرجوع داخل الويب
                         if (progressBar != null) progressBar.setVisibility(View.GONE);
                         activeWebView.goBack();
                     } else {
-                        moveTaskToBack(true);
+                        // نحن في الصفحة الرئيسية
+                        if (doubleBackToExitPressedOnce) {
+                            // إذا ضغط مرة ثانية خلال المهلة → خروج نهائي
+                            finishAffinity(); // يغلق التطبيق بالكامل
+                        } else {
+                            // أول نقرة → أظهر تنبيه احترافي
+                            doubleBackToExitPressedOnce = true;
+                            android.widget.Toast.makeText(
+                                    MainActivity.this,
+                                    "اضغط مرة أخرى للخروج خلال 10 ثوانٍ",
+                                    android.widget.Toast.LENGTH_SHORT
+                            ).show();
+
+                            // إعادة ضبط الفلاج بعد 10 ثوانٍ
+                            backPressHandler.removeCallbacks(resetBackPressFlag);
+                            backPressHandler.postDelayed(resetBackPressFlag, 10000);
+                        }
                     }
                 } catch (Exception e) {
                     Log.e(TAG, "Back navigation error: " + e.getMessage());
@@ -338,7 +359,7 @@ public class MainActivity extends AppCompatActivity {
                 }
             }
         });
-        Log.i(TAG, "✅ Back navigation optimized.");
+        Log.i(TAG, "✅ Back navigation optimized with double-press exit.");
     }
 
     /**
@@ -546,4 +567,4 @@ public class MainActivity extends AppCompatActivity {
             }
         }
     }
-    }
+                }
