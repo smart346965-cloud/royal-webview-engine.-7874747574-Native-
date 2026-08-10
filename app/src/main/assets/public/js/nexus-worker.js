@@ -16,6 +16,18 @@ let initializing = false;
 let scrollIntentConfirmed = false;
 let scrollThrottleActive = false;
 
+// 🔥 قائمة الأوامر التي تحتاج تمريرها إلى Main Thread
+const DOM_COMMANDS = new Set([
+    'APPLY_RENDER_OPTIMIZATION',
+    'INIT_LAYOUT_OBSERVER',
+    'EXECUTE_BACK_PRERENDER',
+    'PREPARE_BFCACHE',
+    'APPLY_ASYNC_VISUALS',
+    'OPTIMIZE_SCRIPT_PIPELINE',
+    'ENABLE_NETWORK_OPTIMIZATION',
+    'PRECONNECT'
+]);
+
 /**
  * 🚀 مرحلة الانصهار (Fusion) داخل الـ Worker
  */
@@ -72,9 +84,11 @@ async function initNucleus(origin = '') {
     }
 }
 
-// [تعديل جراحي في nexus-worker.js]
-self.onmessage = function (e) {
-    const data = e.data || {};
+/**
+ * 📨 معالج الرسائل المركزي
+ */
+function handleWorkerMessage(data) {
+    if (!data || !data.type) return;
 
     // ---------------------------------------------------------
     // INIT
@@ -166,7 +180,6 @@ self.onmessage = function (e) {
             sharedWasmMemoryView[3] = Number(data.y) || 0;
         }
 
-        // إعادة تعيين مؤشرات الحالة
         scrollIntentConfirmed = false;
 
         self.postMessage({
@@ -243,4 +256,22 @@ self.onmessage = function (e) {
 
         return;
     }
+
+    // ---------------------------------------------------------
+    // 🔥 DOM_COMMANDS: تمريرها إلى Main Thread
+    // ---------------------------------------------------------
+    if (DOM_COMMANDS.has(data.type)) {
+        self.postMessage({
+            type: data.type,
+            url: data.value || data.url || null
+        });
+        return;
+    }
+}
+
+// =========================================================
+// 🚀 مستمع الرسائل الرئيسي
+// =========================================================
+self.onmessage = function (e) {
+    handleWorkerMessage(e.data);
 };
