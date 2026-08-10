@@ -83,6 +83,17 @@ self.onmessage = function(e) {
             }
             break;
 
+        case 'TOUCH_MOVE':
+            // معالجة السكرول بناءً على الحساسية الديناميكية للقماش الرسومي
+            const isIntentionalScroll = window_proxy.Nexus.Core.detect_scroll_slop(
+                data.startX, data.startY, data.currentX, data.currentY, data.dpr
+            );
+            
+            if (isIntentionalScroll) {
+                self.postMessage({ type: 'CONFIRM_SCROLL' });
+            }
+            break;
+
         case 'SCROLL_DATA':
             const isFast = window_proxy.Nexus.Core.analyze_scroll_velocity(data.y, data.lastY, data.delta);
             if (isFast) {
