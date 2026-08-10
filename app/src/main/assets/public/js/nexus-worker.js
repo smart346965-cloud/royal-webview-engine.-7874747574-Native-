@@ -8,60 +8,67 @@
 importScripts('royal_nucleus.js');
 
 let WasmModule = null;
-let Maestro = null;
-let Ignition = null;
-let Core = null;
-let Network = null;
-let Predictor = null;
-let Guardian = null;
+let Nexus = null;
 let sharedWasmMemoryView = null;
 let initialized = false;
+let initializing = false;
+
+let scrollIntentConfirmed = false;
+let scrollThrottleActive = false;
 
 /**
  * 🚀 مرحلة الانصهار (Fusion) داخل الـ Worker
  */
 async function initNucleus(origin = '') {
-    if (initialized) return;
+    if (initialized || initializing) {
+        return;
+    }
+
+    initializing = true;
 
     try {
         WasmModule = await createRoyalNucleusModule({
             print: (text) => console.log('🛰️ WORKER_WASM:', text),
             printErr: (text) => console.error('⚠️ WORKER_WASM_ERR:', text),
-
-            locateFile: (path) => {
-                return path;
-            }
+            locateFile: (path) => path
         });
 
-        Maestro = new WasmModule.RoyalNucleus();
+        const Maestro = new WasmModule.RoyalNucleus();
 
-        Predictor = Maestro.getPredictor();
-        Guardian = Maestro.getGuardian();
-        Ignition = new WasmModule.RoyalIgnitionCore();
-        Core = new WasmModule.RoyalCoreEngine();
-        Network = new WasmModule.RoyalNetworkCore();
+        Nexus = {
+            Maestro,
+            Predictor: Maestro.getPredictor(),
+            Guardian: Maestro.getGuardian(),
+            Ignition: new WasmModule.RoyalIgnitionCore(),
+            Core: new WasmModule.RoyalCoreEngine(),
+            Network: new WasmModule.RoyalNetworkCore()
+        };
 
         if (origin) {
-            Core.set_origin(origin);
+            Nexus.Core.set_origin(origin);
         }
 
         initialized = true;
-
-        console.log(
-            "🏆 NUCLEUS WORKER: Maestro is alive in an independent thread."
-        );
 
         self.postMessage({
             type: 'NUCLEUS_READY'
         });
 
+        console.log('🏆 NUCLEUS WORKER: Maestro is alive.');
+
     } catch (e) {
-        console.error("❌ WORKER_INIT_FAILED:", e);
+        console.error('❌ WORKER_INIT_FAILED:', e);
+
+        WasmModule = null;
+        Nexus = null;
 
         self.postMessage({
             type: 'NUCLEUS_ERROR',
             error: String(e)
         });
+
+    } finally {
+        initializing = false;
     }
 }
 
@@ -78,7 +85,7 @@ self.onmessage = function (e) {
     }
 
     // لا ننفذ أي أمر قبل جاهزية WASM
-    if (!initialized) {
+    if (!initialized || !Nexus) {
         return;
     }
 
@@ -86,8 +93,18 @@ self.onmessage = function (e) {
     // INIT_MEMORY
     // ---------------------------------------------------------
     if (data.type === 'INIT_MEMORY') {
+        if (!Nexus || !Nexus.Core || !WasmModule || !WasmModule.HEAPF32) {
+            console.error('❌ WASM memory is not ready.');
+            return;
+        }
+
         try {
-            const ptr = Core.get_shared_buffer_ptr();
+            const ptr = Nexus.Core.get_shared_buffer_ptr();
+
+            if (!ptr) {
+                console.error('❌ Invalid shared buffer pointer.');
+                return;
+            }
 
             sharedWasmMemoryView = new Float32Array(
                 WasmModule.HEAPF32.buffer,
@@ -95,19 +112,14 @@ self.onmessage = function (e) {
                 10
             );
 
-            console.log(
-                "⚡ WORKER: Zero-Allocation Memory Pool Linked."
-            );
-
             self.postMessage({
                 type: 'MEMORY_READY'
             });
 
+            console.log('⚡ WORKER: Zero-Allocation Memory Pool Linked.');
+
         } catch (error) {
-            console.error(
-                "❌ MEMORY_LINK_FAILED:",
-                error
-            );
+            console.error('❌ MEMORY_LINK_FAILED:', error);
         }
 
         return;
@@ -117,43 +129,50 @@ self.onmessage = function (e) {
     // TOUCH_START
     // ---------------------------------------------------------
     if (data.type === 'TOUCH_START') {
-
-        if (sharedWasmMemoryView) {
-            sharedWasmMemoryView[0] = data.x || 0;
-            sharedWasmMemoryView[1] = data.y || 0;
-            sharedWasmMemoryView[2] = data.x || 0;
-            sharedWasmMemoryView[3] = data.y || 0;
-        }
-
-        // أولاً: هل الرابط آمن؟
-        if (!Core.evaluate_speculation(data.url || '')) {
+        if (!Nexus || !Nexus.Predictor || !Nexus.Core) {
             return;
         }
 
-        // ثانيًا: تحليل نية المستخدم
+        const url = typeof data.url === 'string' ? data.url : '';
+        if (!url) {
+            return;
+        }
+
         let willClick = false;
 
         try {
-            willClick = Predictor.analyze_pointer_intent(
-                data.x || 0,
-                data.y || 0,
-                data.timestamp || Date.now()
+            willClick = Nexus.Predictor.analyze_pointer_intent(
+                Number(data.x) || 0,
+                Number(data.y) || 0,
+                Number(data.timestamp) || Date.now()
             );
         } catch (error) {
-            console.warn(
-                "⚠️ Predictor unavailable:",
-                error
-            );
-
+            console.warn('⚠️ Predictor unavailable:', error);
             return;
         }
 
-        if (willClick) {
-            self.postMessage({
-                type: 'EXECUTE_PRERENDER',
-                url: data.url
-            });
+        if (!willClick) {
+            return;
         }
+
+        if (!Nexus.Core.evaluate_speculation(url)) {
+            return;
+        }
+
+        if (sharedWasmMemoryView) {
+            sharedWasmMemoryView[0] = Number(data.x) || 0;
+            sharedWasmMemoryView[1] = Number(data.y) || 0;
+            sharedWasmMemoryView[2] = Number(data.x) || 0;
+            sharedWasmMemoryView[3] = Number(data.y) || 0;
+        }
+
+        // إعادة تعيين مؤشرات الحالة
+        scrollIntentConfirmed = false;
+
+        self.postMessage({
+            type: 'EXECUTE_PRERENDER',
+            url
+        });
 
         return;
     }
@@ -162,16 +181,21 @@ self.onmessage = function (e) {
     // TOUCH_MOVE
     // ---------------------------------------------------------
     if (data.type === 'TOUCH_MOVE') {
+        if (!Nexus || !Nexus.Core) {
+            return;
+        }
 
-        const intentional = Core.detect_scroll_slop(
-            data.startX || 0,
-            data.startY || 0,
-            data.currentX || 0,
-            data.currentY || 0,
-            data.dpr || 1
+        const intentional = Nexus.Core.detect_scroll_slop(
+            Number(data.startX) || 0,
+            Number(data.startY) || 0,
+            Number(data.currentX) || 0,
+            Number(data.currentY) || 0,
+            Math.max(Number(data.dpr) || 1, 1)
         );
 
-        if (intentional) {
+        if (intentional && !scrollIntentConfirmed) {
+            scrollIntentConfirmed = true;
+
             self.postMessage({
                 type: 'CONFIRM_SCROLL'
             });
@@ -184,17 +208,36 @@ self.onmessage = function (e) {
     // SCROLL_DATA
     // ---------------------------------------------------------
     if (data.type === 'SCROLL_DATA') {
+        if (!Nexus || !Nexus.Core) {
+            return;
+        }
 
-        const fast = Core.analyze_scroll_velocity(
-            data.y || 0,
-            data.lastY || 0,
-            data.delta || 0
+        const delta = Number(data.delta);
+        if (!Number.isFinite(delta) || delta <= 0) {
+            return;
+        }
+
+        const fast = Nexus.Core.analyze_scroll_velocity(
+            Number(data.y) || 0,
+            Number(data.lastY) || 0,
+            delta
         );
 
-        if (fast) {
+        if (fast && !scrollThrottleActive) {
+            scrollThrottleActive = true;
+
             self.postMessage({
                 type: 'THROTTLE_RENDER',
                 state: true
+            });
+        }
+
+        if (!fast && scrollThrottleActive) {
+            scrollThrottleActive = false;
+
+            self.postMessage({
+                type: 'THROTTLE_RENDER',
+                state: false
             });
         }
 
