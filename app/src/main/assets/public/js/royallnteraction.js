@@ -44,6 +44,7 @@
 
             document.addEventListener("touchstart", (e) => {
                 if (e.touches.length === 0) return;
+                document.body.style.willChange = 'transform, scroll-position';
                 startX = e.touches[0].clientX;
                 startY = e.touches[0].clientY;
                 isScrolling = false;
@@ -65,28 +66,21 @@
                 }
             }, { passive: true });
 
-            // [تعديل جراحي في royallnteraction.js]
+            // 🚀 محرك السكرول المعتمد على الإطارات (rAF Batching)
             document.addEventListener("touchmove", (e) => {
                 if (isScrolling || e.touches.length === 0 || !activeLink) return;
-                
-                // 🧠 القفل المنطقي: بمجرد أن نتأكد أن المستخدم يسحب، نتوقف عن سؤال الـ C++ تماماً
-                // هذا يحرر الخيط الرئيسي فوراً لمعالجة الرسم
-                const currentX = e.touches[0].clientX;
-                const currentY = e.touches[0].clientY;
+                const currentX = e.touches[0].clientX, currentY = e.touches[0].clientY;
 
-                if (window.RoyalWasm && window.RoyalWasm.core) {
-                    // نرسل الحسابات للنواة مرة واحدة فقط لتأكيد نية السكرول
-                    isScrolling = window.RoyalWasm.core.detect_scroll_slop(startX, startY, currentX, currentY);
-                } else {
-                    isScrolling = Math.abs(currentX - startX) > 10 || Math.abs(currentY - startY) > 10;
-                }
-
-                if (isScrolling) {
-                    // 🚀 فور تأكيد السكرول، نطبق "كلاس السيولة" ونحرر الرابط
+                if (!window._rafPending) {
+                    window._rafPending = true;
                     requestAnimationFrame(() => {
-                        document.body.classList.add("royal-is-scrolling");
-                        if (activeLink) activeLink.classList.remove('royal-tap-active');
-                        activeLink = null;
+                        if (window.dispatchToNucleus) {
+                            window.dispatchToNucleus('TOUCH_MOVE', {
+                                currentX, currentY, startX, startY,
+                                dpr: window.devicePixelRatio || 1 // 📏 تمرير كثافة الشاشة للنواة
+                            });
+                        }
+                        window._rafPending = false;
                     });
                 }
             }, { passive: true }); // passive ضرورية جداً هنا لضمان سلاسة المتصفح الأصلي
@@ -104,6 +98,8 @@
                 if (link.origin === location.origin) {
                     window.location.href = link.href;
                 }
+
+                setTimeout(() => { document.body.style.willChange = 'auto'; }, 150);
             }, { passive: false });
         }
     };
