@@ -7,105 +7,197 @@
 // 1. استيراد شفرة الربط التي تم طبخها في GitHub Actions
 importScripts('royal_nucleus.js');
 
+let WasmModule = null;
 let Maestro = null;
 let Ignition = null;
 let Core = null;
 let Network = null;
+let Predictor = null;
+let Guardian = null;
 let sharedWasmMemoryView = null;
+let initialized = false;
 
 /**
  * 🚀 مرحلة الانصهار (Fusion) داخل الـ Worker
  */
-async function initNucleus() {
+async function initNucleus(origin = '') {
+    if (initialized) return;
+
     try {
-        const module = await createRoyalNucleusModule({
+        WasmModule = await createRoyalNucleusModule({
             print: (text) => console.log('🛰️ WORKER_WASM:', text),
             printErr: (text) => console.error('⚠️ WORKER_WASM_ERR:', text),
-            locateFile: (path) => path // ملف الـ .wasm سيكون في نفس المجلد
+
+            locateFile: (path) => {
+                return path;
+            }
         });
 
-        // إيقاظ المايسترو داخل الخيط المنفصل
-        Maestro = new module.RoyalNucleus();
-        
-        // ربط المحركات التخصصية
-        window_proxy.Nexus = {
-            Predictor: Maestro.getPredictor(),
-            Guardian: Maestro.getGuardian(),
-            Ignition: new module.RoyalIgnitionCore(),
-            Core: new module.RoyalCoreEngine(),
-            Network: new module.RoyalNetworkCore()
-        };
+        Maestro = new WasmModule.RoyalNucleus();
 
-        console.log("🏆 NUCLEUS WORKER: Maestro is alive in an independent thread.");
-        
-        // إخطار الخيط الرئيسي بالجاهزية
-        self.postMessage({ type: 'NUCLEUS_READY' });
+        Predictor = Maestro.getPredictor();
+        Guardian = Maestro.getGuardian();
+        Ignition = new WasmModule.RoyalIgnitionCore();
+        Core = new WasmModule.RoyalCoreEngine();
+        Network = new WasmModule.RoyalNetworkCore();
+
+        if (origin) {
+            Core.set_origin(origin);
+        }
+
+        initialized = true;
+
+        console.log(
+            "🏆 NUCLEUS WORKER: Maestro is alive in an independent thread."
+        );
+
+        self.postMessage({
+            type: 'NUCLEUS_READY'
+        });
 
     } catch (e) {
         console.error("❌ WORKER_INIT_FAILED:", e);
+
+        self.postMessage({
+            type: 'NUCLEUS_ERROR',
+            error: String(e)
+        });
     }
 }
 
 // [تعديل جراحي في nexus-worker.js]
-self.onmessage = function(e) {
-    const data = e.data;
+self.onmessage = function (e) {
+    const data = e.data || {};
 
-    if (!Maestro && data.type !== 'INIT') return;
-
-    // 👑 تجهيز الذاكرة الصفرية (Zero-Allocation Pool) عند الإقلاع
-    if (data.type === 'INIT_MEMORY' && window_proxy.Nexus.Core) {
-        const ptr = window_proxy.Nexus.Core.get_shared_buffer_ptr();
-        // إنشاء نافذة زجاجية فوق ذاكرة C++ للكتابة فيها مباشرة دون إنشاء كائنات
-        sharedWasmMemoryView = new Float32Array(Maestro.module.HEAPF32.buffer, ptr, 10);
-        console.log("⚡ WORKER: Zero-Allocation Memory Pool Linked.");
+    // ---------------------------------------------------------
+    // INIT
+    // ---------------------------------------------------------
+    if (data.type === 'INIT') {
+        initNucleus(data.origin || '');
         return;
     }
 
-    switch(data.type) {
-        case 'INIT':
-            initNucleus();
-            break;
+    // لا ننفذ أي أمر قبل جاهزية WASM
+    if (!initialized) {
+        return;
+    }
 
-        case 'TOUCH_START':
-            // 1. الكتابة المباشرة في ذاكرة C++ (Zero-Allocation)
-            if (sharedWasmMemoryView) {
-                sharedWasmMemoryView[0] = data.x;
-                sharedWasmMemoryView[1] = data.y;
-                // يمكنك إضافة Timestamp في [2] و [3]
-            }
+    // ---------------------------------------------------------
+    // INIT_MEMORY
+    // ---------------------------------------------------------
+    if (data.type === 'INIT_MEMORY') {
+        try {
+            const ptr = Core.get_shared_buffer_ptr();
 
-            // 2. تحليل النية
-            const willClick = window_proxy.Nexus.Predictor.analyze_pointer_intent(data.x, data.y, data.timestamp);
-            
-            if (willClick) {
-                // 🚀 التصحيح العبقري: لا نلمس الـ DOM هنا! بل نأمر الخيط الرئيسي بذلك
-                self.postMessage({ type: 'EXECUTE_PRERENDER', url: data.url });
-            }
-            break;
-
-        case 'TOUCH_MOVE':
-            // معالجة السكرول بناءً على الحساسية الديناميكية للقماش الرسومي
-            const isIntentionalScroll = window_proxy.Nexus.Core.detect_scroll_slop(
-                data.startX, data.startY, data.currentX, data.currentY, data.dpr
+            sharedWasmMemoryView = new Float32Array(
+                WasmModule.HEAPF32.buffer,
+                ptr,
+                10
             );
-            
-            if (isIntentionalScroll) {
-                self.postMessage({ type: 'CONFIRM_SCROLL' });
-            }
-            break;
 
-        case 'SCROLL_DATA':
-            const isFast = window_proxy.Nexus.Core.analyze_scroll_velocity(data.y, data.lastY, data.delta);
-            if (isFast) {
-                // أمر للخيط الرئيسي بإيقاف الصور مؤقتاً
-                self.postMessage({ type: 'THROTTLE_RENDER', state: true }); 
-            }
-            break;
+            console.log(
+                "⚡ WORKER: Zero-Allocation Memory Pool Linked."
+            );
+
+            self.postMessage({
+                type: 'MEMORY_READY'
+            });
+
+        } catch (error) {
+            console.error(
+                "❌ MEMORY_LINK_FAILED:",
+                error
+            );
+        }
+
+        return;
+    }
+
+    // ---------------------------------------------------------
+    // TOUCH_START
+    // ---------------------------------------------------------
+    if (data.type === 'TOUCH_START') {
+
+        if (sharedWasmMemoryView) {
+            sharedWasmMemoryView[0] = data.x || 0;
+            sharedWasmMemoryView[1] = data.y || 0;
+            sharedWasmMemoryView[2] = data.x || 0;
+            sharedWasmMemoryView[3] = data.y || 0;
+        }
+
+        // أولاً: هل الرابط آمن؟
+        if (!Core.evaluate_speculation(data.url || '')) {
+            return;
+        }
+
+        // ثانيًا: تحليل نية المستخدم
+        let willClick = false;
+
+        try {
+            willClick = Predictor.analyze_pointer_intent(
+                data.x || 0,
+                data.y || 0,
+                data.timestamp || Date.now()
+            );
+        } catch (error) {
+            console.warn(
+                "⚠️ Predictor unavailable:",
+                error
+            );
+
+            return;
+        }
+
+        if (willClick) {
+            self.postMessage({
+                type: 'EXECUTE_PRERENDER',
+                url: data.url
+            });
+        }
+
+        return;
+    }
+
+    // ---------------------------------------------------------
+    // TOUCH_MOVE
+    // ---------------------------------------------------------
+    if (data.type === 'TOUCH_MOVE') {
+
+        const intentional = Core.detect_scroll_slop(
+            data.startX || 0,
+            data.startY || 0,
+            data.currentX || 0,
+            data.currentY || 0,
+            data.dpr || 1
+        );
+
+        if (intentional) {
+            self.postMessage({
+                type: 'CONFIRM_SCROLL'
+            });
+        }
+
+        return;
+    }
+
+    // ---------------------------------------------------------
+    // SCROLL_DATA
+    // ---------------------------------------------------------
+    if (data.type === 'SCROLL_DATA') {
+
+        const fast = Core.analyze_scroll_velocity(
+            data.y || 0,
+            data.lastY || 0,
+            data.delta || 0
+        );
+
+        if (fast) {
+            self.postMessage({
+                type: 'THROTTLE_RENDER',
+                state: true
+            });
+        }
+
+        return;
     }
 };
-
-// محاكاة بسيطة لبيئة window داخل الـ Worker لضمان عمل EM_ASM
-const window_proxy = { location: { origin: '' } };
-
-// تشغيل المحرك فوراً
-initNucleus();
