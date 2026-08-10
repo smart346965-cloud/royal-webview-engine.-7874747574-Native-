@@ -19,7 +19,9 @@
                 try {
                     new PerformanceObserver((list) => {
                         list.getEntries().forEach(entry => {
-                            window.NexusTelemetry.total_blocking_time += (entry.duration - 50);
+                            // ✅ إصلاح حساب Total Blocking Time
+                            window.NexusTelemetry.total_blocking_time +=
+                                Math.max(0, entry.duration - 50);
                             window.NexusTelemetry.longTasks.push({ name: entry.name, duration: entry.duration.toFixed(2) });
                         });
                     }).observe({ type: 'longtask', buffered: true });
@@ -43,12 +45,10 @@
         generateReport: function() {
             console.groupCollapsed("%c📊 NEXUS DIAGNOSTIC REPORT (اضغط لفتح التقرير الشامل)", "color: #00ffff; font-size: 14px; font-weight: bold; background: #111; padding: 6px; border-radius: 4px;");
             
-            // 1. تقرير نواة الانصهار (WASM Core) - تم تعديل الخط للأسود الداكن
             const wasmMeasure = performance.getEntriesByName('WASM_IGNITION')[0];
             const wasmTime = wasmMeasure ? wasmMeasure.duration.toFixed(2) : 'N/A';
             console.log(`%c🧠 زمن بناء واستيقاث النواة (C++): %c${wasmTime} ms`, "color: #d97706; font-weight:bold;", "color: #000000; font-weight: bold; font-size: 12px;");
             
-            // 2. تقرير سرعة الرسم والتنقل (Render & Navigation)
             const nav = performance.getEntriesByType("navigation")[0];
             const paint = performance.getEntriesByType("paint");
             const fcp = paint.find(p => p.name === 'first-contentful-paint');
@@ -60,11 +60,9 @@
             }
             if (fcp) console.log(`%c👁️ أول بيكسلة ظهرت للشاشة (FCP): %c${fcp.startTime.toFixed(2)} ms`, "color: #d97706; font-weight:bold;", "color: #000000; font-weight: bold;");
 
-            // 3. تقرير دعم تقنية الانصهار السريع (Speculation Rules)
             const specSupported = HTMLScriptElement.supports && HTMLScriptElement.supports('speculationrules');
             console.log(`%c🔮 تقنية التنبؤ والرندرة المسبقة: %c${specSupported ? 'تعمل بكفاءة 100%' : 'غير مدعومة في هذا الويبفيو!'}`, "color: #d97706; font-weight:bold;", specSupported ? "color: #059669; font-weight: bold;" : "color: #dc2626; font-weight: bold;");
 
-            // 4. تحليل الاختناق (Bottleneck Diagnosis)
             console.log("%c🔍 --- التشخيص الآلي لسبب التأخير ---", "color: #0284c7; font-weight:bold;");
             
             if (this.longTasks.length > 0) {
@@ -85,7 +83,6 @@
 
     // تشغيل الرادار
     window.NexusTelemetry.initObservers();
-    // إتاحة أمر استخراج التقرير من الكونسول يدوياً
     window.NEXUS_REPORT = function() { window.NexusTelemetry.generateReport(); };
 
     // =========================================================================
@@ -94,22 +91,160 @@
     const WASM_URL = 'https://royal-engine.local/public/js/royal_nucleus.wasm';
     const JS_URL = 'https://royal-engine.local/public/js/royal_nucleus.js';
 
-    // [تعديل جراحي في Loader.js - استبدال دالة ignite فقط]
+    // ✅ 5. إصلاح INIT ليشمل Origin
     async function ignite() {
         if (window.NexusWorkerActive) return; 
 
         try {
-            window.NexusTelemetry.startMark('WASM_IGNITION'); // ⏱️ بدء قياس النواة
+            window.NexusTelemetry.startMark('WASM_IGNITION');
 
-            // 1. إطلاق الخيط المنفصل (Worker) بدلاً من تجميد الخيط الرئيسي
-            const worker = new Worker('public/js/nexus-worker.js');
+            // ✅ 6. تحسين إنشاء الـ Worker باستخدام URL مطلق
+            const worker = new Worker(
+                new URL('/public/js/nexus-worker.js', window.location.origin)
+            );
             window.NexusWorker = worker;
             window.NexusWorkerActive = true;
 
-            // 2. إرسال أمر الإقلاع
-            worker.postMessage({ type: 'INIT' });
+            // ✅ 6. إضافة معالج الخطأ
+            worker.onerror = function (error) {
+                console.error("❌ NEXUS WORKER ERROR:", error);
+                window.NexusWorkerActive = false;
+                window.NexusWorker = null;
+            };
 
-            // 3. الاستماع لأوامر النواة المنفصلة (The Brain commands the Body)
+            // ✅ 5. إضافة origin إلى INIT
+            worker.postMessage({
+                type: 'INIT',
+                origin: window.location.origin
+            });
+
+            // ✅ 8. متغيرات اللمس
+            let nexusTouchStartX = 0;
+            let nexusTouchStartY = 0;
+
+            // ✅ 8. مستمع touchstart
+            window.addEventListener(
+                'touchstart',
+                (e) => {
+
+                    if (!e.touches || !e.touches[0]) {
+                        return;
+                    }
+
+                    nexusTouchStartX = e.touches[0].clientX;
+                    nexusTouchStartY = e.touches[0].clientY;
+
+                    const link = e.target.closest
+                        ? e.target.closest('a')
+                        : null;
+
+                    if (link && link.href) {
+
+                        window.dispatchToNucleus(
+                            'TOUCH_START',
+                            {
+                                x: nexusTouchStartX,
+                                y: nexusTouchStartY,
+                                timestamp: performance.now(),
+                                url: link.href
+                            }
+                        );
+                    }
+                },
+                {
+                    passive: true
+                }
+            );
+
+            // ✅ 8. مستمع touchmove
+            window.addEventListener(
+                'touchmove',
+                (e) => {
+
+                    if (!e.touches || !e.touches[0]) {
+                        return;
+                    }
+
+                    const touch = e.touches[0];
+
+                    window.dispatchToNucleus(
+                        'TOUCH_MOVE',
+                        {
+                            startX: nexusTouchStartX,
+                            startY: nexusTouchStartY,
+                            currentX: touch.clientX,
+                            currentY: touch.clientY,
+                            dpr: window.devicePixelRatio || 1
+                        }
+                    );
+                },
+                {
+                    passive: true
+                }
+            );
+
+            // ✅ 9. Scroll Engine
+            let nexusLastScrollY = window.scrollY;
+            let nexusLastScrollTime = performance.now();
+            let nexusScrollScheduled = false;
+
+            window.addEventListener(
+                'scroll',
+                () => {
+
+                    if (nexusScrollScheduled) {
+                        return;
+                    }
+
+                    nexusScrollScheduled = true;
+
+                    requestAnimationFrame(() => {
+
+                        nexusScrollScheduled = false;
+
+                        const now = performance.now();
+                        const currentY = window.scrollY;
+
+                        const deltaTime =
+                            now - nexusLastScrollTime;
+
+                        window.dispatchToNucleus(
+                            'SCROLL_DATA',
+                            {
+                                y: currentY,
+                                lastY: nexusLastScrollY,
+                                delta: deltaTime
+                            }
+                        );
+
+                        nexusLastScrollY = currentY;
+                        nexusLastScrollTime = now;
+                    });
+                },
+                {
+                    passive: true
+                }
+            );
+
+            // ✅ 11. وظيفة Throttle
+            let nexusThrottleTimer = null;
+
+            function setNexusThrottle(state) {
+
+                document.documentElement.dataset.nexusScrolling =
+                    state ? 'fast' : 'normal';
+
+                clearTimeout(nexusThrottleTimer);
+
+                if (state) {
+                    nexusThrottleTimer = setTimeout(() => {
+                        document.documentElement.dataset.nexusScrolling =
+                            'normal';
+                    }, 120);
+                }
+            }
+
+            // ✅ 3. معالج worker.onmessage
             worker.onmessage = function(e) {
                 const msg = e.data;
 
@@ -143,7 +278,6 @@
                         square.innerText = label;
                         document.body.appendChild(square);
                     }
-                    // إضافة تأثير وميض بصري عند استقبال كل إشارة
                     square.style.transform = 'scale(1.2)';
                     setTimeout(() => { square.style.transform = 'scale(1)'; }, 200);
                 };
@@ -151,53 +285,119 @@
                 if (msg.type === 'NUCLEUS_READY') {
                     // النواة جاهزة، نطلب منها فتح حوض الذاكرة
                     worker.postMessage({ type: 'INIT_MEMORY' });
-                    window.NexusTelemetry.endMark('WASM_IGNITION'); // ⏱️ إنهاء قياس الإقلاع
+                    window.NexusTelemetry.endMark('WASM_IGNITION');
                     console.log("🚀 NUCLEUS ACTIVE: Off-Main-Thread Fusion Complete.");
-                    
-                    // 🟦 رسم المربع الأزرق فور جاهزية النواة للتأكد البصري
                     drawBlueSquare("READY");
                 }
 
-                // 🚀 تنفيذ أمر الرندرة المسبقة + إرسال نبضة للمربع الأزرق
-                if (msg.type === 'EXECUTE_PRERENDER') {
-                    drawBlueSquare("RENDER"); // وميض الأزرق عند استقبال إشارة التنبؤ
-                    
-                    if (HTMLScriptElement.supports && HTMLScriptElement.supports('speculationrules')) {
-                        const script = document.createElement('script');
-                        script.type = 'speculationrules';
-                        script.textContent = JSON.stringify({
-                            prerender: [{ source: "list", urls: [msg.url] }]
-                        });
-                        document.head.appendChild(script);
-                        console.log(`⚡ [NEXUS] Prerendering Injected for: ${msg.url}`);
-                    }
+                // ✅ 12. استقبال MEMORY_READY
+                if (msg.type === 'MEMORY_READY') {
+                    console.log(
+                        "🧠 [NEXUS] Shared WASM memory is ready."
+                    );
+                    return;
                 }
 
-                // 🔵 أمر مخصص عام: إذا أرسل الـ Worker أي إشارة باسم DRAW_BLUE_SQUARE
+                // ✅ 10. استقبال THROTTLE_RENDER
+                if (msg.type === 'THROTTLE_RENDER') {
+                    setNexusThrottle(Boolean(msg.state));
+                    return;
+                }
+
+                // ✅ 10. استقبال CONFIRM_SCROLL
+                if (msg.type === 'CONFIRM_SCROLL') {
+                    document.documentElement.dataset.nexusIntent = 'scroll';
+                    return;
+                }
+
+                // ✅ 7. استبدال EXECUTE_PRERENDER بالنسخة المحمية
+                if (msg.type === 'EXECUTE_PRERENDER') {
+
+                    const targetUrl = msg.url;
+
+                    if (!targetUrl) {
+                        return;
+                    }
+
+                    let target;
+
+                    try {
+                        target = new URL(targetUrl, window.location.href);
+                    } catch (error) {
+                        return;
+                    }
+
+                    // حماية إضافية على Main Thread
+                    if (target.origin !== window.location.origin) {
+                        console.warn(
+                            "[NEXUS] Cross-origin prerender blocked:",
+                            target.href
+                        );
+                        return;
+                    }
+
+                    if (
+                        target.protocol !== 'https:' &&
+                        target.protocol !== 'http:'
+                    ) {
+                        return;
+                    }
+
+                    if (
+                        /\/(cart|checkout|payment|login|logout|account)(\/|$)/i
+                            .test(target.pathname)
+                    ) {
+                        return;
+                    }
+
+                    if (
+                        !HTMLScriptElement.supports ||
+                        !HTMLScriptElement.supports('speculationrules')
+                    ) {
+                        console.log(
+                            "[NEXUS] Speculation Rules unavailable."
+                        );
+                        return;
+                    }
+
+                    drawBlueSquare("RENDER");
+
+                    const script = document.createElement('script');
+
+                    script.type = 'speculationrules';
+
+                    script.textContent = JSON.stringify({
+                        prerender: [
+                            {
+                                source: "list",
+                                urls: [target.href]
+                            }
+                        ]
+                    });
+
+                    document.head.appendChild(script);
+
+                    console.log(
+                        `⚡ [NEXUS] Prerender requested: ${target.href}`
+                    );
+                }
+
+                // باقي الرسائل (DRAW_BLUE_SQUARE) تمت معالجتها
                 if (msg.type === 'DRAW_BLUE_SQUARE') {
                     drawBlueSquare(msg.text || "SIGNAL");
                 }
             };
 
-            // 4. إنشاء قناة إرسال بيانات الحساسات (بدون استهلاك الذاكرة)
+            // 4. إنشاء قناة إرسال بيانات الحساسات
             window.dispatchToNucleus = (type, payload) => {
-                worker.postMessage({ type, ...payload });
+                if (window.NexusWorker && window.NexusWorkerActive) {
+                    worker.postMessage({ type, ...payload });
+                }
             };
 
-            // 5. ربط لمسات المستخدم بالنواة المنفصلة
-            window.addEventListener('touchstart', (e) => {
-                const link = e.target.closest('a');
-                if (link && link.href) {
-                    window.dispatchToNucleus('TOUCH_START', {
-                        x: e.touches[0].clientX,
-                        y: e.touches[0].clientY,
-                        timestamp: Date.now(),
-                        url: link.href
-                    });
-                }
-            }, { passive: true }); // passive لعدم تعطيل السكرول
+            // 5. ربط لمسات المستخدم بالنواة المنفصلة (تم إضافتها أعلاه)
 
-            // [مراقب الخمول لفك خناق السكربتات يبقى كما هو لديك]
+            // 6. إطلاق خيط الخمول
             const triggerMaestroStabilization = () => {
                 console.log("%c🛡️ [NEXUS] SHIELD: Main Thread is now COLD.", "color:#3b82f6; font-weight:bold; background:#e0f2fe; padding:2px 5px;");
                 if (window.RoyalBridge && window.RoyalBridge.log) {
@@ -231,12 +431,10 @@
     (function initDOMPersistence() {
         const SNAPSHOT_KEY = 'NEXUS_DOM_SHELL_SNAPSHOT';
 
-        // 1. أخذ لقطة خفيفة من الصفحة الرئيسية فور استقرارها قبل الخروج/التنقل
         const captureHomeState = () => {
             const isHome = location.pathname === '/' || location.pathname.endsWith('/index.html') || location.href === location.origin + '/';
             if (isHome && document.body) {
                 try {
-                    // حفظ الهيكل مع حالة السكرول الحالية
                     sessionStorage.setItem(SNAPSHOT_KEY, JSON.stringify({
                         html: document.body.innerHTML,
                         scrollTop: window.scrollY,
@@ -246,14 +444,12 @@
             }
         };
 
-        // التقاط الحالة عند تحول التطبيق للخلفية (Background) أو مغادرة التبويب
         document.addEventListener('visibilitychange', () => {
             if (document.visibilityState === 'hidden') {
                 captureHomeState();
             }
         });
 
-        // 2. استرجاع موقع السكرول واللقطة عند الرجوع اللحظي
         window.addEventListener('pageshow', (event) => {
             if (event.persisted) {
                 console.log("%c⚡ [NEXUS]: Instant BFCache Restore (0ms Response)", "color:#00ff00; font-weight:bold; background:#003300; padding:2px 5px;");
