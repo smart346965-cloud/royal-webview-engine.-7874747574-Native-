@@ -22,17 +22,12 @@ using namespace emscripten;
 class RoyalIgnitionCore {
 private:
     bool engine_warmed = false;
-    long long ignition_timestamp = 0;
+    std::chrono::steady_clock::time_point ignition_timestamp;
 
 public:
-    // [تعديل جراحي داخل RoyalIgnitionCore في royal_nucleus.cpp]
     RoyalIgnitionCore() {
-        ignition_timestamp = std::chrono::system_clock::now().time_since_epoch().count();
-        
-        // ❌ احذف كود الـ EM_ASM القديم الذي يلمس document.documentElement
-        // لأنه سيسبب Crash داخل الـ Worker
-        
-        // ✅ استبدله بإرسال رسالة كونسول فقط، لأن تحسين الـ Paint يجب أن يتم من الـ Loader
+        ignition_timestamp = std::chrono::steady_clock::now();
+
         EM_ASM({
             console.log("⚡ NUCLEUS (Worker): Engine ignition sequence started.");
         });
@@ -60,10 +55,13 @@ public:
      * تحسب الوقت المثالي لإطلاق الإشارة بناءً على زمن إقلاع التطبيق
      */
     double calculate_ignition_readiness() {
-        auto now = std::chrono::system_clock::now().time_since_epoch().count();
-        double delta = (double)(now - ignition_timestamp) / 1000000.0; // بالملي ثانية
-        
-        // إرجاع درجة الجاهزية (1.0 يعني جاهز تماماً للانصهار)
+        auto now = std::chrono::steady_clock::now();
+
+        const double delta =
+            std::chrono::duration<double, std::milli>(
+                now - ignition_timestamp
+            ).count();
+
         return std::min(delta / 500.0, 1.0);
     }
 
@@ -81,15 +79,53 @@ private:
     const size_t MAX_PREFETCH = 5;
     std::string app_origin;
 
-    // دالة داخلية سريعة للتحقق من الممنوعات
+    // دالة داخلية سريعة للتحقق من الممنوعات (محدثة)
     bool is_blacklisted(const std::string& url) {
-        if (url.find("cart") != std::string::npos || 
-            url.find("checkout") != std::string::npos || 
-            url.find("javascript:") != std::string::npos || 
-            url.find("#") != std::string::npos) {
+        if (url.empty()) return true;
+
+        if (url.find("javascript:") != std::string::npos ||
+            url.find("data:") != std::string::npos ||
+            url.find("blob:") != std::string::npos) {
             return true;
         }
+
+        std::string clean = url;
+        std::transform(clean.begin(), clean.end(), clean.begin(),
+                       [](unsigned char c) {
+                           return static_cast<char>(std::tolower(c));
+                       });
+
+        if (clean.find("/cart") != std::string::npos ||
+            clean.find("/checkout") != std::string::npos ||
+            clean.find("/payment") != std::string::npos ||
+            clean.find("/login") != std::string::npos ||
+            clean.find("/logout") != std::string::npos ||
+            clean.find("/account") != std::string::npos ||
+            clean.find("#") != std::string::npos) {
+            return true;
+        }
+
         return false;
+    }
+
+    // دالة جديدة لاستخراج origin
+    std::string extract_origin(const std::string& value) const {
+        size_t scheme = value.find("://");
+        if (scheme == std::string::npos) return "";
+
+        size_t host_start = scheme + 3;
+        size_t path_start = value.find_first_of("/?#", host_start);
+
+        if (path_start == std::string::npos) {
+            return value;
+        }
+
+        return value.substr(0, path_start);
+    }
+
+    bool is_same_origin_url(const std::string& url) const {
+        if (app_origin.empty() || url.empty()) return false;
+        return extract_origin(url) == extract_origin(app_origin);
     }
 
     // [تعديل جراحي في royal_core.cpp لدعم Zero-Allocation]
@@ -112,8 +148,8 @@ public:
     bool evaluate_speculation(const std::string& url) {
         if (url.empty() || is_blacklisted(url)) return false;
 
-        // حماية صارمة: التحقق من الـ Origin بسرعة النواة
-        if (!app_origin.empty() && url.rfind(app_origin, 0) != 0) {
+        // حماية صارمة باستخدام is_same_origin_url
+        if (!app_origin.empty() && !is_same_origin_url(url)) {
             return false;
         }
 
@@ -142,13 +178,16 @@ public:
      * 🌊 محرك احتساب سرعة التمرير ومكافحة التقطيع (Velocity Vector)
      * يحلل حركة الإصبع أو السكرول ويعيد true إذا كانت السرعة تستدعي التنبؤ الفوري للأسفل
      */
-    bool analyze_scroll_velocity(int current_y, int last_y, double delta_time) {
-        if (delta_time <= 0) return false;
-        
-        // حساب بكسلات التمرير مقارنة بالوقت المصرم
-        double velocity = (current_y - last_y) / delta_time;
-        
-        // إذا كان السكرول سريعاً باتجاه الأسفل (أكبر من حاجز الحماية 1.8 بكسل لكل ملي ثانية)
+    bool analyze_scroll_velocity(
+        int current_y,
+        int last_y,
+        double delta_time
+    ) {
+        if (delta_time <= 0.0) return false;
+
+        const double velocity =
+            std::abs(static_cast<double>(current_y - last_y)) / delta_time;
+
         return velocity > 1.8;
     }
 
@@ -172,19 +211,7 @@ public:
      */
     bool is_same_site_navigation(const std::string& target_url) const {
         if (target_url.empty() || app_origin.empty()) return false;
-
-        // دالة لمسح واستخراج الهوست فقط من الرابط
-        auto extract_host = [](const std::string& url) -> std::string {
-            size_t start = url.find("://");
-            start = (start == std::string::npos) ? 0 : start + 3;
-            size_t end = url.find_first_of(":/", start);
-            return url.substr(start, (end == std::string::npos) ? std::string::npos : end - start);
-        };
-
-        std::string current_host = extract_host(app_origin);
-        std::string target_host = extract_host(target_url);
-
-        return (current_host == target_host);
+        return is_same_origin_url(target_url);
     }
 
     /**
@@ -199,7 +226,6 @@ public:
         return false;
     }
 
-    // [إضافة جراحية في royal_core.cpp]
     /**
      * 🛰️ فحص صحة الرابط المعلق (Pending URL Validator)
      * يتأكد من أن الرابط الذي حاول المستخدم فتحه أوفلاين هو رابط آمن للتحميل التلقائي
