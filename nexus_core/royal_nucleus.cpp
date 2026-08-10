@@ -153,17 +153,16 @@ public:
     }
 
     /**
-     * 👆 محرك قياس حركة اللمس العشوائي (Slop Area Detection)
-     * يحسب المسافة الإقليدية لحركة الإصبع لمنع النقرات الوهمية أثناء السكرول
+     * 👆 محرك قياس الحركة المصدق (Calibrated Slop Detection)
+     * يحسب المسافة بناءً على كثافة بكسلات الجهاز لضمان "خفة" السكرول
      */
-    bool detect_scroll_slop(float start_x, float start_y, float current_x, float current_y) {
+    bool detect_scroll_slop(float start_x, float start_y, float current_x, float current_y, float dpr) {
         float dx = current_x - start_x;
         float dy = current_y - start_y;
-        // مبرهنة فيثاغورس بسرعة العتاد الأصلية
         float distance = std::sqrt(dx * dx + dy * dy);
         
-        // إذا تحرك الإصبع أكثر من 12 بكسل في أي اتجاه، نعتبره سكرول وليس نقرة
-        return distance > 12.0f;
+        // 📏 العتبة الديناميكية: 8 بكسل فيزيائي (تعديل من 12 لزيادة الاستجابة)
+        return distance > (8.0f * dpr); 
     }
 
     /**
@@ -225,7 +224,7 @@ public:
      */
     bool process_raw_touch() {
         // shared_buffer[0] = x, shared_buffer[1] = y...
-        return detect_scroll_slop(shared_buffer[0], shared_buffer[1], shared_buffer[2], shared_buffer[3]);
+        return detect_scroll_slop(shared_buffer[0], shared_buffer[1], shared_buffer[2], shared_buffer[3], 1.0f);
     }
 
     /**
@@ -470,4 +469,4 @@ EMSCRIPTEN_BINDINGS(royal_nucleus_module) {
         .constructor()
         .function("getPredictor", &RoyalNucleus::getPredictor, allow_raw_pointers())
         .function("getGuardian", &RoyalNucleus::getGuardian, allow_raw_pointers());
-}
+    }
