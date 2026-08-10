@@ -14,12 +14,10 @@
         },
         
         initObservers: function() {
-            // مراقبة المهام الثقيلة التي تسبب التقطيع (Long Tasks > 50ms)
             if ('PerformanceObserver' in window) {
                 try {
                     new PerformanceObserver((list) => {
                         list.getEntries().forEach(entry => {
-                            // ✅ إصلاح حساب Total Blocking Time
                             window.NexusTelemetry.total_blocking_time +=
                                 Math.max(0, entry.duration - 50);
                             window.NexusTelemetry.longTasks.push({ name: entry.name, duration: entry.duration.toFixed(2) });
@@ -28,7 +26,6 @@
                 } catch(e) {}
             }
 
-            // مراقبة دقيقة لرجوع الصفحة (BFCache Monitor)
             window.addEventListener('pageshow', (event) => {
                 window.NexusTelemetry.metrics.bfcache_hit = event.persisted;
                 if (event.persisted) {
@@ -81,7 +78,6 @@
         }
     };
 
-    // تشغيل الرادار
     window.NexusTelemetry.initObservers();
     window.NEXUS_REPORT = function() { window.NexusTelemetry.generateReport(); };
 
@@ -91,313 +87,383 @@
     const WASM_URL = 'https://royal-engine.local/public/js/royal_nucleus.wasm';
     const JS_URL = 'https://royal-engine.local/public/js/royal_nucleus.js';
 
-    // ✅ 5. إصلاح INIT ليشمل Origin
+    // =========================================================================
+    // 🛠️ HELPER FUNCTIONS
+    // =========================================================================
+
+    function injectNexusPrerender(url, eagerness = 'moderate') {
+        if (!url) return false;
+
+        let target;
+        try {
+            target = new URL(url, window.location.href);
+        } catch (_) {
+            return false;
+        }
+
+        if (target.origin !== window.location.origin) {
+            console.warn('[NEXUS] Cross-origin prerender blocked:', target.href);
+            return false;
+        }
+
+        if (target.protocol !== 'https:' && target.protocol !== 'http:') {
+            return false;
+        }
+
+        const blocked = /^\/(cart|checkout|payment|login|logout|account)(\/|$)/i;
+        if (blocked.test(target.pathname)) {
+            return false;
+        }
+
+        if (typeof HTMLScriptElement === 'undefined' ||
+            !HTMLScriptElement.supports ||
+            !HTMLScriptElement.supports('speculationrules')) {
+            return false;
+        }
+
+        const normalized = target.href;
+        const existing = document.querySelector('script[data-nexus-prerender]');
+
+        if (existing) {
+            try {
+                const rules = JSON.parse(existing.textContent || '{}');
+                const urls = rules.prerender?.[0]?.urls || [];
+                if (urls.includes(normalized)) return true;
+            } catch (_) {}
+            existing.remove();
+        }
+
+        const script = document.createElement('script');
+        script.type = 'speculationrules';
+        script.dataset.nexusPrerender = 'true';
+        script.textContent = JSON.stringify({
+            prerender: [{
+                urls: [normalized],
+                eagerness
+            }]
+        });
+
+        document.head.appendChild(script);
+        return true;
+    }
+
+    function nexusPreconnect(url) {
+        if (!url) return;
+        try {
+            const target = new URL(url, window.location.href);
+            if (target.protocol !== 'https:' && target.protocol !== 'http:') return;
+            const origin = target.origin;
+            const links = document.querySelectorAll('link[rel="preconnect"]');
+            for (const link of links) {
+                if (link.href === origin || link.href === origin + '/') return;
+            }
+            const link = document.createElement('link');
+            link.rel = 'preconnect';
+            link.href = origin;
+            document.head.appendChild(link);
+        } catch (_) {}
+    }
+
+    function applyNexusAsyncVisuals() {
+        if (document.documentElement.dataset.nexusAsyncVisuals === 'true') return;
+        document.documentElement.dataset.nexusAsyncVisuals = 'true';
+
+        const apply = (root) => {
+            if (!root || root.nodeType !== 1) return;
+            if (root.tagName === 'IMG') {
+                root.decoding = 'async';
+                const rect = root.getBoundingClientRect();
+                const nearViewport = rect.top < window.innerHeight * 1.5;
+                if (!nearViewport && !root.hasAttribute('loading')) {
+                    root.loading = 'lazy';
+                }
+            }
+            if (root.querySelectorAll) {
+                root.querySelectorAll('img').forEach(img => {
+                    img.decoding = 'async';
+                    if (!img.hasAttribute('loading')) {
+                        const rect = img.getBoundingClientRect();
+                        if (rect.top > window.innerHeight * 1.5) {
+                            img.loading = 'lazy';
+                        }
+                    }
+                });
+            }
+        };
+
+        apply(document.documentElement);
+
+        const observer = new MutationObserver(mutations => {
+            for (const mutation of mutations) {
+                mutation.addedNodes.forEach(apply);
+            }
+        });
+        observer.observe(document.documentElement, { childList: true, subtree: true });
+    }
+
+    function applyNexusRenderOptimization() {
+        if (document.getElementById('nexus-render-optimization')) return;
+        const style = document.createElement('style');
+        style.id = 'nexus-render-optimization';
+        style.textContent = `
+            html, body { overflow-x: clip; }
+            img, video { content-visibility: auto; }
+        `;
+        document.head.appendChild(style);
+    }
+
+    function initNexusLayoutObserver() {
+        if (window.NexusLayoutObserverInitialized) return;
+        window.NexusLayoutObserverInitialized = true;
+        if (typeof IntersectionObserver === 'undefined') return;
+
+        const observer = new IntersectionObserver(entries => {
+            for (const entry of entries) {
+                if (!entry.isIntersecting) continue;
+                const el = entry.target;
+                if (el.tagName === 'IMG') {
+                    el.decoding = 'async';
+                    if (!el.hasAttribute('loading')) {
+                        el.loading = 'lazy';
+                    }
+                }
+            }
+        }, { rootMargin: '400px 0px' });
+
+        document.querySelectorAll('img').forEach(el => observer.observe(el));
+    }
+
+    function setNexusThrottle(state) {
+        document.documentElement.classList.toggle('nexus-fast-scroll', Boolean(state));
+    }
+
+    // =========================================================================
+    // 👑 IGNITION
+    // =========================================================================
+
     async function ignite() {
-        if (window.NexusWorkerActive) return; 
+        if (window.NexusWorkerActive) return;
 
         try {
             window.NexusTelemetry.startMark('WASM_IGNITION');
 
-            // ✅ 6. تحسين إنشاء الـ Worker باستخدام URL مطلق
             const worker = new Worker(
                 new URL('/public/js/nexus-worker.js', window.location.origin)
             );
             window.NexusWorker = worker;
             window.NexusWorkerActive = true;
 
-            // ✅ 6. إضافة معالج الخطأ
             worker.onerror = function (error) {
                 console.error("❌ NEXUS WORKER ERROR:", error);
                 window.NexusWorkerActive = false;
                 window.NexusWorker = null;
             };
 
-            // ✅ 5. إضافة origin إلى INIT
             worker.postMessage({
                 type: 'INIT',
                 origin: window.location.origin
             });
 
-            // ✅ 8. متغيرات اللمس
-            let nexusTouchStartX = 0;
-            let nexusTouchStartY = 0;
+            // =========================================================
+            // 🧠 MAIN THREAD MESSAGE HANDLER (Switch Architecture)
+            // =========================================================
+            const handleNexusWorkerMessage = (msg) => {
+                if (!msg || !msg.type) return;
 
-            // ✅ 8. مستمع touchstart
-            window.addEventListener(
-                'touchstart',
-                (e) => {
+                switch (msg.type) {
 
-                    if (!e.touches || !e.touches[0]) {
-                        return;
-                    }
+                    case 'NUCLEUS_READY':
+                        worker.postMessage({ type: 'INIT_MEMORY' });
+                        window.NexusTelemetry.endMark('WASM_IGNITION');
+                        console.log("🚀 NUCLEUS ACTIVE: Off-Main-Thread Fusion Complete.");
+                        drawBlueSquare("READY");
+                        break;
 
-                    nexusTouchStartX = e.touches[0].clientX;
-                    nexusTouchStartY = e.touches[0].clientY;
+                    case 'MEMORY_READY':
+                        console.log("🧠 [NEXUS] Shared WASM memory is ready.");
+                        break;
 
-                    const link = e.target.closest
-                        ? e.target.closest('a')
-                        : null;
+                    case 'EXECUTE_PRERENDER':
+                        injectNexusPrerender(msg.url, 'immediate');
+                        drawBlueSquare("RENDER");
+                        break;
 
-                    if (link && link.href) {
+                    case 'EXECUTE_BACK_PRERENDER':
+                        injectNexusPrerender(msg.url, 'moderate');
+                        break;
 
-                        window.dispatchToNucleus(
-                            'TOUCH_START',
-                            {
-                                x: nexusTouchStartX,
-                                y: nexusTouchStartY,
-                                timestamp: performance.now(),
-                                url: link.href
-                            }
-                        );
-                    }
-                },
-                {
-                    passive: true
-                }
-            );
+                    case 'PRECONNECT':
+                        nexusPreconnect(msg.url);
+                        break;
 
-            // ✅ 8. مستمع touchmove
-            window.addEventListener(
-                'touchmove',
-                (e) => {
+                    case 'APPLY_ASYNC_VISUALS':
+                        applyNexusAsyncVisuals();
+                        break;
 
-                    if (!e.touches || !e.touches[0]) {
-                        return;
-                    }
+                    case 'APPLY_RENDER_OPTIMIZATION':
+                        applyNexusRenderOptimization();
+                        break;
 
-                    const touch = e.touches[0];
+                    case 'INIT_LAYOUT_OBSERVER':
+                        initNexusLayoutObserver();
+                        break;
 
-                    window.dispatchToNucleus(
-                        'TOUCH_MOVE',
-                        {
-                            startX: nexusTouchStartX,
-                            startY: nexusTouchStartY,
-                            currentX: touch.clientX,
-                            currentY: touch.clientY,
-                            dpr: window.devicePixelRatio || 1
-                        }
-                    );
-                },
-                {
-                    passive: true
-                }
-            );
+                    case 'PREPARE_BFCACHE':
+                        console.log('[NEXUS] BFCache-safe mode active.');
+                        break;
 
-            // ✅ 9. Scroll Engine
-            let nexusLastScrollY = window.scrollY;
-            let nexusLastScrollTime = performance.now();
-            let nexusScrollScheduled = false;
+                    case 'OPTIMIZE_SCRIPT_PIPELINE':
+                        console.log('[NEXUS] Script pipeline optimization delegated to browser.');
+                        break;
 
-            window.addEventListener(
-                'scroll',
-                () => {
+                    case 'ENABLE_NETWORK_OPTIMIZATION':
+                        console.log('[NEXUS] Network optimization enabled.');
+                        break;
 
-                    if (nexusScrollScheduled) {
-                        return;
-                    }
+                    case 'THROTTLE_RENDER':
+                        setNexusThrottle(Boolean(msg.state));
+                        break;
 
-                    nexusScrollScheduled = true;
+                    case 'CONFIRM_SCROLL':
+                        document.documentElement.classList.add('nexus-user-scrolling');
+                        break;
 
-                    requestAnimationFrame(() => {
+                    case 'DRAW_BLUE_SQUARE':
+                        drawBlueSquare(msg.text || "SIGNAL");
+                        break;
 
-                        nexusScrollScheduled = false;
-
-                        const now = performance.now();
-                        const currentY = window.scrollY;
-
-                        const deltaTime =
-                            now - nexusLastScrollTime;
-
-                        window.dispatchToNucleus(
-                            'SCROLL_DATA',
-                            {
-                                y: currentY,
-                                lastY: nexusLastScrollY,
-                                delta: deltaTime
-                            }
-                        );
-
-                        nexusLastScrollY = currentY;
-                        nexusLastScrollTime = now;
-                    });
-                },
-                {
-                    passive: true
-                }
-            );
-
-            // ✅ 11. وظيفة Throttle
-            let nexusThrottleTimer = null;
-
-            function setNexusThrottle(state) {
-
-                document.documentElement.dataset.nexusScrolling =
-                    state ? 'fast' : 'normal';
-
-                clearTimeout(nexusThrottleTimer);
-
-                if (state) {
-                    nexusThrottleTimer = setTimeout(() => {
-                        document.documentElement.dataset.nexusScrolling =
-                            'normal';
-                    }, 120);
-                }
-            }
-
-            // ✅ 3. معالج worker.onmessage
-            worker.onmessage = function(e) {
-                const msg = e.data;
-
-                // 🎨 دالة مساعدة لإنشاء ورسم المربع الأزرق فورياً فوق الصفحة
-                const drawBlueSquare = (label = "NUCLEUS SIGNAL") => {
-                    let square = document.getElementById('nexus-debug-square');
-                    if (!square) {
-                        square = document.createElement('div');
-                        square.id = 'nexus-debug-square';
-                        square.style.cssText = `
-                            position: fixed;
-                            top: 20px;
-                            right: 20px;
-                            width: 60px;
-                            height: 60px;
-                            background-color: #0066ff;
-                            border: 2px solid #ffffff;
-                            border-radius: 8px;
-                            box-shadow: 0 4px 15px rgba(0, 102, 255, 0.5);
-                            z-index: 999999;
-                            display: flex;
-                            align-items: center;
-                            justify-content: center;
-                            color: white;
-                            font-size: 10px;
-                            font-weight: bold;
-                            font-family: sans-serif;
-                            pointer-events: none;
-                            transition: transform 0.2s ease, opacity 0.2s ease;
-                        `;
-                        square.innerText = label;
-                        document.body.appendChild(square);
-                    }
-                    square.style.transform = 'scale(1.2)';
-                    setTimeout(() => { square.style.transform = 'scale(1)'; }, 200);
-                };
-
-                if (msg.type === 'NUCLEUS_READY') {
-                    // النواة جاهزة، نطلب منها فتح حوض الذاكرة
-                    worker.postMessage({ type: 'INIT_MEMORY' });
-                    window.NexusTelemetry.endMark('WASM_IGNITION');
-                    console.log("🚀 NUCLEUS ACTIVE: Off-Main-Thread Fusion Complete.");
-                    drawBlueSquare("READY");
-                }
-
-                // ✅ 12. استقبال MEMORY_READY
-                if (msg.type === 'MEMORY_READY') {
-                    console.log(
-                        "🧠 [NEXUS] Shared WASM memory is ready."
-                    );
-                    return;
-                }
-
-                // ✅ 10. استقبال THROTTLE_RENDER
-                if (msg.type === 'THROTTLE_RENDER') {
-                    setNexusThrottle(Boolean(msg.state));
-                    return;
-                }
-
-                // ✅ 10. استقبال CONFIRM_SCROLL
-                if (msg.type === 'CONFIRM_SCROLL') {
-                    document.documentElement.dataset.nexusIntent = 'scroll';
-                    return;
-                }
-
-                // ✅ 7. استبدال EXECUTE_PRERENDER بالنسخة المحمية
-                if (msg.type === 'EXECUTE_PRERENDER') {
-
-                    const targetUrl = msg.url;
-
-                    if (!targetUrl) {
-                        return;
-                    }
-
-                    let target;
-
-                    try {
-                        target = new URL(targetUrl, window.location.href);
-                    } catch (error) {
-                        return;
-                    }
-
-                    // حماية إضافية على Main Thread
-                    if (target.origin !== window.location.origin) {
-                        console.warn(
-                            "[NEXUS] Cross-origin prerender blocked:",
-                            target.href
-                        );
-                        return;
-                    }
-
-                    if (
-                        target.protocol !== 'https:' &&
-                        target.protocol !== 'http:'
-                    ) {
-                        return;
-                    }
-
-                    if (
-                        /\/(cart|checkout|payment|login|logout|account)(\/|$)/i
-                            .test(target.pathname)
-                    ) {
-                        return;
-                    }
-
-                    if (
-                        !HTMLScriptElement.supports ||
-                        !HTMLScriptElement.supports('speculationrules')
-                    ) {
-                        console.log(
-                            "[NEXUS] Speculation Rules unavailable."
-                        );
-                        return;
-                    }
-
-                    drawBlueSquare("RENDER");
-
-                    const script = document.createElement('script');
-
-                    script.type = 'speculationrules';
-
-                    script.textContent = JSON.stringify({
-                        prerender: [
-                            {
-                                source: "list",
-                                urls: [target.href]
-                            }
-                        ]
-                    });
-
-                    document.head.appendChild(script);
-
-                    console.log(
-                        `⚡ [NEXUS] Prerender requested: ${target.href}`
-                    );
-                }
-
-                // باقي الرسائل (DRAW_BLUE_SQUARE) تمت معالجتها
-                if (msg.type === 'DRAW_BLUE_SQUARE') {
-                    drawBlueSquare(msg.text || "SIGNAL");
+                    default:
+                        console.log('[NEXUS] Unknown message type:', msg.type);
                 }
             };
 
-            // 4. إنشاء قناة إرسال بيانات الحساسات
+            // 🎨 دالة مساعدة لإنشاء ورسم المربع الأزرق فوراً فوق الصفحة
+            const drawBlueSquare = (label = "NUCLEUS SIGNAL") => {
+                let square = document.getElementById('nexus-debug-square');
+                if (!square) {
+                    square = document.createElement('div');
+                    square.id = 'nexus-debug-square';
+                    square.style.cssText = `
+                        position: fixed;
+                        top: 20px;
+                        right: 20px;
+                        width: 60px;
+                        height: 60px;
+                        background-color: #0066ff;
+                        border: 2px solid #ffffff;
+                        border-radius: 8px;
+                        box-shadow: 0 4px 15px rgba(0, 102, 255, 0.5);
+                        z-index: 999999;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        color: white;
+                        font-size: 10px;
+                        font-weight: bold;
+                        font-family: sans-serif;
+                        pointer-events: none;
+                        transition: transform 0.2s ease, opacity 0.2s ease;
+                    `;
+                    square.innerText = label;
+                    document.body.appendChild(square);
+                }
+                square.style.transform = 'scale(1.2)';
+                setTimeout(() => { square.style.transform = 'scale(1)'; }, 200);
+            };
+
+            worker.onmessage = function(e) {
+                handleNexusWorkerMessage(e.data);
+            };
+
+            // =========================================================
+            // 👆 TOUCH LIFECYCLE
+            // =========================================================
+            let nexusTouchStartX = 0;
+            let nexusTouchStartY = 0;
+            let nexusTouchActive = false;
+
+            window.addEventListener('touchstart', (e) => {
+                if (!e.touches || !e.touches[0]) return;
+
+                const touch = e.touches[0];
+                nexusTouchStartX = touch.clientX;
+                nexusTouchStartY = touch.clientY;
+                nexusTouchActive = true;
+
+                const target = e.target;
+                const link = target && target.closest ? target.closest('a[href]') : null;
+                if (!link || !link.href) return;
+
+                window.dispatchToNucleus('TOUCH_START', {
+                    x: nexusTouchStartX,
+                    y: nexusTouchStartY,
+                    timestamp: performance.now(),
+                    url: link.href
+                });
+            }, { passive: true });
+
+            window.addEventListener('touchmove', (e) => {
+                if (!nexusTouchActive || !e.touches || !e.touches[0]) return;
+                const touch = e.touches[0];
+                window.dispatchToNucleus('TOUCH_MOVE', {
+                    startX: nexusTouchStartX,
+                    startY: nexusTouchStartY,
+                    currentX: touch.clientX,
+                    currentY: touch.clientY,
+                    dpr: window.devicePixelRatio || 1
+                });
+            }, { passive: true });
+
+            window.addEventListener('touchend', () => { nexusTouchActive = false; }, { passive: true });
+            window.addEventListener('touchcancel', () => { nexusTouchActive = false; }, { passive: true });
+
+            // =========================================================
+            // 📜 SCROLL ENGINE
+            // =========================================================
+            let nexusLastScrollY = window.scrollY || 0;
+            let nexusLastScrollTime = performance.now();
+            let nexusScrollScheduled = false;
+            let nexusScrollStopTimer = null;
+
+            window.addEventListener('scroll', () => {
+                if (nexusScrollScheduled) return;
+                nexusScrollScheduled = true;
+
+                requestAnimationFrame(() => {
+                    nexusScrollScheduled = false;
+                    const now = performance.now();
+                    const currentY = window.scrollY || 0;
+                    const delta = Math.max(now - nexusLastScrollTime, 1);
+
+                    window.dispatchToNucleus('SCROLL_DATA', {
+                        y: currentY,
+                        lastY: nexusLastScrollY,
+                        delta
+                    });
+
+                    nexusLastScrollY = currentY;
+                    nexusLastScrollTime = now;
+
+                    clearTimeout(nexusScrollStopTimer);
+                    nexusScrollStopTimer = setTimeout(() => {
+                        document.documentElement.classList.remove('nexus-user-scrolling');
+                        document.documentElement.classList.remove('nexus-fast-scroll');
+                    }, 140);
+                });
+            }, { passive: true });
+
+            // =========================================================
+            // 🧩 DISPATCHER
+            // =========================================================
             window.dispatchToNucleus = (type, payload) => {
                 if (window.NexusWorker && window.NexusWorkerActive) {
                     worker.postMessage({ type, ...payload });
                 }
             };
 
-            // 5. ربط لمسات المستخدم بالنواة المنفصلة (تم إضافتها أعلاه)
-
-            // 6. إطلاق خيط الخمول
+            // =========================================================
+            // 🛡️ IDLE STABILIZATION
+            // =========================================================
             const triggerMaestroStabilization = () => {
                 console.log("%c🛡️ [NEXUS] SHIELD: Main Thread is now COLD.", "color:#3b82f6; font-weight:bold; background:#e0f2fe; padding:2px 5px;");
                 if (window.RoyalBridge && window.RoyalBridge.log) {
@@ -411,7 +477,6 @@
                 setTimeout(triggerMaestroStabilization, 4000);
             }
 
-            // طباعة التقرير
             setTimeout(() => { window.NexusTelemetry.generateReport(); }, 2000);
 
         } catch (err) {
@@ -424,37 +489,5 @@
     } else {
         ignite();
     }
-
-    // =========================================================================
-    // 👑 NEXUS DOM PERSISTENCE & ZERO-LATENCY SHELL ENGINE
-    // =========================================================================
-    (function initDOMPersistence() {
-        const SNAPSHOT_KEY = 'NEXUS_DOM_SHELL_SNAPSHOT';
-
-        const captureHomeState = () => {
-            const isHome = location.pathname === '/' || location.pathname.endsWith('/index.html') || location.href === location.origin + '/';
-            if (isHome && document.body) {
-                try {
-                    sessionStorage.setItem(SNAPSHOT_KEY, JSON.stringify({
-                        html: document.body.innerHTML,
-                        scrollTop: window.scrollY,
-                        timestamp: Date.now()
-                    }));
-                } catch(e) {}
-            }
-        };
-
-        document.addEventListener('visibilitychange', () => {
-            if (document.visibilityState === 'hidden') {
-                captureHomeState();
-            }
-        });
-
-        window.addEventListener('pageshow', (event) => {
-            if (event.persisted) {
-                console.log("%c⚡ [NEXUS]: Instant BFCache Restore (0ms Response)", "color:#00ff00; font-weight:bold; background:#003300; padding:2px 5px;");
-            }
-        });
-    })();
 
 })();
