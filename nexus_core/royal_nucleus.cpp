@@ -1,6 +1,7 @@
 // royal_nucleus.cpp
 #include <emscripten/emscripten.h>
 #include <emscripten/bind.h>
+
 #include <string>
 #include <chrono>
 #include <iostream>
@@ -9,6 +10,9 @@
 #include <unordered_map>
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
+#include <cctype>
+#include <cstdio>
 
 using namespace emscripten;
 
@@ -81,27 +85,38 @@ private:
 
     // دالة داخلية سريعة للتحقق من الممنوعات (محدثة)
     bool is_blacklisted(const std::string& url) {
-        if (url.empty()) return true;
 
-        if (url.find("javascript:") != std::string::npos ||
-            url.find("data:") != std::string::npos ||
-            url.find("blob:") != std::string::npos) {
+        if (url.empty()) {
             return true;
         }
 
         std::string clean = url;
-        std::transform(clean.begin(), clean.end(), clean.begin(),
-                       [](unsigned char c) {
-                           return static_cast<char>(std::tolower(c));
-                       });
 
-        if (clean.find("/cart") != std::string::npos ||
+        std::transform(
+            clean.begin(),
+            clean.end(),
+            clean.begin(),
+            [](unsigned char c) {
+                return static_cast<char>(std::tolower(c));
+            }
+        );
+
+        if (
+            clean.find("javascript:") != std::string::npos ||
+            clean.find("data:") != std::string::npos ||
+            clean.find("blob:") != std::string::npos
+        ) {
+            return true;
+        }
+
+        if (
+            clean.find("/cart") != std::string::npos ||
             clean.find("/checkout") != std::string::npos ||
             clean.find("/payment") != std::string::npos ||
             clean.find("/login") != std::string::npos ||
             clean.find("/logout") != std::string::npos ||
-            clean.find("/account") != std::string::npos ||
-            clean.find("#") != std::string::npos) {
+            clean.find("/account") != std::string::npos
+        ) {
             return true;
         }
 
@@ -231,11 +246,30 @@ public:
      * يتأكد من أن الرابط الذي حاول المستخدم فتحه أوفلاين هو رابط آمن للتحميل التلقائي
      */
     bool is_safe_for_auto_reload(const std::string& url) {
-        if (url.empty()) return false;
-        // إذا كان الرابط هو صفحة دفع أو خروج، لا نحمله تلقائياً (للأمان)
-        if (url.find("checkout") != std::string::npos || url.find("pay") != std::string::npos) {
+
+        if (url.empty()) {
             return false;
         }
+
+        std::string clean = url;
+
+        std::transform(
+            clean.begin(),
+            clean.end(),
+            clean.begin(),
+            [](unsigned char c) {
+                return static_cast<char>(std::tolower(c));
+            }
+        );
+
+        if (
+            clean.find("/checkout") != std::string::npos ||
+            clean.find("/payment") != std::string::npos ||
+            clean.find("/logout") != std::string::npos
+        ) {
+            return false;
+        }
+
         return true;
     }
 
@@ -296,10 +330,10 @@ public:
     }
 
     /**
-     * 🧠 دالة حساب الـ MD5 الوميضية المتوافقة تماماً مع الأندرويد
+     * 🧠 دالة حساب الهاش السريعة المتوافقة تماماً مع الأندرويد
      * يتم حساب الـ Hash للرابط داخل النواة مباشرة لحماية مسار التخزين
      */
-    std::string generate_md5_key(const std::string& input) const {
+    std::string generate_fast_hash_key(const std::string& input) const {
         // محاكاة سريعة ومحمية خالية من الـ Crashes
         unsigned long hash = 5381;
         for (char c : input) {
@@ -421,38 +455,52 @@ public:
 // =========================================================
 class RoyalNucleus {
 private:
-    RoyalIntelPrediction* predictor_ptr;
-    RoyalNetworkGuardian* guardian_ptr;
+    RoyalIntelPrediction* predictor_ptr = nullptr;
+    RoyalNetworkGuardian* guardian_ptr = nullptr;
 
 public:
     // [تعديل جراحي آمن للبيئة - Off-Main-Thread Fusion]
-    RoyalNucleus() {
+    RoyalNucleus()
+        : predictor_ptr(nullptr),
+          guardian_ptr(nullptr) {
+
         predictor_ptr = new RoyalIntelPrediction();
         guardian_ptr = new RoyalNetworkGuardian();
-        
-        // ❌ تم إيقاف الاستدعاء المباشر للدوال المعتمدة على الـ DOM هنا 
-        // لتجنب خطأ MutationObserver داخل الـ Worker.
-        // الدعم التلقائي أصبح آمنًا داخل الدوال نفسها عند استدعائها يدوياً.
 
-        // 🌪️ محاكاة خيط التركيب + إرسال إشارة للمربع الأزرق
         EM_ASM({
-            console.log("👑 ROYAL NUCLEUS: Maestro fused with Intel & Guardian.");
-            console.log("🌪️ Compositor Simulation: ACTIVE.");
-            
-            // 🟦 إرسال إشارة الجاهزية والرسم للخيط الرئيسي بأمان
-            if (typeof postMessage !== 'undefined') {
-                postMessage({ type: 'DRAW_BLUE_SQUARE', text: 'NUCLEUS' });
+            if (typeof console !== 'undefined') {
+                console.log(
+                    "👑 ROYAL NUCLEUS: Maestro fused with Intel & Guardian."
+                );
+            }
+
+            if (
+                typeof self !== 'undefined' &&
+                typeof self.postMessage === 'function'
+            ) {
+                self.postMessage({
+                    type: 'DRAW_BLUE_SQUARE',
+                    text: 'NUCLEUS'
+                });
             }
         });
     }
 
     // دوال الجلب الصريحة (Explicit Getters)
-    RoyalIntelPrediction* getPredictor() const { return predictor_ptr; }
-    RoyalNetworkGuardian* getGuardian() const { return guardian_ptr; }
+    RoyalIntelPrediction* getPredictor() const {
+        return predictor_ptr;
+    }
+
+    RoyalNetworkGuardian* getGuardian() const {
+        return guardian_ptr;
+    }
 
     ~RoyalNucleus() {
         delete predictor_ptr;
         delete guardian_ptr;
+
+        predictor_ptr = nullptr;
+        guardian_ptr = nullptr;
     }
 };
 
@@ -485,7 +533,7 @@ EMSCRIPTEN_BINDINGS(royal_nucleus_module) {
     // كلاس الـ Network
     class_<RoyalNetworkCore>("RoyalNetworkCore")
         .constructor()
-        .function("generate_md5_key", &RoyalNetworkCore::generate_md5_key)
+        .function("generate_fast_hash_key", &RoyalNetworkCore::generate_fast_hash_key)
         .function("is_url_cacheable", &RoyalNetworkCore::is_url_cacheable)
         .function("resolve_resource_ttl", &RoyalNetworkCore::resolve_resource_ttl)
         .function("resolve_mime_type", &RoyalNetworkCore::resolve_mime_type);
