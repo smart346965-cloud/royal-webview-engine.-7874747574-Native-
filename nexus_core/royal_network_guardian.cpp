@@ -1,276 +1,545 @@
 #include <emscripten/emscripten.h>
 #include <emscripten/bind.h>
+
 #include <string>
 #include <unordered_map>
 #include <chrono>
 #include <vector>
 #include <algorithm>
 #include <unordered_set>
+#include <cctype>
 
 using namespace emscripten;
 
+
 /**
- * 🛡️ ROYAL NETWORK GUARDIAN (The Binary Force)
- * محرك إدارة الكاش والشبكة بمستوى لغة الآلة
+ * 🛡️ ROYAL NETWORK GUARDIAN
+ *
+ * Worker-safe Network Decision Engine.
+ *
+ * ملاحظة:
+ * الـGuardian لا يحاول تجاوز HTTP Cache-Control
+ * ولا يزوّر حالة الشبكة.
+ *
+ * وظيفته:
+ * 1. تحليل الطلب.
+ * 2. تحديد استراتيجية الكاش.
+ * 3. حماية APIs.
+ * 4. كشف الدومينات الثقيلة.
+ * 5. إرسال أوامر DOM إلى Main Thread عند الحاجة.
  */
 class RoyalNetworkGuardian {
+
 private:
-    // [تعديلات شرسة في royal_network_guardian.cpp]
+
     struct CacheRule {
         long long ttl;
-        bool stubborn_mode; // true: يتجاهل أوامر السيرفر بالحذف
-        bool code_caching;  // تفعيل V8 Bytecode
+        bool persistent_hint;
+        bool code_caching;
     };
 
     std::unordered_map<std::string, CacheRule> registry;
+
     long long session_start_time;
 
-    // [تعديل جراحي 1: إضافة قاعدة بيانات الدومينات الطفيلية]
     std::unordered_set<std::string> parasitic_registry;
-    bool is_nucleus_stabilized = false; // لم يتم الاستقرار بعد
 
-    // دالة خاصة لتحويل النصوص للأسفل بسرعة المعالج
-    void fast_lower(std::string& s) {
-        std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c){ return std::tolower(c); });
+    bool is_nucleus_stabilized = false;
+
+
+    void fast_lower(std::string& s) const {
+        std::transform(
+            s.begin(),
+            s.end(),
+            s.begin(),
+            [](unsigned char c) {
+                return static_cast<char>(std::tolower(c));
+            }
+        );
     }
 
-public:
-    // نحدث الـ Constructor لقيد الدومينات الشهيرة بالبطء
-    void init_shield_registry() {
-        parasitic_registry = {
-            "gorgias.chat", "connect.facebook.net", "google-analytics.com",
-            "googletagmanager.com", "klaviyo.com", "luckyorange.com",
-            "hotjar.com", "snapchat.com", "tiktok.com", "ads-twitter.com"
-        };
-    }
 
-    RoyalNetworkGuardian() {
-        session_start_time = std::chrono::system_clock::now().time_since_epoch().count();
-        
-        // 🧪 تلقيم القواعد "المتمردة" (Kiwi Style)
-        registry[".js"]    = { 604800000, true, true };  // أسبوع كامل - تجاهل السيرفر - كاش Bytecode
-        registry[".css"]   = { 604800000, true, false };
-        registry[".woff2"] = { 2592000000, true, false };
-        registry["html"]   = { 300000, false, false };    // 5 دقائق للصفحات الهيكلية
+    bool contains_any(
+        const std::string& value,
+        const std::vector<std::string>& patterns
+    ) const {
 
-        // تهيئة درع الدومينات الطفيلية
-        init_shield_registry();
-    }
-
-    /**
-     * ⚡ محرك اتخاذ القرار الثنائي (Binary Decision Engine)
-     * يقرر في (0.0001ms) هل يجب استدعاء الملف من الكاش المحلي أم لا
-     */
-    val evaluate_request_strategy(std::string url) {
-        fast_lower(url);
-        
-        // منع كاش الـ APIs الحساسة فوراً في طبقة النواة
-        if (url.find("/api/") != std::string::npos || url.find("token") != std::string::npos) {
-            return val("NETWORK_ONLY");
-        }
-
-        // استخراج الامتداد بسرعة البرق
-        size_t dot_pos = url.find_last_of('.');
-        if (dot_pos != std::string::npos) {
-            std::string ext = url.substr(dot_pos);
-            if (registry.count(ext) && registry[ext].stubborn_mode) {
-                return val("FORCE_STUBBORN_CACHE");
+        for (const auto& pattern : patterns) {
+            if (value.find(pattern) != std::string::npos) {
+                return true;
             }
         }
 
-        return val("STALE_WHILE_REVALIDATE"); // العرض الفوري مع التحديث الخلفي
-    }
-
-    /**
-     * 🧬 مولد المفاتيح الوميضي (Atomic Key Generator)
-     * بدلاً من MD5 الجافا التقليدي، نستخدم خوارزمية دقيقة لربط الرابط بمكانه في الذاكرة
-     */
-    std::string compute_atomic_key(const std::string& url) {
-        unsigned int hash = 0x811c9dc5; // FNV-1a Hash (الأسرع في C++)
-        for (char c : url) {
-            hash ^= (unsigned int)c;
-            hash *= 0x01000193;
-        }
-        
-        char hex[9];
-        snprintf(hex, sizeof(hex), "%08x", hash);
-        return std::string(hex);
-    }
-
-    /**
-     * 🌐 رادار جودة الاتصال (Network Health Awareness)
-     * يحسب النواة إذا كان الإنترنت يسمح بعمل Prefetch ثقيل أم لا
-     */
-    bool should_throttle_network(double current_latency) {
-        // إذا كان التأخير أكثر من 500ms، النواة تأمر بإيقاف التنبؤ لحماية الرام والبطارية
-        return current_latency > 500.0;
-    }
-
-    /**
-     * 👑 تقنية "الاستبقاء الساخن" (Hot-Retention Policy)
-     * تخبر الجافا بالملفات التي يجب أن تظل في الـ RAM دائماً
-     */
-    bool is_critical_asset(const std::string& url) {
-        return (url.find("main.js") != std::string::npos || 
-                url.find("style.css") != std::string::npos ||
-                url.find("theme.css") != std::string::npos);
-    }
-
-    /**
-     * 🖼️ محرك الرندرة البصري (Async Image Engine)
-     * يجبر المتصفح على معالجة الصور في خيوط خلفية بعيداً عن الـ UI
-     */
-    void enforce_async_visuals() {
-        EM_ASM({
-            if (typeof document !== 'undefined' && typeof MutationObserver !== 'undefined') {
-                const observer = new MutationObserver((mutations) => {
-                    mutations.forEach(m => {
-                        m.addedNodes.forEach(node => {
-                            if (node.tagName === 'IMG') {
-                                node.decoding = 'async'; 
-                                node.loading = 'lazy';
-                            }
-                        });
-                    });
-                });
-                observer.observe(document.documentElement, { childList: true, subtree: true });
-                console.log("🖼️ NUCLEUS: Async Image Decoding Enforced.");
-            } else {
-                console.log("⚡ NUCLEUS (Worker): Async visuals skipped in worker thread.");
-            }
-        });
-    }
-
-    /**
-     * ⚡ تفعيل كاش الـ V8 Bytecode
-     * يضمن أن الجافا سكريبت لا يُعاد ترجمته في كل مرة
-     */
-    void trigger_bytecode_opt() {
-        // إرسال إشارة للمتصفح أن الموارد القادمة يجب حفظها كـ Bytecode
-        EM_ASM({
-            window.addEventListener('load', () => {
-                if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
-                    navigator.serviceWorker.controller.postMessage({type: 'SAVE_BYTECODE'});
-                }
-            });
-        });
-    }
-
-    /**
-     * 🌐 تقنية "القناة الساخنة" (Socket Persistency Commander)
-     * يمنع السيرفر من إغلاق الاتصال ويقوم بتسخين الـ DNS مسبقاً
-     */
-    void maintain_hot_socket(const std::string& domain) {
-        EM_ASM_({
-            const url = UTF8ToString($0);
-            if (typeof document !== 'undefined') {
-                const link = document.createElement('link');
-                link.rel = 'preconnect';
-                link.href = url;
-                link.crossOrigin = 'anonymous';
-                document.head.appendChild(link);
-            }
-            fetch(url, { mode: 'no-cors', cache: 'no-store', priority: 'low' });
-            console.log("🌐 NUCLEUS: Socket held HOT for " + url);
-        }, domain.c_str());
-    }
-
-    /**
-     * 🧠 محرك السيادة على الكاش (The Stubborn Cache Decision)
-     * يخبر الجافا: "استخدم هذا الملف حتى لو قال السيرفر لا تستخدمه"
-     */
-    val get_stubborn_strategy(std::string url) {
-        fast_lower(url);
-        size_t dot_pos = url.find_last_of('.');
-        if (dot_pos != std::string::npos) {
-            std::string ext = url.substr(dot_pos);
-            if (registry.count(ext) && registry[ext].stubborn_mode) {
-                return val("FORCE_STUBBORN_CACHE"); 
-            }
-        }
-        return val("DEFAULT_STRATEGY");
-    }
-
-    /**
-     * ⚡ تفعيل أرشفة الـ Bytecode (V8 Persistence Engine)
-     */
-    void force_bytecode_persistence() {
-        EM_ASM({
-            // إجبار الكروميوم على اعتبار كل السكربتات "مؤهلة للكاش الثنائي"
-            if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
-                navigator.serviceWorker.controller.postMessage({
-                    type: 'SAVE_BYTECODE_STRICT',
-                    force: true
-                });
-            }
-        });
-    }
-
-    /**
-     * 🚀 خوارزمية "التدفق القسري" (Forced Multi-Burst Stream)
-     * تقوي الشبكة الضعيفة عبر تزييف حالة الاتصال وفتح مسارات متوازية
-     */
-    void activate_network_turbo() {
-        EM_ASM({
-            if (typeof navigator !== 'undefined' && navigator.connection) {
-                Object.defineProperty(navigator, 'connection', {
-                    get: () => ({ effectiveType: '4g', downlink: 100, rtt: 5, saveData: false }),
-                    configurable: true
-                });
-            }
-
-            if (typeof document !== 'undefined' && typeof MutationObserver !== 'undefined') {
-                const observer = new MutationObserver((mutations) => {
-                    mutations.forEach(m => {
-                        m.addedNodes.forEach(node => {
-                            if (node.tagName === 'SCRIPT' || node.tagName === 'LINK') {
-                                node.setAttribute('fetchpriority', 'high');
-                            }
-                        });
-                    });
-                });
-                observer.observe(document.documentElement, { childList: true, subtree: true });
-            }
-            console.log("🚀 NUCLEUS: Network Turbo Active.");
-        });
-    }
-
-    /**
-     * 🛡️ خوارزمية عزل السيادة (Sovereignty Isolation Decision)
-     * تقرر في زمن 0.00001ms هل السكربت مسموح له بالمرور أم يجب عزله
-     */
-    bool should_isolate_domain(std::string url) {
-        fast_lower(url);
-        
-        // إذا لم تستقر النواة بعد (أول 3 ثوانٍ)، نعزل أي دومين طفيلي فوراً
-        for (const auto& domain : parasitic_registry) {
-            if (url.find(domain) != std::string::npos) {
-                return true; // يجب عزل هذا السكربت الآن
-            }
-        }
         return false;
     }
 
-    // إشارة تخبر النواة بأن الرسم الأساسي اكتمل ويمكنها البدء في فك الخناق
+
+    void dispatch_main_thread_command(
+        const std::string& type,
+        const std::string& value = ""
+    ) {
+
+        EM_ASM_({
+            const type = UTF8ToString($0);
+            const value = UTF8ToString($1);
+
+            if (
+                typeof self !== 'undefined' &&
+                typeof self.postMessage === 'function'
+            ) {
+
+                const message = {
+                    type: type
+                };
+
+                if (value.length > 0) {
+                    message.value = value;
+                }
+
+                self.postMessage(message);
+            }
+
+        }, type.c_str(), value.c_str());
+    }
+
+
+public:
+
+    RoyalNetworkGuardian() {
+
+        session_start_time =
+            std::chrono::system_clock::now()
+            .time_since_epoch()
+            .count();
+
+
+        /**
+         * Static assets.
+         *
+         * TTL هنا قرار داخلي للنواة.
+         * التنفيذ النهائي للكاش يبقى للـService Worker
+         * وHTTP headers.
+         */
+        registry[".js"] = {
+            7LL * 24 * 60 * 60 * 1000,
+            true,
+            true
+        };
+
+        registry[".css"] = {
+            7LL * 24 * 60 * 60 * 1000,
+            true,
+            false
+        };
+
+        registry[".woff2"] = {
+            30LL * 24 * 60 * 60 * 1000,
+            true,
+            false
+        };
+
+        registry[".png"] = {
+            7LL * 24 * 60 * 60 * 1000,
+            true,
+            false
+        };
+
+        registry[".jpg"] = {
+            7LL * 24 * 60 * 60 * 1000,
+            true,
+            false
+        };
+
+        registry[".webp"] = {
+            7LL * 24 * 60 * 60 * 1000,
+            true,
+            false
+        };
+
+        registry["html"] = {
+            5LL * 60 * 1000,
+            false,
+            false
+        };
+
+
+        init_shield_registry();
+    }
+
+
+    /**
+     * 🛡️ قائمة الدومينات الثقيلة.
+     */
+    void init_shield_registry() {
+
+        parasitic_registry = {
+
+            "gorgias.chat",
+            "connect.facebook.net",
+            "google-analytics.com",
+            "googletagmanager.com",
+            "klaviyo.com",
+            "luckyorange.com",
+            "hotjar.com",
+            "snapchat.com",
+            "tiktok.com",
+            "ads-twitter.com"
+        };
+    }
+
+
+    /**
+     * ⚡ قرار استراتيجية الطلب.
+     *
+     * القيم:
+     *
+     * NETWORK_ONLY
+     * CACHE_FIRST
+     * STALE_WHILE_REVALIDATE
+     */
+    val evaluate_request_strategy(
+        std::string url
+    ) {
+
+        fast_lower(url);
+
+
+        // الطلبات الحساسة لا تدخل الكاش.
+        if (
+            url.find("/api/") != std::string::npos ||
+            url.find("graphql") != std::string::npos ||
+            url.find("token") != std::string::npos ||
+            url.find("authorization") != std::string::npos ||
+            url.find("cookie") != std::string::npos ||
+            url.find("/login") != std::string::npos ||
+            url.find("/logout") != std::string::npos ||
+            url.find("/checkout") != std::string::npos ||
+            url.find("/payment") != std::string::npos
+        ) {
+
+            return val("NETWORK_ONLY");
+        }
+
+
+        size_t dot_pos = url.find_last_of('.');
+
+        if (dot_pos != std::string::npos) {
+
+            std::string ext =
+                url.substr(dot_pos);
+
+            auto it = registry.find(ext);
+
+            if (it != registry.end()) {
+
+                if (it->second.persistent_hint) {
+                    return val("CACHE_FIRST");
+                }
+            }
+        }
+
+
+        return val("STALE_WHILE_REVALIDATE");
+    }
+
+
+    /**
+     * 🧬 FNV-1a Atomic Key
+     */
+    std::string compute_atomic_key(
+        const std::string& url
+    ) const {
+
+        unsigned int hash = 0x811c9dc5u;
+
+        for (unsigned char c : url) {
+
+            hash ^= static_cast<unsigned int>(c);
+
+            hash *= 0x01000193u;
+        }
+
+        char hex[9];
+
+        snprintf(
+            hex,
+            sizeof(hex),
+            "%08x",
+            hash
+        );
+
+        return std::string(hex);
+    }
+
+
+    /**
+     * 🌐 Network Health
+     */
+    bool should_throttle_network(
+        double current_latency
+    ) const {
+
+        return current_latency > 500.0;
+    }
+
+
+    /**
+     * 👑 Critical assets
+     */
+    bool is_critical_asset(
+        const std::string& url
+    ) const {
+
+        return (
+            url.find("main.js") != std::string::npos ||
+            url.find("style.css") != std::string::npos ||
+            url.find("theme.css") != std::string::npos
+        );
+    }
+
+
+    /**
+     * 🖼️ Async Visuals
+     *
+     * DOM implementation is delegated to Main Thread.
+     */
+    void enforce_async_visuals() {
+
+        dispatch_main_thread_command(
+            "APPLY_ASYNC_VISUALS"
+        );
+    }
+
+
+    /**
+     * ⚡ Bytecode optimization
+     *
+     * لا نحاول اختراع V8 cache API.
+     *
+     * Chrome/V8 يدير code caching داخلياً.
+     *
+     * هذه الدالة الآن ترسل إشارة اختيارية للـMain Thread
+     * إذا كان لديك Service Worker يريد التعامل معها.
+     */
+    void trigger_bytecode_opt() {
+
+        dispatch_main_thread_command(
+            "OPTIMIZE_SCRIPT_PIPELINE"
+        );
+    }
+
+
+    /**
+     * 🌐 Preconnect
+     *
+     * لا ننفذ DOM من Worker.
+     */
+    void maintain_hot_socket(
+        const std::string& domain
+    ) {
+
+        if (domain.empty()) return;
+
+        dispatch_main_thread_command(
+            "PRECONNECT",
+            domain
+        );
+    }
+
+
+    /**
+     * 🧠 Stubborn strategy
+     *
+     * الاسم محفوظ للتوافق مع الـAPI.
+     *
+     * لكننا لم نعد ندعي أن النواة تستطيع
+     * تجاوز HTTP Cache-Control.
+     */
+    val get_stubborn_strategy(
+        std::string url
+    ) {
+
+        fast_lower(url);
+
+        size_t dot_pos =
+            url.find_last_of('.');
+
+
+        if (dot_pos != std::string::npos) {
+
+            std::string ext =
+                url.substr(dot_pos);
+
+            auto it = registry.find(ext);
+
+            if (
+                it != registry.end() &&
+                it->second.persistent_hint
+            ) {
+
+                return val("CACHE_FIRST");
+            }
+        }
+
+
+        return val("DEFAULT_STRATEGY");
+    }
+
+
+    /**
+     * ⚡ V8 code caching
+     *
+     * Chrome يديره داخلياً.
+     * Service Worker لا يملك API لحفظ V8 bytecode مباشرة.
+     */
+    void force_bytecode_persistence() {
+
+        dispatch_main_thread_command(
+            "OPTIMIZE_SCRIPT_PIPELINE"
+        );
+    }
+
+
+    /**
+     * 🚀 Network Turbo
+     *
+     * ممنوع تزوير navigator.connection.
+     *
+     * بدلاً من ذلك نرسل إشارة للـMain Thread
+     * لتطبيق تحسينات fetch/preconnect الآمنة.
+     */
+    void activate_network_turbo() {
+
+        dispatch_main_thread_command(
+            "ENABLE_NETWORK_OPTIMIZATION"
+        );
+    }
+
+
+    /**
+     * 🛡️ Domain Isolation
+     */
+    bool should_isolate_domain(
+        std::string url
+    ) {
+
+        fast_lower(url);
+
+
+        for (const auto& domain :
+             parasitic_registry) {
+
+            if (
+                url.find(domain) !=
+                std::string::npos
+            ) {
+
+                return true;
+            }
+        }
+
+
+        return false;
+    }
+
+
+    /**
+     * 👑 Stabilization
+     */
     void mark_stabilized() {
+
         is_nucleus_stabilized = true;
-        EM_ASM({ console.log("🛡️ NUCLEUS: Stabilized. Script Shield is now in Adaptive Mode."); });
+
+        EM_ASM({
+            if (
+                typeof console !== 'undefined'
+            ) {
+                console.log(
+                    "🛡️ NUCLEUS: Stabilized. "
+                    "Guardian is now in adaptive mode."
+                );
+            }
+        });
+    }
+
+
+    bool is_stabilized() const {
+
+        return is_nucleus_stabilized;
     }
 };
 
+
 EMSCRIPTEN_BINDINGS(royal_guardian_module) {
-    class_<RoyalNetworkGuardian>("RoyalNetworkGuardian")
-        .constructor()
-        .function("evaluate_request_strategy", &RoyalNetworkGuardian::evaluate_request_strategy)
-        .function("compute_atomic_key", &RoyalNetworkGuardian::compute_atomic_key)
-        .function("should_throttle_network", &RoyalNetworkGuardian::should_throttle_network)
-        .function("is_critical_asset", &RoyalNetworkGuardian::is_critical_asset)
-        .function("enforce_async_visuals", &RoyalNetworkGuardian::enforce_async_visuals)
-        .function("trigger_bytecode_opt", &RoyalNetworkGuardian::trigger_bytecode_opt)
-        .function("maintain_hot_socket", &RoyalNetworkGuardian::maintain_hot_socket)
-        .function("get_stubborn_strategy", &RoyalNetworkGuardian::get_stubborn_strategy)
-        .function("force_bytecode_persistence", &RoyalNetworkGuardian::force_bytecode_persistence)
-        .function("activate_network_turbo", &RoyalNetworkGuardian::activate_network_turbo)
-        .function("should_isolate_domain", &RoyalNetworkGuardian::should_isolate_domain)
-        .function("mark_stabilized", &RoyalNetworkGuardian::mark_stabilized);
+
+    class_<RoyalNetworkGuardian>(
+        "RoyalNetworkGuardian"
+    )
+
+    .constructor()
+
+    .function(
+        "evaluate_request_strategy",
+        &RoyalNetworkGuardian::evaluate_request_strategy
+    )
+
+    .function(
+        "compute_atomic_key",
+        &RoyalNetworkGuardian::compute_atomic_key
+    )
+
+    .function(
+        "should_throttle_network",
+        &RoyalNetworkGuardian::should_throttle_network
+    )
+
+    .function(
+        "is_critical_asset",
+        &RoyalNetworkGuardian::is_critical_asset
+    )
+
+    .function(
+        "enforce_async_visuals",
+        &RoyalNetworkGuardian::enforce_async_visuals
+    )
+
+    .function(
+        "trigger_bytecode_opt",
+        &RoyalNetworkGuardian::trigger_bytecode_opt
+    )
+
+    .function(
+        "maintain_hot_socket",
+        &RoyalNetworkGuardian::maintain_hot_socket
+    )
+
+    .function(
+        "get_stubborn_strategy",
+        &RoyalNetworkGuardian::get_stubborn_strategy
+    )
+
+    .function(
+        "force_bytecode_persistence",
+        &RoyalNetworkGuardian::force_bytecode_persistence
+    )
+
+    .function(
+        "activate_network_turbo",
+        &RoyalNetworkGuardian::activate_network_turbo
+    )
+
+    .function(
+        "should_isolate_domain",
+        &RoyalNetworkGuardian::should_isolate_domain
+    )
+
+    .function(
+        "mark_stabilized",
+        &RoyalNetworkGuardian::mark_stabilized
+    )
+
+    .function(
+        "is_stabilized",
+        &RoyalNetworkGuardian::is_stabilized
+    );
 }
