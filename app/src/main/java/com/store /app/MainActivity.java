@@ -26,7 +26,6 @@ import androidx.appcompat.app.AppCompatActivity;
 import com.store.app.offline.OfflineUIController;
 import com.store.app.offline.OfflineStateManager;
 import com.store.app.RoyalAuthManager;
-import com.store.app.navigation.RoyalNavigationEngine;
 
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -76,9 +75,6 @@ public class MainActivity extends AppCompatActivity {
     // 🔥 مدير المصادقة والدفع
     private RoyalAuthManager royalAuthManager;
 
-    // 👑 Royal Internal Navigation Engine
-    private RoyalNavigationEngine navigationEngine;
-
     // =========================================================
     // 🚀 دورة الحياة الأساسية
     // =========================================================
@@ -122,17 +118,6 @@ public class MainActivity extends AppCompatActivity {
 
         // 2️⃣ تعيين المحرك الخالد كواجهة أساسية مباشرة (استجابة 0ms)
         setContentView(activeWebView);
-
-        // 👑 Royal Internal Navigation Layer
-        ViewGroup navigationRoot =
-                findViewById(android.R.id.content);
-
-        navigationEngine =
-                new RoyalNavigationEngine(
-                        this,
-                        activeWebView,
-                        navigationRoot
-                );
 
         // 🔥 [تحسين shouldInterceptRequest]: تفعيل الاختصار لمنع الاستدعاءات الفارغة
         setupWebViewClient();
@@ -249,11 +234,6 @@ public class MainActivity extends AppCompatActivity {
         if (royalAuthManager != null) {
             royalAuthManager.destroy();
             royalAuthManager = null;
-        }
-
-        if (navigationEngine != null) {
-            navigationEngine.destroy();
-            navigationEngine = null;
         }
 
         RoyalWebViewHost.detach();
@@ -463,13 +443,8 @@ public class MainActivity extends AppCompatActivity {
         addContentView(progressBar, new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 8));
 
         engineManager = new WebEngineManager(
-                this,
-                activeWebView,
-                splashContainer,
-                progressBar,
-                () -> splashRemoved = true,
-                () -> splashRemoved,
-                navigationEngine
+                this, activeWebView, splashContainer, progressBar,
+                () -> splashRemoved = true, () -> splashRemoved
         );
         engineManager.setSplashStartTime(splashStartTime);
         engineManager.init();
@@ -592,4 +567,4 @@ public class MainActivity extends AppCompatActivity {
             }
         }
     }
-    }
+}
