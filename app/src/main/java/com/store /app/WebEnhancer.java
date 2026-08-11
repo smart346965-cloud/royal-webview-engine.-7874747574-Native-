@@ -45,9 +45,10 @@ public final class WebEnhancer {
     public static synchronized void preload(Context context) {
         if (preloaded || context == null) return;
 
-        // 👑 التعديل الجوهري: royal_loader.js هو أول ما يجب أن يدخل الذاكرة!
+        // 👑 التعديل الجوهري: royal_navigation.js هو أول ما يجب أن يدخل الذاكرة قبل loader!
         final String[] scripts = {
-                "public/js/royal_loader.js", // 👈 المحرك يسبق الجميع
+                "public/js/royal_navigation.js", // 👈 الملاح الذكي يسبق كل شيء
+                "public/js/royal_loader.js",     // 👈 المحرك يسبق الجميع
                 "public/js/royal-native-illusion.js",
                 "public/js/sw-register.js",
                 "public/js/index.js"
@@ -119,4 +120,4 @@ public final class WebEnhancer {
     }
 
     private WebEnhancer() {}
-                  }
+                    }
