@@ -21,6 +21,7 @@ import androidx.webkit.WebViewCompat;
 import androidx.webkit.WebViewFeature;
 
 import com.store.app.offline.OfflineStateManager;
+import com.store.app.navigation.RoyalNavigationEngine;
 
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
@@ -48,6 +49,7 @@ public class WebEngineManager {
     private long splashStartTime = 0;
 
     private final RoyalCapabilitiesEngine capabilitiesEngine;
+    private final RoyalNavigationEngine navigationEngine;
 
     public interface SplashStateChecker {
         boolean isRemoved();
@@ -58,7 +60,8 @@ public class WebEngineManager {
                             View splashOverlay,
                             android.widget.ProgressBar progressBar,
                             Runnable markSplashRemoved,
-                            SplashStateChecker splashChecker) {
+                            SplashStateChecker splashChecker,
+                            RoyalNavigationEngine navigationEngine) {
 
         this.context = context;
         this.webView = webView;
@@ -72,6 +75,7 @@ public class WebEngineManager {
                 : null;
 
         this.capabilitiesEngine = new RoyalCapabilitiesEngine(this.activity);
+        this.navigationEngine = navigationEngine;
     }
 
     public RoyalCapabilitiesEngine getCapabilitiesHandler() {
@@ -309,6 +313,10 @@ public class WebEngineManager {
 
                     Log.i(TAG, "✅ Page committed successfully: " + url);
 
+                    if (navigationEngine != null) {
+                        navigationEngine.onPageCommitVisible(url);
+                    }
+
                     if (trustedHost == null) {
                         setTrustedOrigin(url);
                     }
@@ -352,6 +360,11 @@ public class WebEngineManager {
                 if (request != null && request.isForMainFrame()) {
                     view.stopLoading();
                     OfflineStateManager.getInstance().setErrorPage(true, request.getUrl().toString());
+
+                    if (navigationEngine != null) {
+                        navigationEngine.onNavigationError();
+                    }
+
                     Log.w(TAG, "🛡️ Main frame error detected. Page invalid.");
                 }
             }
@@ -360,6 +373,11 @@ public class WebEngineManager {
             @Override
             public void onReceivedError(WebView view, int errorCode, String description, String failingUrl) {
                 OfflineStateManager.getInstance().setErrorPage(true, failingUrl);
+
+                if (navigationEngine != null) {
+                    navigationEngine.onNavigationError();
+                }
+
                 Log.w(TAG, "🛡️ Legacy main frame error detected. Page invalid.");
             }
 
@@ -532,6 +550,11 @@ public class WebEngineManager {
         scheme = scheme.toLowerCase();
 
         if (isSameOrigin(uri)) {
+
+            if (isMainFrame && navigationEngine != null) {
+                navigationEngine.beginInternalNavigation(uri);
+            }
+
             return false;
         }
 
@@ -676,4 +699,4 @@ public class WebEngineManager {
     public boolean isPageValid() {
         return OfflineStateManager.getInstance().isPageValid();
     }
-    }
+                            }
