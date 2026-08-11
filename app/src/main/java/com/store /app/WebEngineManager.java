@@ -298,6 +298,19 @@ public class WebEngineManager {
                 OfflineStateManager.getInstance().setPageValid(true);
 
                 Log.i(TAG, "✅ Page finished successfully. Page is valid.");
+
+                // =========================================================
+                // 🛠️ [حقن أدوات المطورين - Eruda Console]
+                // =========================================================
+                String erudaScript = "javascript:(function () { " +
+                        "if (window.eruda) return; " +
+                        "var script = document.createElement('script'); " +
+                        "script.src='https://cdn.jsdelivr.net/npm/eruda'; " +
+                        "document.body.appendChild(script); " +
+                        "script.onload = function () { eruda.init(); }; " +
+                        "})();";
+                        
+                view.evaluateJavascript(erudaScript, null);
             }
 
             // =========================================================
@@ -699,4 +712,4 @@ public class WebEngineManager {
     public boolean isPageValid() {
         return OfflineStateManager.getInstance().isPageValid();
     }
-                            }
+            }
