@@ -455,7 +455,7 @@ public:
                 typeof console !== 'undefined'
             ) {
                 console.log(
-                    "🛡️ NUCLEUS: Stabilized. "
+                    "🛡️ NUCLEUS: Stabilized. ",
                     "Guardian is now in adaptive mode."
                 );
             }
