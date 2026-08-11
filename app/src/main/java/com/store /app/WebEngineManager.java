@@ -302,11 +302,11 @@ public class WebEngineManager {
                 // =========================================================
                 // 🛠️ [حقن أدوات المطورين - Eruda Console]
                 // =========================================================
-                String erudaScript = "javascript:(function () { " +
+                String erudaScript = "(function () { " +
                         "if (window.eruda) return; " +
                         "var script = document.createElement('script'); " +
-                        "script.src='https://cdn.jsdelivr.net/npm/eruda'; " +
-                        "document.body.appendChild(script); " +
+                        "script.src = 'https://cdn.jsdelivr.net/npm/eruda'; " +
+                        "(document.head || document.documentElement).appendChild(script); " +
                         "script.onload = function () { eruda.init(); }; " +
                         "})();";
                         
@@ -712,4 +712,4 @@ public class WebEngineManager {
     public boolean isPageValid() {
         return OfflineStateManager.getInstance().isPageValid();
     }
-            }
+    }
