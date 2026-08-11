@@ -87,7 +87,7 @@ public class RoyalApplication extends Application {
             if (WebViewFeature.isFeatureSupported(WebViewFeature.PRECONNECT)) {
                 androidx.webkit.ProfileStore.getInstance()
                         .getOrCreateProfile("Default")
-                        .preconnect(Uri.parse("https://css-tricks.com").getHost());
+                        .preconnect(Uri.parse("https://snipcart.com").getHost());
                 Log.i("RoyalEngine", "🌐 Preconnect enqueued for origin.");
             }
         } catch (Exception e) {
