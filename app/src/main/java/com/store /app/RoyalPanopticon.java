@@ -1,1881 +1,619 @@
 package com.store.app;
 
-import android.app.Activity;
 import android.app.ActivityManager;
-import android.app.Application;
 import android.content.Context;
-import android.content.pm.PackageInfo;
 import android.os.Build;
 import android.os.Debug;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.Process;
-import android.os.SystemClock;
 import android.util.Log;
-import android.view.Choreographer;
-import android.view.View;
-import android.view.ViewGroup;
-import android.webkit.CookieManager;
 import android.webkit.WebView;
-import android.webkit.WebViewClient;
+import android.webkit.WebViewFactory;
 
-import java.io.BufferedReader;
-import java.io.FileReader;
-import java.io.IOException;
-import java.lang.ref.WeakReference;
-import java.util.ArrayDeque;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Comparator;
-import java.util.List;
-import java.util.Locale;
-import java.util.Map;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.*;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicLong;
 
-/**
- * ============================================================================
- * 👁️ ROYAL PANOPTICON V4.0
- * ============================================================================
- *
- * SELF-AWARE ANDROID / WEBVIEW DIAGNOSTIC ENGINE
- *
- * الهدف:
- *
- *  1. مراقبة Main Thread.
- *  2. قياس FPS / Jank / Frame stalls.
- *  3. اكتشاف ضغط الـ UI أثناء Scroll.
- *  4. اكتشاف WebView Renderer.
- *  5. معرفة نسخة Android System WebView / Chromium.
- *  6. مراقبة ذاكرة التطبيق.
- *  7. مراقبة GC pressure.
- *  8. مراقبة Threads.
- *  9. مراقبة WebView lifecycle.
- * 10. مراقبة Navigation من الخارج.
- * 11. اكتشاف renderer death.
- * 12. مراقبة Warm-up / preloading إن أمكن قياسه.
- * 13. مراقبة الشبكة على مستوى Android دون تعديل كل request.
- * 14. إصدار تقرير رقمي واضح.
- * 15. عدم الحاجة إلى recordExecution() داخل كل Engine.
- *
- * IMPORTANT:
- *
- * هذا المحرك لا يدعي أنه يستطيع رؤية داخل Chromium بالكامل.
- * Android لا يعطي التطبيقات صلاحية قراءة كل تفاصيل Chromium الداخلية.
- *
- * لذلك التقرير يميز بين:
- *
- * OBSERVED  = تمت ملاحظته فعلياً.
- * INFERRED  = استنتاج مدعوم بعدة مؤشرات.
- * UNKNOWN   = لا توجد API موثوقة لمعرفة ذلك.
- *
- * ============================================================================
- */
 public final class RoyalPanopticon {
 
-    // =========================================================================
-    // CORE
-    // =========================================================================
-
     public static final String TAG = "[ROYAL_DIAGNOSTICS]";
-    public static final String VERSION = "4.0";
-
-    private static final long SAMPLE_INTERVAL_MS = 2000L;
-    private static final long REPORT_INTERVAL_MS = 10000L;
 
     private static final Handler MAIN = new Handler(Looper.getMainLooper());
+    private static final Map<String,EngineRecord> ENGINES = new ConcurrentHashMap<>();
+    private static final Map<String,Set<String>> DEPS = new ConcurrentHashMap<>();
+    private static final List<String> EVENTS = new CopyOnWriteArrayList<>();
+    private static final AtomicLong MAX_FREEZE = new AtomicLong();
+    private static final AtomicLong TOTAL_FREEZE = new AtomicLong();
+    private static final AtomicLong FREEZE_COUNT = new AtomicLong();
 
-    private static ScheduledExecutorService monitorExecutor;
+    private static ScheduledExecutorService EXEC;
+    private static Context context;
+    private static volatile boolean running;
+    private static volatile long lastHeartbeat = System.currentTimeMillis();
+    private static volatile long lastAnalysis;
+    private static volatile long lastHeap;
+    private static volatile long peakHeap;
+    private static volatile long lastCpu;
+    private static volatile long cpuStamp;
 
-    private static volatile WeakReference<Activity> currentActivity =
-            new WeakReference<>(null);
+    private static final BrowserState BROWSER = new BrowserState();
+    private static final NavigationMetric NAV = new NavigationMetric();
+    private static final List<Anomaly> ANOMALIES = new CopyOnWriteArrayList<>();
 
-    private static volatile WeakReference<WebView> currentWebView =
-            new WeakReference<>(null);
+    private static final Thread.UncaughtExceptionHandler ORIGINAL_HANDLER =
+            Thread.getDefaultUncaughtExceptionHandler();
 
-    private static final AtomicBoolean RUNNING = new AtomicBoolean(false);
+    private RoyalPanopticon(){}
 
-    // =========================================================================
-    // MAIN THREAD
-    // =========================================================================
+    private static final class BrowserState {
+        volatile int dom;
+        volatile int fps = 60;
+        volatile long memory;
+        volatile int longTasks;
+        volatile long lastUpdate = System.currentTimeMillis();
+        final long[] fpsH = new long[12];
+        final long[] domH = new long[12];
+        final long[] memH = new long[12];
+        int fi,di,mi,fc,dc,mc;
 
-    private static final AtomicLong maxMainFreezeMs = new AtomicLong(0);
-    private static final AtomicLong totalMainFreezes = new AtomicLong(0);
-
-    private static volatile long lastMainHeartbeat;
-    private static volatile long lastMainLag;
-
-    // =========================================================================
-    // FRAME / SCROLL
-    // =========================================================================
-
-    private static final AtomicLong frameCount = new AtomicLong(0);
-    private static final AtomicLong droppedFrames = new AtomicLong(0);
-    private static final AtomicLong severeJankFrames = new AtomicLong(0);
-
-    private static volatile long frameWindowStart;
-    private static volatile long lastFrameTime;
-
-    private static volatile boolean scrolling = false;
-    private static volatile long lastScrollTime = 0;
-
-    private static final ArrayDeque<Long> frameDurations =
-            new ArrayDeque<>(120);
-
-    // =========================================================================
-    // WEBVIEW
-    // =========================================================================
-
-    private static volatile String webViewPackage = "UNKNOWN";
-    private static volatile String webViewVersion = "UNKNOWN";
-    private static volatile String userAgent = "UNKNOWN";
-    private static volatile String currentUrl = "UNKNOWN";
-
-    private static volatile boolean webViewAttached = false;
-    private static volatile boolean rendererAvailable = false;
-    private static volatile boolean rendererGone = false;
-
-    private static volatile int webViewWidth = 0;
-    private static volatile int webViewHeight = 0;
-
-    // =========================================================================
-    // MEMORY
-    // =========================================================================
-
-    private static volatile long javaHeapUsedMB = 0;
-    private static volatile long javaHeapMaxMB = 0;
-    private static volatile long nativeHeapAllocatedMB = 0;
-    private static volatile long pssMB = 0;
-
-    private static volatile long lastPssMB = 0;
-    private static volatile long peakPssMB = 0;
-
-    // =========================================================================
-    // THREADS
-    // =========================================================================
-
-    private static volatile int threadCount = 0;
-    private static volatile int appProcessCount = 0;
-
-    // =========================================================================
-    // NAVIGATION
-    // =========================================================================
-
-    private static volatile long navigationStart = 0;
-    private static volatile long navigationEnd = 0;
-
-    private static volatile String lastNavigationUrl = "";
-    private static volatile long lastNavigationDuration = 0;
-
-    private static volatile int navigationCount = 0;
-
-    // =========================================================================
-    // WARMUP / PRELOAD OBSERVATION
-    // =========================================================================
-
-    private static volatile long warmupStart = 0;
-    private static volatile long warmupEnd = 0;
-    private static volatile boolean warmupObserved = false;
-
-    // =========================================================================
-    // NETWORK
-    // =========================================================================
-
-    private static volatile long lastNetworkCheck = 0;
-
-    // =========================================================================
-    // DIAGNOSTICS
-    // =========================================================================
-
-    private static final List<String> activeFindings =
-            Collections.synchronizedList(new ArrayList<>());
-
-    private static final List<String> evidence =
-            Collections.synchronizedList(new ArrayList<>());
-
-    // =========================================================================
-    // CONSTRUCTOR
-    // =========================================================================
-
-    private RoyalPanopticon() {
-    }
-
-    // =========================================================================
-    // START
-    // =========================================================================
-
-    /**
-     * نقطة التشغيل الوحيدة.
-     *
-     * يفضل استدعاؤها مرة واحدة من MainActivity.onCreate().
-     */
-    public static synchronized void start(Activity activity) {
-
-        if (activity == null) {
-            Log.e(TAG, "❌ START FAILED: Activity == null");
-            return;
+        synchronized void update(int d,int f,long m,int l){
+            dom=d; fps=f; memory=m; longTasks=l;
+            lastUpdate=System.currentTimeMillis();
+            fpsH[fi]=f; fi=(fi+1)%fpsH.length; if(fc<fpsH.length)fc++;
+            domH[di]=d; di=(di+1)%domH.length; if(dc<domH.length)dc++;
+            memH[mi]=m; mi=(mi+1)%memH.length; if(mc<memH.length)mc++;
         }
 
-        if (RUNNING.get()) {
-
-            currentActivity = new WeakReference<>(activity);
-
-            discoverWebView(activity);
-
-            Log.i(TAG,
-                    "👁️ Panopticon already running. Activity refreshed.");
-
-            return;
+        synchronized long avg(long[] a,int n,int c){
+            if(c==0)return 0;
+            long s=0;
+            for(int i=0;i<c;i++)s+=a[i];
+            return s/c;
         }
 
-        RUNNING.set(true);
-
-        currentActivity = new WeakReference<>(activity);
-
-        Log.i(TAG, "");
-        Log.i(TAG, "============================================================");
-        Log.i(TAG, "👁️ ROYAL PANOPTICON V4.0");
-        Log.i(TAG, "============================================================");
-        Log.i(TAG, "Mode       : AUTOMATIC OBSERVATION");
-        Log.i(TAG, "Thread     : " + Thread.currentThread().getName());
-        Log.i(TAG, "Android    : " + Build.VERSION.RELEASE);
-        Log.i(TAG, "API        : " + Build.VERSION.SDK_INT);
-        Log.i(TAG, "PID        : " + Process.myPid());
-        Log.i(TAG, "============================================================");
-
-        collectRuntimeIdentity(activity);
-
-        discoverWebView(activity);
-
-        installMainThreadWatchdog();
-
-        installFrameMonitor();
-
-        installExceptionObserver();
-
-        startMonitorThread();
-
-        printBootReport();
-    }
-
-    // =========================================================================
-    // STOP
-    // =========================================================================
-
-    public static synchronized void stop() {
-
-        RUNNING.set(false);
-
-        if (monitorExecutor != null) {
-            monitorExecutor.shutdownNow();
-            monitorExecutor = null;
+        synchronized long min(long[] a,int c){
+            if(c==0)return 0;
+            long x=Long.MAX_VALUE;
+            for(int i=0;i<c;i++)x=Math.min(x,a[i]);
+            return x;
         }
 
-        Log.i(TAG, "💤 Royal Panopticon stopped.");
-    }
-
-    // =========================================================================
-    // RUNTIME IDENTITY
-    // =========================================================================
-
-    private static void collectRuntimeIdentity(Context context) {
-
-        try {
-
-            PackageInfo info;
-
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-
-                info = context.getPackageManager().getPackageInfo(
-                        "com.google.android.webview",
-                        0
-                );
-
-            } else {
-
-                info = context.getPackageManager().getPackageInfo(
-                        "com.google.android.webview",
-                        0
-                );
-            }
-
-            webViewPackage = info.packageName;
-
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                webViewVersion = info.getLongVersionCode()
-                        + " / " + info.versionName;
-            } else {
-                webViewVersion = info.versionName;
-            }
-
-        } catch (Exception ignored) {
-
-            try {
-
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-
-                    PackageInfo info =
-                            WebView.getCurrentWebViewPackage();
-
-                    if (info != null) {
-
-                        webViewPackage = info.packageName;
-                        webViewVersion = info.versionName;
-                    }
-                }
-
-            } catch (Throwable ignoredAgain) {
-                webViewPackage = "UNKNOWN";
-                webViewVersion = "UNKNOWN";
-            }
+        synchronized boolean falling(long[] a,int c){
+            if(c<4)return false;
+            int drops=0;
+            for(int i=1;i<c;i++)if(a[i]<a[i-1])drops++;
+            return drops>=c/2;
         }
 
-        Log.i(TAG,
-                "🔎 WEBVIEW PROVIDER: "
-                        + webViewPackage
-                        + " / "
-                        + webViewVersion);
-    }
-
-    // =========================================================================
-    // WEBVIEW DISCOVERY
-    // =========================================================================
-
-    private static void discoverWebView(Activity activity) {
-
-        MAIN.post(() -> {
-
-            try {
-
-                View root = activity.getWindow().getDecorView();
-
-                WebView found = findWebView(root);
-
-                if (found != null) {
-
-                    attachWebView(found);
-
-                } else {
-
-                    webViewAttached = false;
-
-                    Log.w(TAG,
-                            "⚠️ WebView not discovered yet. "
-                                    + "Panopticon will retry automatically.");
-                }
-
-            } catch (Throwable t) {
-
-                Log.e(TAG,
-                        "❌ WebView discovery failed: "
-                                + t.getClass().getSimpleName());
-            }
-
-        });
-    }
-
-    private static WebView findWebView(View root) {
-
-        if (root instanceof WebView) {
-            return (WebView) root;
-        }
-
-        if (!(root instanceof ViewGroup)) {
-            return null;
-        }
-
-        ViewGroup group = (ViewGroup) root;
-
-        for (int i = 0; i < group.getChildCount(); i++) {
-
-            WebView result =
-                    findWebView(group.getChildAt(i));
-
-            if (result != null) {
-                return result;
-            }
-        }
-
-        return null;
-    }
-
-    // =========================================================================
-    // ATTACH WEBVIEW
-    // =========================================================================
-
-    private static void attachWebView(WebView webView) {
-
-        if (webView == null) {
-            return;
-        }
-
-        currentWebView = new WeakReference<>(webView);
-
-        webViewAttached = true;
-
-        webViewWidth = webView.getWidth();
-        webViewHeight = webView.getHeight();
-
-        try {
-
-            userAgent =
-                    webView.getSettings().getUserAgentString();
-
-        } catch (Throwable ignored) {
-        }
-
-        try {
-
-            currentUrl =
-                    String.valueOf(webView.getUrl());
-
-        } catch (Throwable ignored) {
-        }
-
-        rendererAvailable = true;
-
-        Log.i(TAG, "");
-        Log.i(TAG, "🌐 WEBVIEW ATTACHED");
-        Log.i(TAG, "URL       : " + currentUrl);
-        Log.i(TAG, "Size      : "
-                + webViewWidth
-                + "x"
-                + webViewHeight);
-        Log.i(TAG, "Provider  : "
-                + webViewPackage);
-        Log.i(TAG, "Version   : "
-                + webViewVersion);
-        Log.i(TAG, "UserAgent : "
-                + shorten(userAgent, 180));
-
-        // لا نستبدل WebViewClient.
-        // هذا مهم جداً حتى لا نكسر محركاتك الحالية.
-
-        Log.i(TAG,
-                "🛡️ Existing WebViewClient preserved. "
-                        + "Panopticon remains observational.");
-    }
-
-    // =========================================================================
-    // MAIN THREAD WATCHDOG
-    // =========================================================================
-
-    private static void installMainThreadWatchdog() {
-
-        lastMainHeartbeat = SystemClock.uptimeMillis();
-
-        final Runnable heartbeat = new Runnable() {
-
-            @Override
-            public void run() {
-
-                long now = SystemClock.uptimeMillis();
-
-                long lag =
-                        now - lastMainHeartbeat;
-
-                lastMainHeartbeat = now;
-
-                lastMainLag = lag;
-
-                if (lag > maxMainFreezeMs.get()) {
-
-                    maxMainFreezeMs.set(lag);
-                }
-
-                if (lag >= 100) {
-
-                    totalMainFreezes.incrementAndGet();
-
-                    String severity;
-
-                    if (lag >= 1000) {
-                        severity = "CRITICAL";
-                    } else if (lag >= 250) {
-                        severity = "HIGH";
-                    } else {
-                        severity = "WARNING";
-                    }
-
-                    Log.w(TAG,
-                            "⚠️ MAIN THREAD "
-                                    + severity
-                                    + " | blocked="
-                                    + lag
-                                    + "ms");
-
-                    synchronized (evidence) {
-
-                        evidence.add(
-                                "MainThread freeze "
-                                        + lag
-                                        + "ms"
-                        );
-                    }
-                }
-
-                MAIN.postDelayed(this, 250);
-            }
-        };
-
-        MAIN.postDelayed(heartbeat, 250);
-    }
-
-    // =========================================================================
-    // FRAME MONITOR
-    // =========================================================================
-
-    private static void installFrameMonitor() {
-
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.JELLY_BEAN) {
-            return;
-        }
-
-        frameWindowStart =
-                SystemClock.uptimeMillis();
-
-        Choreographer.getInstance()
-                .postFrameCallback(new Choreographer.FrameCallback() {
-
-                    @Override
-                    public void doFrame(long frameTimeNanos) {
-
-                        long now =
-                                SystemClock.uptimeMillis();
-
-                        long previous =
-                                lastFrameTime;
-
-                        lastFrameTime = now;
-
-                        frameCount.incrementAndGet();
-
-                        if (previous > 0) {
-
-                            long duration =
-                                    now - previous;
-
-                            synchronized (frameDurations) {
-
-                                if (frameDurations.size() >= 120) {
-                                    frameDurations.pollFirst();
-                                }
-
-                                frameDurations.addLast(duration);
-                            }
-
-                            if (duration > 32) {
-
-                                droppedFrames.incrementAndGet();
-                            }
-
-                            if (duration > 100) {
-
-                                severeJankFrames.incrementAndGet();
-
-                                Log.w(TAG,
-                                        "⚠️ FRAME JANK | "
-                                                + duration
-                                                + "ms");
-                            }
-                        }
-
-                        Choreographer.getInstance()
-                                .postFrameCallback(this);
-                    }
-                });
-    }
-
-    // =========================================================================
-    // SCROLL OBSERVATION
-    // =========================================================================
-
-    /**
-     * يمكن للمحرك اكتشاف أن الـ WebView نفسه يتحرك
-     * بدون تعديل JavaScript.
-     */
-    private static void observeScroll() {
-
-        WebView webView =
-                currentWebView.get();
-
-        if (webView == null) {
-            scrolling = false;
-            return;
-        }
-
-        // لا نستطيع معرفة "scroll event" الحقيقي من Java
-        // في كل WebView دون اعتراض داخلي.
-        //
-        // لكن يمكن استخدام تغير scrollY كدليل خارجي.
-
-        int y =
-                webView.getScrollY();
-
-        // إذا تغير موضع WebView في آخر sample
-        // نعتبره Scroll activity.
-        //
-        // يتم حفظ القيمة في scrollPosition.
-        if (y != lastScrollY) {
-
-            scrolling = true;
-
-            lastScrollTime =
-                    SystemClock.uptimeMillis();
-
-            lastScrollY = y;
-
-        } else if (
-                SystemClock.uptimeMillis()
-                        - lastScrollTime
-                        > 500) {
-
-            scrolling = false;
+        synchronized boolean rising(long[] a,int c){
+            if(c<4)return false;
+            int rises=0;
+            for(int i=1;i<c;i++)if(a[i]>a[i-1])rises++;
+            return rises>=c/2;
         }
     }
 
-    private static volatile int lastScrollY = 0;
+    public static final class NavigationMetric {
+        public String url="";
+        public long clickTimestamp;
+        public long requestSentTimestamp;
+        public long firstByteTimestamp;
+        public long domInteractiveTimestamp;
+        public long domCompleteTimestamp;
+        public long uiThreadBlockMs;
 
-    // =========================================================================
-    // EXCEPTION OBSERVER
-    // =========================================================================
-
-    private static Thread.UncaughtExceptionHandler originalExceptionHandler;
-
-    private static void installExceptionObserver() {
-
-        if (originalExceptionHandler != null) {
-            return;
-        }
-
-        originalExceptionHandler =
-                Thread.getDefaultUncaughtExceptionHandler();
-
-        Thread.setDefaultUncaughtExceptionHandler(
-                (thread, throwable) -> {
-
-                    Log.e(TAG,
-                            "💀 FATAL EXCEPTION OBSERVED");
-
-                    Log.e(TAG,
-                            "Thread: "
-                                    + thread.getName());
-
-                    Log.e(TAG,
-                            "Type: "
-                                    + throwable.getClass()
-                                            .getName());
-
-                    Log.e(TAG,
-                            "Message: "
-                                    + throwable.getMessage());
-
-                    Log.e(TAG,
-                            Log.getStackTraceString(
-                                    throwable));
-
-                    if (originalExceptionHandler != null) {
-
-                        originalExceptionHandler
-                                .uncaughtException(
-                                        thread,
-                                        throwable
-                                );
-                    }
-                }
-        );
-    }
-
-    // =========================================================================
-    // MONITOR THREAD
-    // =========================================================================
-
-    private static void startMonitorThread() {
-
-        monitorExecutor =
-                Executors.newSingleThreadScheduledExecutor(
-                        r -> {
-
-                            Thread t =
-                                    new Thread(
-                                            r,
-                                            "Royal-Panopticon"
-                                    );
-
-                            t.setDaemon(true);
-
-                            return t;
-                        }
-                );
-
-        monitorExecutor.scheduleAtFixedRate(
-                RoyalPanopticon::performObservation,
-                1,
-                SAMPLE_INTERVAL_MS,
-                TimeUnit.MILLISECONDS
-        );
-
-        monitorExecutor.scheduleAtFixedRate(
-                RoyalPanopticon::performDeepDiagnosis,
-                5,
-                REPORT_INTERVAL_MS,
-                TimeUnit.MILLISECONDS
-        );
-    }
-
-    // =========================================================================
-    // OBSERVATION
-    // =========================================================================
-
-    private static void performObservation() {
-
-        try {
-
-            Activity activity =
-                    currentActivity.get();
-
-            if (activity != null) {
-
-                discoverWebView(activity);
-            }
-
-            observeMemory();
-
-            observeThreads();
-
-            observeWebView();
-
-            observeScroll();
-
-            observeNetworkEnvironment();
-
-        } catch (Throwable t) {
-
-            Log.e(TAG,
-                    "⚠️ Observation cycle error: "
-                            + t.getClass().getSimpleName());
+        synchronized void reset(String u){
+            url=u==null?"":u;
+            clickTimestamp=System.currentTimeMillis();
+            requestSentTimestamp=0;
+            firstByteTimestamp=0;
+            domInteractiveTimestamp=0;
+            domCompleteTimestamp=0;
+            uiThreadBlockMs=0;
         }
     }
 
-    // =========================================================================
-    // WEBVIEW OBSERVATION
-    // =========================================================================
+    private static final class EngineRecord {
+        final String name;
+        final AtomicLong ops=new AtomicLong();
+        final AtomicLong failures=new AtomicLong();
+        final AtomicLong latency=new AtomicLong();
+        final AtomicLong peakMemory=new AtomicLong();
+        volatile long lastPulse=System.currentTimeMillis();
 
-    private static void observeWebView() {
+        EngineRecord(String n){name=n;}
 
-        WebView webView =
-                currentWebView.get();
-
-        if (webView == null) {
-
-            webViewAttached = false;
-            return;
+        double health(){
+            long o=ops.get();
+            return o==0?100:Math.max(0,100-(failures.get()*100.0/o));
         }
 
-        MAIN.post(() -> {
+        double avg(){
+            long o=ops.get();
+            return o==0?0:latency.get()/(double)o;
+        }
+    }
 
-            try {
+    private static final class Anomaly {
+        final String area;
+        final String level;
+        final String reason;
+        final String evidence;
+        Anomaly(String a,String l,String r,String e){
+            area=a;level=l;reason=r;evidence=e;
+        }
+    }
 
-                currentUrl =
-                        String.valueOf(
-                                webView.getUrl());
+    public static synchronized void startAwareness(){
+        if(running)return;
+        running=true;
+        context=tryContext();
 
-                webViewWidth =
-                        webView.getWidth();
-
-                webViewHeight =
-                        webView.getHeight();
-
-                if (Build.VERSION.SDK_INT >= 29) {
-
-                    try {
-
-                        rendererAvailable =
-                                webView.getWebViewRenderProcess()
-                                        != null;
-
-                    } catch (Throwable ignored) {
-
-                        rendererAvailable = true;
-                    }
-                }
-
-            } catch (Throwable t) {
-
-                Log.w(TAG,
-                        "⚠️ WebView observation failed: "
-                                + t.getClass()
-                                        .getSimpleName());
+        Thread.setDefaultUncaughtExceptionHandler((t,e)->{
+            log("💀 FATAL "+t.getName()+" "+e.getClass().getSimpleName()+": "+String.valueOf(e.getMessage()));
+            if(ORIGINAL_HANDLER!=null){
+                try{ORIGINAL_HANDLER.uncaughtException(t,e);}catch(Throwable ignored){}
             }
         });
+
+        EXEC=Executors.newSingleThreadScheduledExecutor(r->{
+            Thread t=new Thread(r,"Panopticon-AI");
+            t.setDaemon(true);
+            return t;
+        });
+
+        EXEC.scheduleAtFixedRate(RoyalPanopticon::cycle,1,2,TimeUnit.SECONDS);
+
+        log("👁 PANOPTICON ONLINE");
+        log("Runtime="+Build.VERSION.RELEASE+" API="+Build.VERSION.SDK_INT);
+        log("Process="+Process.myPid());
+        logWebViewProvider();
     }
 
-    // =========================================================================
-    // MEMORY
-    // =========================================================================
-
-    private static void observeMemory() {
-
-        Runtime runtime =
-                Runtime.getRuntime();
-
-        long used =
-                runtime.totalMemory()
-                        - runtime.freeMemory();
-
-        javaHeapUsedMB =
-                used / (1024 * 1024);
-
-        javaHeapMaxMB =
-                runtime.maxMemory()
-                        / (1024 * 1024);
-
-        nativeHeapAllocatedMB =
-                Debug.getNativeHeapAllocatedSize()
-                        / (1024 * 1024);
-
-        ActivityManager manager =
-                (ActivityManager)
-                        getContext()
-                                .getSystemService(
-                                        Context.ACTIVITY_SERVICE
-                                );
-
-        if (manager != null) {
-
-            Debug.MemoryInfo memoryInfo =
-                    new Debug.MemoryInfo();
-
-            Debug.getMemoryInfo(memoryInfo);
-
-            pssMB =
-                    memoryInfo.getTotalPss()
-                            / 1024;
-
-            if (pssMB > peakPssMB) {
-
-                peakPssMB = pssMB;
-            }
-
-            lastPssMB = pssMB;
+    public static synchronized void stopAwareness(){
+        running=false;
+        if(EXEC!=null){
+            EXEC.shutdownNow();
+            EXEC=null;
         }
+        log("PANOPTICON OFFLINE");
     }
 
-    // =========================================================================
-    // THREAD CENSUS
-    // =========================================================================
+    private static void cycle(){
+        if(!running)return;
 
-    private static void observeThreads() {
+        final long posted=System.nanoTime();
 
-        try {
+        MAIN.post(()->{
+            long lag=(System.nanoTime()-posted)/1_000_000L;
+            lastHeartbeat=System.currentTimeMillis();
 
-            threadCount =
-                    Thread.getAllStackTraces().size();
+            if(lag>=32){
+                FREEZE_COUNT.incrementAndGet();
+                TOTAL_FREEZE.addAndGet(lag);
+                MAX_FREEZE.accumulateAndGet(lag,Math::max);
 
-        } catch (Throwable ignored) {
-        }
-
-        try {
-
-            ActivityManager manager =
-                    (ActivityManager)
-                            getContext()
-                                    .getSystemService(
-                                            Context.ACTIVITY_SERVICE
-                                    );
-
-            if (manager != null) {
-
-                List<ActivityManager.RunningAppProcessInfo>
-                        processes =
-                        manager.getRunningAppProcesses();
-
-                if (processes != null) {
-
-                    int count = 0;
-
-                    for (ActivityManager
-                            .RunningAppProcessInfo process
-                            : processes) {
-
-                        if (process.uid
-                                == Process.myUid()) {
-
-                            count++;
-                        }
-                    }
-
-                    appProcessCount = count;
+                synchronized(NAV){
+                    if(NAV.clickTimestamp>0 && NAV.domCompleteTimestamp==0)
+                        NAV.uiThreadBlockMs+=lag;
                 }
+
+                if(lag>=100)
+                    log("UI_FREEZE "+lag+"ms");
             }
+        });
 
-        } catch (Throwable ignored) {
+        analyze();
+    }
+
+    private static void analyze(){
+        ANOMALIES.clear();
+
+        long now=System.currentTimeMillis();
+        long silence=now-BROWSER.lastUpdate;
+
+        long heap=Debug.getPss()/1024L;
+        lastHeap=heap;
+        peakHeap=Math.max(peakHeap,heap);
+
+        if(heap>256)
+            ANOMALIES.add(new Anomaly(
+                    "MEMORY","HIGH",
+                    "Application memory pressure is elevated.",
+                    "PSS="+heap+"MB peak="+peakHeap+"MB"
+            ));
+
+        long freeze=MAX_FREEZE.get();
+
+        if(freeze>=250)
+            ANOMALIES.add(new Anomaly(
+                    "MAIN_THREAD","CRITICAL",
+                    "Main thread experienced a severe scheduling delay.",
+                    "maxFreeze="+freeze+"ms count="+FREEZE_COUNT.get()
+            ));
+        else if(freeze>=100)
+            ANOMALIES.add(new Anomaly(
+                    "MAIN_THREAD","HIGH",
+                    "Main thread experienced noticeable blocking.",
+                    "maxFreeze="+freeze+"ms"
+            ));
+
+        synchronized(BROWSER){
+            if(BROWSER.fps<45)
+                ANOMALIES.add(new Anomaly(
+                        "WEBVIEW_RENDER","HIGH",
+                        "Reported WebView frame rate is low.",
+                        "fps="+BROWSER.fps+" avg="+BROWSER.avg(BROWSER.fpsH,BROWSER.fc)
+                ));
+
+            if(BROWSER.longTasks>0)
+                ANOMALIES.add(new Anomaly(
+                        "JAVASCRIPT","MEDIUM",
+                        "Long JavaScript tasks were reported by the Web layer.",
+                        "longTasks="+BROWSER.longTasks
+                ));
+
+            if(BROWSER.dom>2000)
+                ANOMALIES.add(new Anomaly(
+                        "DOM","MEDIUM",
+                        "DOM size is relatively high.",
+                        "nodes="+BROWSER.dom
+                ));
+
+            if(BROWSER.fps<50 && BROWSER.longTasks>2)
+                ANOMALIES.add(new Anomaly(
+                        "RENDERING","HIGH",
+                        "Low FPS correlates with JavaScript long tasks.",
+                        "fps="+BROWSER.fps+" longTasks="+BROWSER.longTasks
+                ));
+
+            if(BROWSER.dom>0 && silence>15000)
+                ANOMALIES.add(new Anomaly(
+                        "WEBVIEW_BRIDGE","HIGH",
+                        "Browser telemetry heartbeat has stopped.",
+                        "silence="+silence+"ms dom="+BROWSER.dom
+                ));
         }
-    }
 
-    // =========================================================================
-    // NETWORK ENVIRONMENT
-    // =========================================================================
-
-    private static void observeNetworkEnvironment() {
-
-        lastNetworkCheck =
-                SystemClock.uptimeMillis();
-
-        /*
-         * Panopticon does NOT hijack every WebView request.
-         *
-         * السبب:
-         *
-         * كثرة الموارد قد تحول أداة التشخيص إلى bottleneck.
-         *
-         * الشبكة الدقيقة لكل request تحتاج instrumentation
-         * في نقطة الشبكة نفسها أو Navigation Timing من WebView.
-         *
-         * هنا نكتفي بالـ runtime environment.
-         */
-    }
-
-    // =========================================================================
-    // DEEP DIAGNOSIS
-    // =========================================================================
-
-    private static void performDeepDiagnosis() {
-
-        activeFindings.clear();
-
-        analyzeMainThread();
-
-        analyzeFrames();
-
-        analyzeMemory();
-
-        analyzeWebView();
-
-        analyzeRenderer();
-
-        analyzeScroll();
-
+        analyzeNavigation();
+        analyzeEngines();
         analyzeThreads();
 
-        analyzeWarmup();
-
-        printCompactHealth();
+        lastAnalysis=now;
     }
 
-    // =========================================================================
-    // MAIN THREAD ANALYSIS
-    // =========================================================================
+    private static void analyzeNavigation(){
+        synchronized(NAV){
+            if(NAV.clickTimestamp==0 || NAV.domCompleteTimestamp==0)return;
 
-    private static void analyzeMainThread() {
+            long total=NAV.domCompleteTimestamp-NAV.clickTimestamp;
+            long bridge=validDiff(NAV.requestSentTimestamp,NAV.clickTimestamp);
+            long server=validDiff(NAV.firstByteTimestamp,NAV.requestSentTimestamp);
+            long render=validDiff(NAV.domCompleteTimestamp,NAV.firstByteTimestamp);
 
-        long max =
-                maxMainFreezeMs.get();
-
-        if (max >= 1000) {
-
-            addFinding(
-                    "MAIN_THREAD",
-                    "CRITICAL",
-                    "تجمد شديد في Main Thread",
-                    "أعلى تأخير مقاس: "
-                            + max
-                            + "ms"
-            );
-
-        } else if (max >= 250) {
-
-            addFinding(
-                    "MAIN_THREAD",
-                    "HIGH",
-                    "اختناق واضح في Main Thread",
-                    "أعلى تأخير مقاس: "
-                            + max
-                            + "ms"
-            );
-
-        } else if (max >= 100) {
-
-            addFinding(
-                    "MAIN_THREAD",
-                    "WARNING",
-                    "Jank محتمل في Main Thread",
-                    "أعلى تأخير مقاس: "
-                            + max
-                            + "ms"
-            );
-        }
-    }
-
-    // =========================================================================
-    // FRAME ANALYSIS
-    // =========================================================================
-
-    private static void analyzeFrames() {
-
-        long frames =
-                frameCount.get();
-
-        long drops =
-                droppedFrames.get();
-
-        long severe =
-                severeJankFrames.get();
-
-        if (frames < 30) {
-            return;
-        }
-
-        double dropRate =
-                (drops * 100.0)
-                        / Math.max(1, frames);
-
-        if (severe >= 3) {
-
-            addFinding(
-                    "FRAME_PIPELINE",
-                    "HIGH",
-                    "تم اكتشاف Frame Jank شديد",
-                    "Severe jank frames="
-                            + severe
-                            + ", dropped="
-                            + drops
-                            + ", frames="
-                            + frames
-            );
-
-        } else if (dropRate > 10) {
-
-            addFinding(
-                    "FRAME_PIPELINE",
-                    "WARNING",
-                    "معدل إسقاط الإطارات مرتفع",
-                    String.format(
-                            Locale.US,
-                            "Drop rate=%.1f%%",
-                            dropRate
-                    )
-            );
-        }
-    }
-
-    // =========================================================================
-    // MEMORY ANALYSIS
-    // =========================================================================
-
-    private static void analyzeMemory() {
-
-        if (pssMB <= 0) {
-            return;
-        }
-
-        if (lastPssMB > 0) {
-
-            long delta =
-                    pssMB - lastPssMB;
-
-            if (delta > 50) {
-
-                addFinding(
-                        "MEMORY",
-                        "WARNING",
-                        "ارتفاع ملحوظ في PSS",
-                        "PSS changed by "
-                                + delta
-                                + "MB"
-                );
-            }
-        }
-
-        if (peakPssMB > 0) {
-
-            long javaLimit =
-                    javaHeapMaxMB;
-
-            if (javaLimit > 0
-                    && javaHeapUsedMB
-                    > javaLimit * 0.85) {
-
-                addFinding(
-                        "JAVA_HEAP",
-                        "HIGH",
-                        "Java Heap قريب من الحد",
-                        "Used="
-                                + javaHeapUsedMB
-                                + "MB / Max="
-                                + javaLimit
-                                + "MB"
-                );
+            if(total>=3000){
+                if(server>total*.60)
+                    ANOMALIES.add(new Anomaly(
+                            "NETWORK","HIGH",
+                            "Server/network delay dominates navigation.",
+                            "total="+total+"ms server="+server+"ms"
+                    ));
+                else if(render>total*.60)
+                    ANOMALIES.add(new Anomaly(
+                            "WEBVIEW_RENDER","HIGH",
+                            "Client rendering dominates navigation.",
+                            "total="+total+"ms render="+render+"ms"
+                    ));
+                else if(bridge>500)
+                    ANOMALIES.add(new Anomaly(
+                            "BRIDGE","HIGH",
+                            "Navigation bridge/transit delay is unusually high.",
+                            "bridge="+bridge+"ms"
+                    ));
             }
         }
     }
 
-    // =========================================================================
-    // WEBVIEW ANALYSIS
-    // =========================================================================
+    private static long validDiff(long a,long b){
+        return a>0&&b>0&&a>=b?a-b:0;
+    }
 
-    private static void analyzeWebView() {
+    private static void analyzeEngines(){
+        for(EngineRecord r:ENGINES.values()){
+            long o=r.ops.get();
+            if(o==0)continue;
 
-        if (!webViewAttached) {
+            double avg=r.avg();
 
-            addFinding(
-                    "WEBVIEW",
-                    "INFO",
-                    "لم يتم العثور على WebView",
-                    "قد يكون WebView لم يتم إنشاؤه بعد."
-            );
+            if(r.failures.get()>0)
+                ANOMALIES.add(new Anomaly(
+                        r.name,"ERROR",
+                        "Recorded engine failures.",
+                        "ops="+o+" failures="+r.failures.get()
+                ));
 
-            return;
-        }
-
-        if (webViewWidth <= 0
-                || webViewHeight <= 0) {
-
-            addFinding(
-                    "WEBVIEW",
-                    "WARNING",
-                    "WebView موجود لكنه لم يحصل على أبعاد",
-                    "قد يكون ما زال في مرحلة الإنشاء."
-            );
-        }
-
-        if (currentUrl == null
-                || currentUrl.equals("null")
-                || currentUrl.trim().isEmpty()) {
-
-            addFinding(
-                    "WEBVIEW",
-                    "INFO",
-                    "WebView موجود بدون URL حالي",
-                    "قد يكون قبل أول Navigation."
-            );
+            if(avg>=100)
+                ANOMALIES.add(new Anomaly(
+                        r.name,"HIGH",
+                        "Average recorded execution latency is high.",
+                        "avg="+String.format(Locale.US,"%.1f",avg)+"ms"
+                ));
         }
     }
 
-    // =========================================================================
-    // RENDERER
-    // =========================================================================
+    private static void analyzeThreads(){
+        if(context==null)return;
 
-    private static void analyzeRenderer() {
+        try{
+            ActivityManager am=(ActivityManager)
+                    context.getSystemService(Context.ACTIVITY_SERVICE);
 
-        if (!webViewAttached) {
-            return;
-        }
+            if(am==null)return;
 
-        if (Build.VERSION.SDK_INT >= 29) {
+            List<ActivityManager.RunningAppProcessInfo> ps=
+                    am.getRunningAppProcesses();
 
-            if (!rendererAvailable) {
+            if(ps==null)return;
 
-                addFinding(
-                        "CHROMIUM_RENDERER",
-                        "HIGH",
-                        "WebView Renderer غير متاح حالياً",
-                        "قد يكون renderer متوقفاً أو WebView في حالة انتقال."
-                );
+            int own=0;
+            StringBuilder s=new StringBuilder();
+
+            for(ActivityManager.RunningAppProcessInfo p:ps){
+                if(p.pid==Process.myPid()||
+                   (p.processName!=null&&
+                    p.processName.startsWith(context.getPackageName()))){
+                    own++;
+                    if(s.length()<500)s.append(p.processName).append(" ");
+                }
             }
-        } else {
 
-            addFinding(
-                    "CHROMIUM_RENDERER",
-                    "INFO",
-                    "تفاصيل Renderer محدودة بسبب إصدار Android",
-                    "WebView renderer APIs المتقدمة تحتاج Android 10+."
-            );
+            if(own>8)
+                ANOMALIES.add(new Anomaly(
+                        "THREAD_PROCESS","MEDIUM",
+                        "Multiple application processes are active.",
+                        "processes="+own+" "+s
+                ));
+        }catch(Throwable ignored){}
+    }
+
+    private static void logWebViewProvider(){
+        try{
+            if(Build.VERSION.SDK_INT>=26){
+                android.content.pm.PackageInfo p=
+                        WebView.getCurrentWebViewPackage();
+
+                if(p!=null)
+                    log("WEBVIEW_PROVIDER "+
+                            p.packageName+" "+p.versionName);
+            }else{
+                log("WEBVIEW_PROVIDER "+WebViewFactory.getLoadedPackageInfo());
+            }
+        }catch(Throwable e){
+            log("WEBVIEW_PROVIDER unavailable");
         }
     }
 
-    // =========================================================================
-    // SCROLL
-    // =========================================================================
+    public static void syncBrowserState(
+            int nodes,int fps,long memory,int tasks){
+        BROWSER.update(nodes,fps,memory,tasks);
+    }
 
-    private static void analyzeScroll() {
+    public static void recordMetric(String name,long value){
+        if(name==null)return;
+        log("METRIC "+name+"="+value+"ms");
+    }
 
-        if (!scrolling) {
-            return;
-        }
+    public static void recordUserClick(String url){
+        synchronized(NAV){NAV.reset(url);}
+        pulse("Navigation");
+    }
 
-        long frameJank =
-                severeJankFrames.get();
-
-        if (frameJank > 0) {
-
-            addFinding(
-                    "SCROLL",
-                    "HIGH",
-                    "Scroll نشط بالتزامن مع Frame Jank",
-                    "هناك ارتباط زمني بين الحركة والتقطيع."
-            );
-
-        } else if (maxMainFreezeMs.get() > 100) {
-
-            addFinding(
-                    "SCROLL",
-                    "WARNING",
-                    "Scroll نشط أثناء ضغط Main Thread",
-                    "Main Thread freeze="
-                            + maxMainFreezeMs.get()
-                            + "ms"
-            );
+    public static void recordRequestSent(){
+        synchronized(NAV){
+            if(NAV.clickTimestamp>0)
+                NAV.requestSentTimestamp=System.currentTimeMillis();
         }
     }
 
-    // =========================================================================
-    // THREADS
-    // =========================================================================
-
-    private static void analyzeThreads() {
-
-        if (threadCount > 120) {
-
-            addFinding(
-                    "THREADS",
-                    "WARNING",
-                    "عدد Threads مرتفع",
-                    "Threads="
-                            + threadCount
-            );
-        }
-
-        if (appProcessCount > 1) {
-
-            addFinding(
-                    "PROCESSES",
-                    "INFO",
-                    "التطبيق لديه أكثر من Process",
-                    "Processes="
-                            + appProcessCount
-            );
+    public static void recordFirstByteReceived(){
+        synchronized(NAV){
+            if(NAV.requestSentTimestamp>0)
+                NAV.firstByteTimestamp=System.currentTimeMillis();
         }
     }
 
-    // =========================================================================
-    // WARMUP
-    // =========================================================================
+    public static void recordDomInteractive(){
+        synchronized(NAV){
+            if(NAV.clickTimestamp>0)
+                NAV.domInteractiveTimestamp=System.currentTimeMillis();
+        }
+    }
 
-    private static void analyzeWarmup() {
-
-        /*
-         * لا يمكن لـ Panopticon أن يقول:
-         *
-         * "RoyalHybridEngine warmup نجح 100%"
-         *
-         * بدون معرفة event خاص بالمحرك.
-         *
-         * لكنه يستطيع مراقبة النتيجة:
-         *
-         * WebView موجود؟
-         * renderer متاح؟
-         * first URL ظهر؟
-         * navigation بدأ؟
-         * frame pipeline مستقر؟
-         *
-         * لذلك التقرير يصف:
-         *
-         * WARMUP ENVIRONMENT READY
-         *
-         * وليس "warmup succeeded" ما لم توجد إشارة موثوقة.
-         */
-
-        if (webViewAttached
-                && rendererAvailable) {
-
-            warmupObserved = true;
-
-            if (warmupStart == 0) {
-
-                warmupStart =
-                        SystemClock.uptimeMillis();
-
-                warmupEnd =
-                        warmupStart;
+    public static void recordNavigationComplete(){
+        synchronized(NAV){
+            if(NAV.clickTimestamp>0){
+                NAV.domCompleteTimestamp=System.currentTimeMillis();
+                printTransition();
             }
         }
     }
 
-    // =========================================================================
-    // FINDINGS
-    // =========================================================================
-
-    private static void addFinding(
-            String subsystem,
-            String severity,
-            String title,
-            String detail) {
-
-        String line =
-                severity
-                        + " | "
-                        + subsystem
-                        + " | "
-                        + title
-                        + " | "
-                        + detail;
-
-        activeFindings.add(line);
+    public static void pulse(String name){
+        if(name==null)return;
+        get(name).lastPulse=System.currentTimeMillis();
     }
 
-    // =========================================================================
-    // HEALTH REPORT
-    // =========================================================================
+    public static void recordExecution(
+            String name,long latencyMs,boolean success,long memoryBytes){
+        if(name==null)return;
 
-    private static void printCompactHealth() {
+        EngineRecord r=get(name);
+        r.ops.incrementAndGet();
+        r.latency.addAndGet(Math.max(0,latencyMs));
 
-        int score =
-                calculateHealthScore();
+        if(!success)r.failures.incrementAndGet();
 
-        Log.i(TAG, "");
-        Log.i(TAG,
-                "👁️ ───────── PANOPTICON SNAPSHOT ─────────");
-
-        Log.i(TAG,
-                "01 | HEALTH SCORE : "
-                        + score
-                        + "/100");
-
-        Log.i(TAG,
-                "    MainFreeze="
-                        + maxMainFreezeMs.get()
-                        + "ms"
-                        + " | Jank="
-                        + severeJankFrames.get()
-                        + " | FPS≈"
-                        + estimateFps()
-                        + " | PSS="
-                        + pssMB
-                        + "MB");
-
-        Log.i(TAG,
-                "02 | WEBVIEW : "
-                        + (webViewAttached
-                        ? "ATTACHED"
-                        : "NOT_FOUND"));
-
-        Log.i(TAG,
-                "    Provider="
-                        + webViewPackage
-                        + " | Version="
-                        + webViewVersion);
-
-        Log.i(TAG,
-                "03 | RENDERER : "
-                        + (rendererAvailable
-                        ? "AVAILABLE"
-                        : "UNKNOWN/OFF"));
-
-        Log.i(TAG,
-                "    URL="
-                        + shorten(currentUrl, 140));
-
-        Log.i(TAG,
-                "04 | THREADS : "
-                        + threadCount
-                        + " | PROCESSES="
-                        + appProcessCount);
-
-        Log.i(TAG,
-                "05 | SCROLL : "
-                        + (scrolling
-                        ? "ACTIVE"
-                        : "IDLE"));
-
-        if (!activeFindings.isEmpty()) {
-
-            Log.i(TAG,
-                    "06 | FINDINGS="
-                            + activeFindings.size());
-
-            for (String finding
-                    : activeFindings) {
-
-                Log.w(TAG,
-                        "    ↳ "
-                                + finding);
-            }
-
-        } else {
-
-            Log.i(TAG,
-                    "06 | FINDINGS=0");
-
-            Log.i(TAG,
-                    "    ↳ No abnormal condition observed.");
-        }
-
-        Log.i(TAG,
-                "👁️ ─────────────────────────────────────");
+        r.peakMemory.accumulateAndGet(
+                Math.max(0,memoryBytes),Math::max);
     }
 
-    // =========================================================================
-    // HEALTH SCORE
-    // =========================================================================
+    public static void registerDependency(String parent,String child){
+        if(parent==null||child==null)return;
 
-    private static int calculateHealthScore() {
+        DEPS.computeIfAbsent(
+                parent,
+                k->ConcurrentHashMap.newKeySet()
+        ).add(child);
 
-        int score = 100;
-
-        long freeze =
-                maxMainFreezeMs.get();
-
-        long severe =
-                severeJankFrames.get();
-
-        if (freeze >= 1000) {
-            score -= 30;
-        } else if (freeze >= 500) {
-            score -= 20;
-        } else if (freeze >= 250) {
-            score -= 12;
-        } else if (freeze >= 100) {
-            score -= 5;
-        }
-
-        if (severe >= 10) {
-            score -= 25;
-        } else if (severe >= 5) {
-            score -= 15;
-        } else if (severe >= 3) {
-            score -= 8;
-        }
-
-        if (pssMB > 0
-                && javaHeapMaxMB > 0
-                && javaHeapUsedMB
-                > javaHeapMaxMB * 0.90) {
-
-            score -= 15;
-        }
-
-        if (!webViewAttached) {
-            score -= 5;
-        }
-
-        if (score < 0) {
-            score = 0;
-        }
-
-        return score;
+        get(parent);
+        get(child);
     }
 
-    // =========================================================================
-    // FPS ESTIMATION
-    // =========================================================================
-
-    private static int estimateFps() {
-
-        synchronized (frameDurations) {
-
-            if (frameDurations.size() < 5) {
-                return 0;
-            }
-
-            long total = 0;
-
-            for (Long duration
-                    : frameDurations) {
-
-                total += duration;
-            }
-
-            long average =
-                    total
-                            / frameDurations.size();
-
-            if (average <= 0) {
-                return 0;
-            }
-
-            return (int)
-                    Math.min(
-                            120,
-                            Math.max(
-                                    1,
-                                    1000 / average
-                            )
-                    );
-        }
+    private static EngineRecord get(String name){
+        return ENGINES.computeIfAbsent(name,EngineRecord::new);
     }
 
-    // =========================================================================
-    // BOOT REPORT
-    // =========================================================================
-
-    private static void printBootReport() {
-
-        Log.i(TAG, "");
-        Log.i(TAG,
-                "01 | PANOPTICON BOOT");
-
-        Log.i(TAG,
-                "    Automatic observation enabled.");
-
-        Log.i(TAG,
-                "02 | MAIN THREAD WATCHDOG");
-
-        Log.i(TAG,
-                "    Heartbeat interval: 250ms");
-
-        Log.i(TAG,
-                "03 | FRAME OBSERVER");
-
-        Log.i(TAG,
-                "    Choreographer monitoring enabled.");
-
-        Log.i(TAG,
-                "04 | WEBVIEW");
-
-        Log.i(TAG,
-                "    Automatic WebView discovery enabled.");
-
-        Log.i(TAG,
-                "05 | WEBVIEW PROVIDER");
-
-        Log.i(TAG,
-                "    "
-                        + webViewPackage
-                        + " / "
-                        + webViewVersion);
-
-        Log.i(TAG,
-                "06 | CRASH OBSERVER");
-
-        Log.i(TAG,
-                "    Default uncaught exception observer installed.");
-
-        Log.i(TAG,
-                "07 | MEMORY");
-
-        Log.i(TAG,
-                "    Java / Native / PSS observation enabled.");
-
-        Log.i(TAG,
-                "08 | THREAD CENSUS");
-
-        Log.i(TAG,
-                "    Active.");
-
-        Log.i(TAG,
-                "09 | REPORT");
-
-        Log.i(TAG,
-                "    Search LogFox for "
-                        + TAG);
-
-        Log.i(TAG,
-                "============================================================");
+    public static void printFullDiagnosticsReport(){
+        Log.i(TAG,buildReport());
     }
 
-    // =========================================================================
-    // FULL REPORT COMMAND
-    // =========================================================================
+    public static String buildReport(){
+        analyze();
 
-    public static void printFullDiagnosticsReport() {
+        StringBuilder s=new StringBuilder(4096);
 
-        Log.i(TAG,
-                buildReport());
-    }
+        s.append("\n=== ROYAL PANOPTICON V5 ===\n");
 
-    public static String buildReport() {
+        s.append("SYSTEM\n");
+        s.append("API=").append(Build.VERSION.SDK_INT)
+         .append(" Android=").append(Build.VERSION.RELEASE).append("\n");
 
-        StringBuilder sb =
-                new StringBuilder(8192);
+        s.append("PSS=").append(lastHeap)
+         .append("MB Peak=").append(peakHeap).append("MB\n");
 
-        sb.append("\n");
-        sb.append("============================================================\n");
-        sb.append("👁️ ROYAL PANOPTICON V4.0 — FULL DIAGNOSTIC REPORT\n");
-        sb.append("============================================================\n\n");
+        s.append("UI\n");
+        s.append("MaxFreeze=").append(MAX_FREEZE.get())
+         .append("ms Count=").append(FREEZE_COUNT.get()).append("\n");
 
-        sb.append("01 | SYSTEM\n");
-        sb.append("Android      : ")
-                .append(Build.VERSION.RELEASE)
-                .append("\n");
+        s.append("WEBVIEW\n");
+        s.append("FPS=").append(BROWSER.fps)
+         .append(" AvgFPS=")
+         .append(BROWSER.avg(BROWSER.fpsH,BROWSER.fc))
+         .append(" MinFPS=")
+         .append(BROWSER.min(BROWSER.fpsH,BROWSER.fc)).append("\n");
 
-        sb.append("API          : ")
-                .append(Build.VERSION.SDK_INT)
-                .append("\n");
+        s.append("DOM=").append(BROWSER.dom)
+         .append(" JSHeap=").append(BROWSER.memory)
+         .append("MB LongTasks=").append(BROWSER.longTasks).append("\n");
 
-        sb.append("PID          : ")
-                .append(Process.myPid())
-                .append("\n\n");
+        s.append("BridgeSilence=")
+         .append(System.currentTimeMillis()-BROWSER.lastUpdate)
+         .append("ms\n");
 
-        sb.append("02 | WEBVIEW / CHROMIUM\n");
+        synchronized(NAV){
+            if(NAV.clickTimestamp>0){
+                long total=validDiff(
+                        NAV.domCompleteTimestamp,
+                        NAV.clickTimestamp);
 
-        sb.append("Provider     : ")
-                .append(webViewPackage)
-                .append("\n");
+                long bridge=validDiff(
+                        NAV.requestSentTimestamp,
+                        NAV.clickTimestamp);
 
-        sb.append("Version      : ")
-                .append(webViewVersion)
-                .append("\n");
+                long server=validDiff(
+                        NAV.firstByteTimestamp,
+                        NAV.requestSentTimestamp);
 
-        sb.append("Attached     : ")
-                .append(webViewAttached)
-                .append("\n");
+                long render=validDiff(
+                        NAV.domCompleteTimestamp,
+                        NAV.firstByteTimestamp);
 
-        sb.append("Renderer     : ")
-                .append(rendererAvailable)
-                .append("\n");
-
-        sb.append("URL          : ")
-                .append(currentUrl)
-                .append("\n");
-
-        sb.append("Size         : ")
-                .append(webViewWidth)
-                .append("x")
-                .append(webViewHeight)
-                .append("\n\n");
-
-        sb.append("03 | FRAME PIPELINE\n");
-
-        sb.append("Estimated FPS: ")
-                .append(estimateFps())
-                .append("\n");
-
-        sb.append("Frames       : ")
-                .append(frameCount.get())
-                .append("\n");
-
-        sb.append("Dropped      : ")
-                .append(droppedFrames.get())
-                .append("\n");
-
-        sb.append("Severe Jank  : ")
-                .append(severeJankFrames.get())
-                .append("\n\n");
-
-        sb.append("04 | MAIN THREAD\n");
-
-        sb.append("Max Freeze   : ")
-                .append(maxMainFreezeMs.get())
-                .append("ms\n");
-
-        sb.append("Freeze Count : ")
-                .append(totalMainFreezes.get())
-                .append("\n");
-
-        sb.append("Last Lag     : ")
-                .append(lastMainLag)
-                .append("ms\n\n");
-
-        sb.append("05 | MEMORY\n");
-
-        sb.append("Java Heap    : ")
-                .append(javaHeapUsedMB)
-                .append(" / ")
-                .append(javaHeapMaxMB)
-                .append("MB\n");
-
-        sb.append("Native Heap  : ")
-                .append(nativeHeapAllocatedMB)
-                .append("MB\n");
-
-        sb.append("PSS          : ")
-                .append(pssMB)
-                .append("MB\n");
-
-        sb.append("Peak PSS     : ")
-                .append(peakPssMB)
-                .append("MB\n\n");
-
-        sb.append("06 | THREADS\n");
-
-        sb.append("Threads      : ")
-                .append(threadCount)
-                .append("\n");
-
-        sb.append("Processes    : ")
-                .append(appProcessCount)
-                .append("\n\n");
-
-        sb.append("07 | SCROLL\n");
-
-        sb.append("State        : ")
-                .append(scrolling
-                        ? "ACTIVE"
-                        : "IDLE")
-                .append("\n");
-
-        sb.append("Last Scroll  : ")
-                .append(lastScrollTime)
-                .append("\n\n");
-
-        sb.append("08 | WARMUP\n");
-
-        sb.append("Observed     : ")
-                .append(warmupObserved)
-                .append("\n");
-
-        sb.append("Environment  : ");
-
-        if (webViewAttached
-                && rendererAvailable) {
-
-            sb.append("READY");
-        } else {
-
-            sb.append("NOT CONFIRMED");
-        }
-
-        sb.append("\n\n");
-
-        sb.append("09 | HEALTH\n");
-
-        sb.append("Score        : ")
-                .append(calculateHealthScore())
-                .append("/100\n\n");
-
-        sb.append("10 | DIAGNOSTIC FINDINGS\n");
-
-        if (activeFindings.isEmpty()) {
-
-            sb.append("No abnormal condition observed.\n");
-
-        } else {
-
-            for (String finding
-                    : activeFindings) {
-
-                sb.append("• ")
-                        .append(finding)
-                        .append("\n");
+                s.append("NAV\n");
+                s.append("URL=").append(NAV.url).append("\n");
+                s.append("Total=").append(total)
+                 .append("ms Bridge=").append(bridge)
+                 .append("ms Server=").append(server)
+                 .append("ms Render=").append(render)
+                 .append("ms UIBlock=").append(NAV.uiThreadBlockMs)
+                 .append("ms\n");
             }
         }
 
-        sb.append("\n============================================================\n");
+        s.append("ENGINES\n");
 
-        sb.append("OBSERVABILITY LIMITS\n");
-
-        sb.append("------------------------------------------------------------\n");
-
-        sb.append(
-                "Panopticon observes Android/WebView externally.\n"
-        );
-
-        sb.append(
-                "It does NOT claim direct visibility into private Chromium internals.\n"
-        );
-
-        sb.append(
-                "JS DOM/LongTask/JS Heap require WebView-side instrumentation.\n"
-        );
-
-        sb.append(
-                "Per-request TTFB requires a network interception point or timing API.\n"
-        );
-
-        sb.append(
-                "Warm-up success is confirmed only when observable runtime evidence exists.\n"
-        );
-
-        sb.append("============================================================\n");
-
-        return sb.toString();
-    }
-
-    // =========================================================================
-    // PUBLIC SNAPSHOT COMMANDS
-    // =========================================================================
-
-    public static void snapshot() {
-
-        Log.i(TAG,
-                buildReport());
-    }
-
-    public static void reportMemory() {
-
-        Log.i(TAG,
-                "MEMORY | Java="
-                        + javaHeapUsedMB
-                        + "/"
-                        + javaHeapMaxMB
-                        + "MB"
-                        + " | Native="
-                        + nativeHeapAllocatedMB
-                        + "MB"
-                        + " | PSS="
-                        + pssMB
-                        + "MB"
-                        + " | Peak="
-                        + peakPssMB
-                        + "MB");
-    }
-
-    public static void reportWebView() {
-
-        Log.i(TAG,
-                "WEBVIEW | attached="
-                        + webViewAttached
-                        + " | provider="
-                        + webViewPackage
-                        + " | version="
-                        + webViewVersion
-                        + " | renderer="
-                        + rendererAvailable
-                        + " | url="
-                        + currentUrl);
-    }
-
-    public static void reportFrames() {
-
-        Log.i(TAG,
-                "FRAMES | estimatedFPS="
-                        + estimateFps()
-                        + " | frames="
-                        + frameCount.get()
-                        + " | dropped="
-                        + droppedFrames.get()
-                        + " | severeJank="
-                        + severeJankFrames.get());
-    }
-
-    public static void reportMainThread() {
-
-        Log.i(TAG,
-                "MAIN | maxFreeze="
-                        + maxMainFreezeMs.get()
-                        + "ms"
-                        + " | freezes="
-                        + totalMainFreezes.get()
-                        + " | lastLag="
-                        + lastMainLag
-                        + "ms");
-    }
-
-    // =========================================================================
-    // UTILITY
-    // =========================================================================
-
-    private static Context getContext() {
-
-        Activity activity =
-                currentActivity.get();
-
-        if (activity != null) {
-            return activity.getApplicationContext();
+        for(EngineRecord r:ENGINES.values()){
+            s.append(r.name)
+             .append(" ops=").append(r.ops.get())
+             .append(" fail=").append(r.failures.get())
+             .append(" avg=").append(
+                     String.format(Locale.US,"%.1f",r.avg()))
+             .append("ms health=")
+             .append(String.format(Locale.US,"%.1f",r.health()))
+             .append("%\n");
         }
 
-        return null;
+        s.append("ANOMALIES=").append(ANOMALIES.size()).append("\n");
+
+        if(ANOMALIES.isEmpty()){
+            s.append("STATUS=HEALTHY\n");
+        }else{
+            int i=1;
+            for(Anomaly a:ANOMALIES){
+                s.append(i++).append(". ")
+                 .append(a.level)
+                 .append(" | ")
+                 .append(a.area)
+                 .append(" | ")
+                 .append(a.reason)
+                 .append(" | ")
+                 .append(a.evidence)
+                 .append("\n");
+            }
+        }
+
+        s.append("=== END ===\n");
+        return s.toString();
     }
 
-    private static String shorten(
-            String value,
-            int max) {
+    private static void printTransition(){
+        synchronized(NAV){
+            long total=validDiff(
+                    NAV.domCompleteTimestamp,
+                    NAV.clickTimestamp);
 
-        if (value == null) {
-            return "UNKNOWN";
+            long bridge=validDiff(
+                    NAV.requestSentTimestamp,
+                    NAV.clickTimestamp);
+
+            long server=validDiff(
+                    NAV.firstByteTimestamp,
+                    NAV.requestSentTimestamp);
+
+            long render=validDiff(
+                    NAV.domCompleteTimestamp,
+                    NAV.firstByteTimestamp);
+
+            log("NAV total="+total+
+                    "ms bridge="+bridge+
+                    "ms server="+server+
+                    "ms render="+render+
+                    "ms ui="+NAV.uiThreadBlockMs+"ms");
         }
+    }
 
-        if (value.length() <= max) {
-            return value;
+    private static void log(String s){
+        Log.i(TAG,s);
+    }
+
+    private static Context tryContext(){
+        try{
+            return (Context)Class
+                    .forName("android.app.ActivityThread")
+                    .getMethod("currentApplication")
+                    .invoke(null);
+        }catch(Throwable ignored){
+            return null;
         }
-
-        return value.substring(0, max)
-                + "...";
     }
     }
