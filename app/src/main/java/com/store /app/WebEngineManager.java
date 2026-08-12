@@ -666,6 +666,72 @@ public class WebEngineManager {
                 && trustedPort == port;
     }
 
+    // ==============================
+    // 🔒 Safe back navigation helper
+    // ==============================
+    /**
+     * Attempts to navigate back to the nearest previous history entry that is a valid page.
+     * Skips entries like about:blank, data: URIs, chromewebdata, or null URLs.
+     * Returns true if navigation was performed, false if no safe entry found.
+     */
+    public boolean safeGoBack() {
+        try {
+            if (webView == null) return false;
+
+            WebBackForwardList list = webView.copyBackForwardList();
+            if (list == null) return false;
+
+            int currentIndex = list.getCurrentIndex();
+            // scan backwards for the first valid URL
+            for (int i = currentIndex - 1; i >= 0; i--) {
+                String candidate = list.getItemAtIndex(i).getUrl();
+                if (candidate == null) continue;
+                String lower = candidate.toLowerCase();
+                if (lower.startsWith("about:") || lower.startsWith("data:") || lower.contains("chromewebdata")) {
+                    continue; // skip invalid entries
+                }
+                final int steps = i - currentIndex; // negative value
+                if (activity != null) {
+                    activity.runOnUiThread(() -> {
+                        try {
+                            webView.goBackOrForward(steps);
+                        } catch (Exception e) {
+                            Log.w(TAG, "safeGoBack: goBackOrForward failed", e);
+                        }
+                    });
+                } else {
+                    // fallback: call on UI thread via webView
+                    webView.post(() -> {
+                        try {
+                            webView.goBackOrForward(steps);
+                        } catch (Exception e) {
+                            Log.w(TAG, "safeGoBack: goBackOrForward failed (post)", e);
+                        }
+                    });
+                }
+                return true;
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "safeGoBack: unexpected error", e);
+        }
+        return false;
+    }
+
+    /**
+     * Returns true if the current WebView URL is the app's home/root URL.
+     */
+    public boolean isAtHomeUrl() {
+        try {
+            if (webView == null) return true;
+            String url = webView.getUrl();
+            if (url == null) return true;
+            String home = com.store.app.BuildConfig.CLIENT_URL;
+            return url.equalsIgnoreCase(home) || url.equalsIgnoreCase(home + "/") ;
+        } catch (Exception e) {
+            return true;
+        }
+    }
+
     // ==========================================
     // 🔥 دوال حالة الصفحة (تستخدم OfflineStateManager)
     // ==========================================
