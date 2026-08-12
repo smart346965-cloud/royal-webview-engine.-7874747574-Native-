@@ -73,7 +73,7 @@ jobs:
           INJECTED_URL="${{ github.event.client_payload.url || github.event.inputs.test_url }}"
           echo "🔥 Injecting Target URL: $INJECTED_URL into the App Core..."
 
-          ./gradlew assembleRelease bundleRelease \
+          ./gradlew clean assembleRelease bundleRelease \
             -Pandroid.injected.signing.store.file=$(pwd)/release-key.jks \
             -Pandroid.injected.signing.store.password=${{ env.KEYSTORE_PASSWORD }} \
             -Pandroid.injected.signing.key.alias=${{ env.KEY_ALIAS }} \
