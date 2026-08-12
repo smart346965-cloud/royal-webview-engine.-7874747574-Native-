@@ -38,7 +38,7 @@ import java.util.concurrent.Executors;
  * - Time-Based Memory Purge (تفريغ الذاكرة الاستباقي)
  * - shouldInterceptRequest Short Circuit (تحسين اعتراض الطلبات)
  * - Renderer Importance API (أولوية معالج العرض)
- * - onTrimMemory Optimization (تحسين استجابة ضغط الذاكرة)
+ * - onTrimMemory Optimization (تحسين استجابة ضغط الذ memory)
  * - saveState/restoreState (تسريع حفظ واستعادة الحالة)
  * - Prefetch Native Library (تحميل المكتبات الأصلية مسبقاً)
  * - Threading Optimization (تحسين إدارة الخيوط)
@@ -60,11 +60,6 @@ public class MainActivity extends AppCompatActivity {
     private long splashStartTime = 0;
     private Handler memoryPurgeHandler;
     private Runnable memoryPurgeRunnable;
-
-    // متغيرات للتحكم في نقرتي الرجوع
-    private boolean doubleBackToExitPressedOnce = false;
-    private Handler backPressHandler = new Handler(Looper.getMainLooper());
-    private Runnable resetBackPressFlag = () -> doubleBackToExitPressedOnce = false;
 
     // 🔥 تحسين الخيوط: استخدام ThreadPool لإدارة المهام الخلفية
     private static final ExecutorService backgroundExecutor = Executors.newFixedThreadPool(2);
@@ -138,8 +133,9 @@ public class MainActivity extends AppCompatActivity {
             isPageLoaded = true; // تم استعادة الجلسة، الصفحة محملة
         }
 
-        // 4️⃣ نظام التحكم بالرجوع المستقل نيتف (محسّن)
-        setupBackNavigation();
+        // 4️⃣ نظام التحكم بالرجوع المستقل نيتف (محسّن) - تم نقله إلى RoyalBackNavigation
+        new com.store.app.navigation.RoyalBackNavigation(this, activeWebView, engineManager, progressBar)
+                .setupBackNavigation();
 
         // 5️⃣ الحصانة البصرية وتخصيص شريط النظام بالكامل
         SystemUI.applyKingMode(this, activeWebView);
@@ -322,243 +318,6 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    /**
-     * 👑 تحديد الصفحة الرئيسية بشكل آمن.
-     *
-     * مهم جداً:
-     * لا نعتمد على WebView.canGoBack() لتحديد هل نحن في الرئيسية،
-     * لأن WebView قد يمتلك History داخلياً حتى ونحن بصرياً في الصفحة الرئيسية.
-     *
-     * النتيجة:
-     * الصفحة الرئيسية = ممنوع تنفيذ goBack() نهائياً.
-     */
-    private boolean isAtHomePage() {
-        if (activeWebView == null) {
-            return true;
-        }
-
-        String currentUrl = activeWebView.getUrl();
-
-        // لا توجد صفحة فعلية بعد.
-        // نعتبرها حالة لا يجوز فيها تنفيذ goBack().
-        if (currentUrl == null || currentUrl.trim().isEmpty()) {
-            return true;
-        }
-
-        currentUrl = currentUrl.trim();
-
-        // حماية إضافية مطلقة من about:blank
-        if (currentUrl.equalsIgnoreCase("about:blank")) {
-            return true;
-        }
-
-        try {
-            Uri current = Uri.parse(currentUrl);
-            Uri home = Uri.parse(BuildConfig.CLIENT_URL);
-
-            String currentHost = current.getHost();
-            String homeHost = home.getHost();
-
-            if (currentHost == null || homeHost == null) {
-                return currentUrl.equalsIgnoreCase(BuildConfig.CLIENT_URL);
-            }
-
-            // مقارنة الـ Host بدون حساسية لحالة الأحرف.
-            boolean sameHost = currentHost.equalsIgnoreCase(homeHost);
-
-            if (!sameHost) {
-                return false;
-            }
-
-            String currentPath = current.getPath();
-            String homePath = home.getPath();
-
-            if (currentPath == null || currentPath.isEmpty()) {
-                currentPath = "/";
-            }
-
-            if (homePath == null || homePath.isEmpty()) {
-                homePath = "/";
-            }
-
-            // الصفحة الرئيسية يجب أن تكون نفس المسار.
-            boolean samePath = currentPath.equals(homePath);
-
-            // لا نهتم بالـ query أو fragment في تحديد الصفحة الرئيسية.
-            return samePath;
-
-        } catch (Exception e) {
-            Log.w(TAG, "Home page detection failed: " + e.getMessage());
-
-            // في حالة فشل التحليل، نستخدم مقارنة مباشرة آمنة.
-            return currentUrl.equalsIgnoreCase(BuildConfig.CLIENT_URL);
-        }
-    }
-
-    /**
-     * 👑 Royal Back Navigation
-     *
-     * القاعدة:
-     *
-     * 1. إذا كنا في الصفحة الرئيسية:
-     *      Back #1 → تنبيه فقط.
-     *      Back #2 → خروج.
-     *
-     * 2. إذا كنا داخل صفحة فرعية:
-     *      Back → الرجوع الطبيعي داخل WebView.
-     *
-     * 3. إذا كانت الصفحة الرئيسية:
-     *      NEVER call goBack()
-     *      NEVER call safeGoBack()
-     *
-     * الهدف:
-     * منع أي انتقال إلى about:blank أو أي History غير مقصود
-     * عند الضغط على Back من الصفحة الرئيسية.
-     */
-    private void setupBackNavigation() {
-
-        getOnBackPressedDispatcher().addCallback(
-                this,
-                new OnBackPressedCallback(true) {
-
-                    @Override
-                    public void handleOnBackPressed() {
-
-                        try {
-
-                            if (activeWebView == null) {
-                                performRoyalExit();
-                                return;
-                            }
-
-                            /*
-                             * =====================================================
-                             * 👑 الدرع الأول:
-                             * هل نحن في الصفحة الرئيسية؟
-                             *
-                             * إذا نعم:
-                             * لا نلمس WebView History إطلاقاً.
-                             * =====================================================
-                             */
-                            if (isAtHomePage()) {
-
-                                handleHomeBackPress();
-
-                                return;
-                            }
-
-                            /*
-                             * =====================================================
-                             * 👑 لسنا في الصفحة الرئيسية.
-                             *
-                             * هنا فقط نسمح بالرجوع داخل WebView.
-                             * =====================================================
-                             */
-                            if (activeWebView.canGoBack()) {
-
-                                if (progressBar != null) {
-                                    progressBar.setVisibility(View.GONE);
-                                }
-
-                                boolean navigated = false;
-
-                                /*
-                                 * نستخدم WebEngineManager إذا كان لديه
-                                 * سجل رجوع صالح.
-                                 */
-                                if (engineManager != null) {
-                                    try {
-                                        navigated = engineManager.safeGoBack();
-                                    } catch (Exception e) {
-                                        Log.w(
-                                                TAG,
-                                                "safeGoBack failed: " + e.getMessage()
-                                        );
-                                    }
-                                }
-
-                                /*
-                                 * إذا لم ينجح المحرك، نستخدم goBack()
-                                 * لكن فقط بعد التأكد أننا لسنا في الرئيسية.
-                                 */
-                                if (!navigated) {
-
-                                    String currentUrl = activeWebView.getUrl();
-
-                                    if (currentUrl != null
-                                            && !currentUrl.trim().isEmpty()
-                                            && !currentUrl.equalsIgnoreCase("about:blank")) {
-
-                                        /*
-                                         * فحص أخير قبل goBack().
-                                         *
-                                         * حتى لو تغيرت الصفحة بين الفحوصات،
-                                         * لا ننفذ الرجوع إذا أصبحت الرئيسية.
-                                         */
-                                        if (!isAtHomePage()) {
-                                            activeWebView.goBack();
-                                        } else {
-                                            Log.i(
-                                                    TAG,
-                                                    "🛡️ Back blocked: returned to HOME."
-                                            );
-                                        }
-
-                                    } else {
-
-                                        Log.i(
-                                                TAG,
-                                                "🛡️ Back blocked: invalid/blank URL."
-                                        );
-                                    }
-                                }
-
-                                /*
-                                 * الرجوع من صفحة فرعية يلغي حالة
-                                 * النقرة الأولى للخروج.
-                                 */
-                                doubleBackToExitPressedOnce = false;
-                                backPressHandler.removeCallbacks(resetBackPressFlag);
-
-                                return;
-                            }
-
-                            /*
-                             * =====================================================
-                             * لا توجد صفحة سابقة صالحة.
-                             *
-                             * لا نحاول goBack().
-                             * نعاملها كحالة خروج آمنة.
-                             * =====================================================
-                             */
-                            handleHomeBackPress();
-
-                        } catch (Throwable e) {
-
-                            /*
-                             * آخر خط دفاع:
-                             *
-                             * حتى لو حدث خطأ غير متوقع،
-                             * لا ننفذ goBack() أبداً من هنا.
-                             */
-                            Log.e(
-                                    TAG,
-                                    "❌ Back navigation protected failure",
-                                    e
-                            );
-
-                            handleHomeBackPress();
-                        }
-                    }
-                }
-        );
-
-        Log.i(
-                TAG,
-                "✅ Royal Back Navigation armed: HOME is protected from goBack()."
-        );
-    }
-
     // =========================================================
     // 🧹 إدارة تفريغ الذاكرة (Memory Purge)
     // =========================================================
@@ -593,123 +352,6 @@ public class MainActivity extends AppCompatActivity {
             memoryPurgeHandler = null;
             memoryPurgeRunnable = null;
             Log.i(TAG, "⏹️ Memory purge cancelled.");
-        }
-    }
-
-    /**
-     * 👑 معالجة زر الرجوع عندما نكون في الصفحة الرئيسية.
-     *
-     * النقرة الأولى:
-     * لا يحصل أي Navigation إطلاقاً.
-     * فقط يظهر التنبيه.
-     *
-     * النقرة الثانية:
-     * خروج آمن من الـ Activity/Task.
-     */
-    private void handleHomeBackPress() {
-
-        // =====================================================
-        // النقرة الثانية
-        // =====================================================
-        if (doubleBackToExitPressedOnce) {
-
-            doubleBackToExitPressedOnce = false;
-
-            backPressHandler.removeCallbacks(resetBackPressFlag);
-
-            Log.i(
-                    TAG,
-                    "🚪 Second BACK press on HOME → exiting application."
-            );
-
-            performRoyalExit();
-
-            return;
-        }
-
-        // =====================================================
-        // النقرة الأولى
-        // =====================================================
-
-        doubleBackToExitPressedOnce = true;
-
-        /*
-         * مهم:
-         * لا يوجد هنا:
-         *
-         * goBack()
-         * safeGoBack()
-         * loadUrl()
-         * reload()
-         * stopLoading()
-         *
-         * ولا أي تعامل مع WebView History.
-         *
-         * نحن فقط نظهر رسالة Native.
-         */
-
-        android.widget.Toast.makeText(
-                MainActivity.this,
-                "اضغط مرة أخرى للخروج",
-                android.widget.Toast.LENGTH_SHORT
-        ).show();
-
-        backPressHandler.removeCallbacks(resetBackPressFlag);
-
-        backPressHandler.postDelayed(
-                resetBackPressFlag,
-                2000
-        );
-
-        Log.i(
-                TAG,
-                "👑 First BACK press on HOME → exit warning shown."
-        );
-    }
-
-    /**
-     * 👑 خروج آمن.
-     *
-     * لا نلمس WebView ولا نحمّل about:blank.
-     * فقط نخرج من الـ Task.
-     */
-    private void performRoyalExit() {
-
-        try {
-
-            /*
-             * إيقاف المؤقت حتى لا يبقى Runnable
-             * يحاول تعديل حالة النقرتين بعد الخروج.
-             */
-            backPressHandler.removeCallbacks(resetBackPressFlag);
-
-            doubleBackToExitPressedOnce = false;
-
-            /*
-             * إخراج الـ Task من الواجهة بدون تنفيذ
-             * أي Navigation داخل WebView.
-             */
-            moveTaskToBack(true);
-
-            Log.i(
-                    TAG,
-                    "👑 Royal exit completed."
-            );
-
-        } catch (Exception e) {
-
-            Log.e(
-                    TAG,
-                    "Royal exit failed: " + e.getMessage()
-            );
-
-            /*
-             * احتياط أخير فقط في حالة فشل moveTaskToBack.
-             */
-            try {
-                finish();
-            } catch (Exception ignored) {
-            }
         }
     }
 
@@ -880,4 +522,4 @@ public class MainActivity extends AppCompatActivity {
             }
         }
     }
-                                                                                           }
+    }
