@@ -559,6 +559,43 @@ public class MainActivity extends AppCompatActivity {
         );
     }
 
+    // =========================================================
+    // 🧹 إدارة تفريغ الذاكرة (Memory Purge)
+    // =========================================================
+    private void scheduleMemoryPurge() {
+        cancelMemoryPurge();
+        memoryPurgeHandler = new Handler(Looper.getMainLooper());
+        memoryPurgeRunnable = () -> {
+            if (activeWebView != null && !isFinishing() && !isDestroyed()) {
+                Log.i(TAG, "🧹 Time-Based Memory Purge: Clearing cache...");
+                backgroundExecutor.execute(() -> {
+                    try {
+                        runOnUiThread(() -> {
+                            if (activeWebView != null) {
+                                activeWebView.clearCache(true);
+                            }
+                        });
+                        System.gc();
+                        Log.i(TAG, "✅ Memory purge completed.");
+                    } catch (Exception e) {
+                        Log.w(TAG, "Memory purge error: " + e.getMessage());
+                    }
+                });
+            }
+        };
+        memoryPurgeHandler.postDelayed(memoryPurgeRunnable, MEMORY_PURGE_DELAY_MS);
+        Log.i(TAG, "⏳ Memory purge scheduled in " + (MEMORY_PURGE_DELAY_MS / 60000) + " minutes.");
+    }
+
+    private void cancelMemoryPurge() {
+        if (memoryPurgeHandler != null && memoryPurgeRunnable != null) {
+            memoryPurgeHandler.removeCallbacks(memoryPurgeRunnable);
+            memoryPurgeHandler = null;
+            memoryPurgeRunnable = null;
+            Log.i(TAG, "⏹️ Memory purge cancelled.");
+        }
+    }
+
     /**
      * 👑 معالجة زر الرجوع عندما نكون في الصفحة الرئيسية.
      *
@@ -843,4 +880,4 @@ public class MainActivity extends AppCompatActivity {
             }
         }
     }
-}
+                                                                                           }
