@@ -333,11 +333,31 @@ public class MainActivity extends AppCompatActivity {
                     if (activeWebView != null && activeWebView.canGoBack()) {
                         // إذا يمكن الرجوع داخل الويب
                         if (progressBar != null) progressBar.setVisibility(View.GONE);
-                        activeWebView.goBack();
-
-                        // ✅ إعادة ضبط الفلاج عند الرجوع من صفحة داخلية
-                        doubleBackToExitPressedOnce = false;
-                        backPressHandler.removeCallbacks(resetBackPressFlag);
+                        
+                        // 💥 استخدام safeGoBack() بدلاً من goBack() المباشر
+                        boolean navigated = false;
+                        if (engineManager != null) {
+                            navigated = engineManager.safeGoBack();
+                        }
+                        if (!navigated) {
+                            // لم نجد إدخال صالح في التاريخ → استخدم goBack كاحتياط لكن بحذر
+                            try {
+                                // قبل أي goBack تأكد أن URL الحالي ليس about:blank
+                                String current = activeWebView.getUrl();
+                                if (current != null && !current.toLowerCase().startsWith("about:blank")) {
+                                    activeWebView.goBack();
+                                } else {
+                                    // لا تفعل شيئاً — حافظ على الصفحة الحالية لتجنب about:blank
+                                    Log.i(TAG, "Back prevented to avoid about:blank.");
+                                }
+                            } catch (Exception e) {
+                                Log.w(TAG, "Fallback goBack failed", e);
+                            }
+                        } else {
+                            // نجح الرجوع الآمن → إعادة ضبط فلاج الخروج المزدوج
+                            doubleBackToExitPressedOnce = false;
+                            backPressHandler.removeCallbacks(resetBackPressFlag);
+                        }
 
                     } else {
                         // نحن في الصفحة الرئيسية
