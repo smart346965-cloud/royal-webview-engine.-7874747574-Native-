@@ -3,6 +3,7 @@ package com.store.app.navigation;
 import android.net.Uri;
 import android.os.Handler;
 import android.os.Looper;
+import android.view.View;
 import android.util.Log;
 import android.webkit.WebView;
 import android.widget.ProgressBar;
