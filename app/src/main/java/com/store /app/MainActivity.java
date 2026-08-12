@@ -334,11 +334,16 @@ public class MainActivity extends AppCompatActivity {
                         // إذا يمكن الرجوع داخل الويب
                         if (progressBar != null) progressBar.setVisibility(View.GONE);
                         activeWebView.goBack();
+
+                        // ✅ إعادة ضبط الفلاج عند الرجوع من صفحة داخلية
+                        doubleBackToExitPressedOnce = false;
+                        backPressHandler.removeCallbacks(resetBackPressFlag);
+
                     } else {
                         // نحن في الصفحة الرئيسية
                         if (doubleBackToExitPressedOnce) {
-                            // إذا ضغط مرة ثانية خلال المهلة → خروج نهائي
-                            finishAffinity(); // يغلق التطبيق بالكامل
+                            // إذا ضغط مرة ثانية خلال المهلة → خروج أنيق
+                            moveTaskToBack(true); // يضع التطبيق في الخلفية بدون صفحة بيضاء
                         } else {
                             // أول نقرة → أظهر تنبيه احترافي
                             doubleBackToExitPressedOnce = true;
@@ -567,4 +572,4 @@ public class MainActivity extends AppCompatActivity {
             }
         }
     }
-}
+            }
