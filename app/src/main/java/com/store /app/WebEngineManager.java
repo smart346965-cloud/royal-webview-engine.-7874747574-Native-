@@ -350,7 +350,8 @@ public class WebEngineManager {
                 RoyalNetworkEngine.notifyRenderIdle();
                 RoyalWebViewHost.destroy();
                 if (activity != null) {
-                    RoyalWebViewHost.create(activity.getApplicationContext());
+                    // ✅ التعديل المطلوب: استخدم activity مباشرة بدلاً من activity.getApplicationContext()
+                    RoyalWebViewHost.create(activity);
                     activity.recreate();
                 }
                 return true;
@@ -754,4 +755,4 @@ public class WebEngineManager {
     public boolean isPageValid() {
         return OfflineStateManager.getInstance().isPageValid();
     }
-            }
+    }
