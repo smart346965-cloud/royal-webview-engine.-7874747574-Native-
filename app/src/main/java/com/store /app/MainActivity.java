@@ -69,17 +69,11 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         // 👑 System Splash هو الـ Splash الوحيد للتطبيق
+        // التعديل: إزالة setKeepOnScreenCondition (غير مدعومة) واستخدام splashScreenView مباشرة
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-
-            getSplashScreen().setKeepOnScreenCondition(
-                    () -> !splashRemoved
-            );
-
             getSplashScreen().setOnExitAnimationListener(
                     splashScreenView -> {
-
-                        splashScreenView.getView()
-                                .animate()
+                        splashScreenView.animate()
                                 .alpha(0f)
                                 .setDuration(500)
                                 .withEndAction(
