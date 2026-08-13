@@ -83,8 +83,17 @@ public class WebEngineManager {
     }
 
     public void init() {
-        if (RoyalWebViewHost.isReady() && webView.getUrl() != null && !webView.getUrl().equals("about:blank")) {
-            android.util.Log.i("RoyalEngine", "🔥 Warm Resume Detected, but enforcing fixed splash time.");
+        // ✅ الكود الجديد: معالجة التعافي الذكي من about:blank
+        String currentUrl = webView.getUrl();
+        if (currentUrl == null || currentUrl.equalsIgnoreCase("about:blank") || currentUrl.contains("chromewebdata")) {
+            Log.w(TAG, "⚠️ WebView stuck on invalid frame (" + currentUrl + "). Recovering state...");
+            if (NetworkMonitor.isInternetAvailable(context)) {
+                webView.loadUrl(com.store.app.BuildConfig.CLIENT_URL);
+            } else {
+                OfflineStateManager.getInstance().setErrorPage(true, com.store.app.BuildConfig.CLIENT_URL);
+            }
+        } else if (RoyalWebViewHost.isReady()) {
+            Log.i("RoyalEngine", "🔥 Warm Resume Detected, enforcing fixed splash time.");
         }
 
         configureSettings();
@@ -347,12 +356,12 @@ public class WebEngineManager {
                 return true;
             }
 
+            // ✅ الكود الجديد: إبلاغ الأوفلاين النيتيف بدون قطع عملية الرسم
             @Override
             public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
                 if (request != null && request.isForMainFrame()) {
-                    view.stopLoading();
                     OfflineStateManager.getInstance().setErrorPage(true, request.getUrl().toString());
-                    Log.w(TAG, "🛡️ Main frame error detected. Page invalid.");
+                    Log.w(TAG, "🛡️ Main frame error detected. Native offline state activated.");
                 }
             }
 
@@ -444,14 +453,17 @@ public class WebEngineManager {
                     }
                 }
 
-                // =========================================================
-                // 🔥 [تعديل 3] بلوك Offline المحسّن (معدل)
-                // =========================================================
+                // ✅ الكود الجديد: حماية السجل وتفعيل الأوفلاين النيتيف
                 if (!NetworkMonitor.isInternetAvailable(context) && request.isForMainFrame()) {
-                    Log.i(TAG, "📴 Offline main-frame request blocked. Let current page remain.");
-                    // لا نعيد صفحة فارغة لأن ذلك يفرغ الـ WebView ويعطي صفحة بيضاء.
-                    // نعيد null للسماح للاحتفاظ بالمحتوى الحالي؛ منع التنقل يتم في shouldOverrideUrlLoading.
-                    return null;
+                    Log.i(TAG, "📴 Offline main-frame request intercepted. Triggering Native Offline UI.");
+                    
+                    // إبلاغ مدير الأوفلاين لإظهار الواجهة النيتيف فوراً (OfflineUIController)
+                    OfflineStateManager.getInstance().setErrorPage(true, request.getUrl().toString());
+
+                    // إرجاع استجابة هيكلية سليمة لمنع Chromium من التحول إلى about:blank أو chromewebdata
+                    String cleanStub = "<!DOCTYPE html><html><head><meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\"></head><body style=\"background-color:transparent;\"></body></html>";
+                    InputStream stubStream = new ByteArrayInputStream(cleanStub.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                    return new WebResourceResponse("text/html", "UTF-8", 200, "OK", null, stubStream);
                 }
 
                 boolean isCoreResource = request.isForMainFrame() || url.contains(".js") || url.contains(".css") || url.contains(".wasm");
