@@ -16,7 +16,6 @@ import android.webkit.WebResourceResponse;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.FrameLayout;
-import android.widget.ImageView;
 import android.widget.ProgressBar;
 
 import androidx.appcompat.app.AppCompatActivity;
@@ -59,12 +58,9 @@ public class MainActivity extends AppCompatActivity {
     private RoyalAuthManager royalAuthManager;
 
     private FrameLayout rootContainer;
-    private FrameLayout splashContainer;
 
     private final Handler mainHandler =
             new Handler(Looper.getMainLooper());
-
-    private boolean splashRevealPending = false;
 
     // =========================================================
     // 🚀 دورة الحياة الأساسية
@@ -72,23 +68,33 @@ public class MainActivity extends AppCompatActivity {
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
-        // 👑 [تعديل جراحي ملكي 1]: استلام التحكم بأنيميشن خروج سبلاش النظام لجعل خروجه ناعماً للغاية
+        // 👑 System Splash هو الـ Splash الوحيد للتطبيق
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            getSplashScreen().setOnExitAnimationListener(splashScreenView -> {
-                // تنفيذ أنيميشن شفافية ناعم (Fade-Out) لسبلاش النظام لمنع الاختفاء المفاجئ
-                splashScreenView.animate()
-                        .alpha(0f)
-                        .setDuration(500) // 500 ملي ثانية لأنيميشن اختفاء سينمائي
-                        .withEndAction(splashScreenView::remove)
-                        .start();
-            });
+
+            getSplashScreen().setKeepOnScreenCondition(
+                    () -> !splashRemoved
+            );
+
+            getSplashScreen().setOnExitAnimationListener(
+                    splashScreenView -> {
+
+                        splashScreenView.getView()
+                                .animate()
+                                .alpha(0f)
+                                .setDuration(500)
+                                .withEndAction(
+                                        splashScreenView::remove
+                                )
+                                .start();
+                    }
+            );
         }
 
-        // 🛡️ درع الوميض: مطابقة الخلفية مع لون السبلاش لمنع الوميض الأبيض الصارخ
-        setTheme(R.style.AppTheme_NoSplash);
-        getWindow().setBackgroundDrawable(new ColorDrawable(Color.parseColor("#F3F4F6")));
-
         super.onCreate(savedInstanceState);
+
+        getWindow().setBackgroundDrawable(
+                new ColorDrawable(Color.parseColor("#F3F4F6"))
+        );
 
         // 🔍 تفعيل محرك الفحص والتشخيص الذكي
         try {
@@ -112,13 +118,7 @@ public class MainActivity extends AppCompatActivity {
 
         setContentView(rootContainer);
 
-        /*
-         * Splash يبدأ توقيته من Activity نفسها،
-         * وليس بعد إنشاء WebView.
-         */
         splashStartTime = System.currentTimeMillis();
-
-        createSplashOverlay();
 
         /*
          * =========================================================
@@ -171,7 +171,7 @@ public class MainActivity extends AppCompatActivity {
          * WebView يدخل خلف الـ Splash.
          *
          * index 0 = خلفية
-         * Splash = فوقه
+         * Splash = فوقه (لكننا لا نستخدم splashContainer الآن)
          */
         rootContainer.addView(
                 activeWebView,
@@ -182,15 +182,12 @@ public class MainActivity extends AppCompatActivity {
                 )
         );
 
+        activeWebView.setVisibility(View.VISIBLE);
+
         /*
          * إعداد WebView قبل أي navigation.
          */
         setupWebViewClient();
-
-        /*
-         * لا تضع Renderer Priority هنا.
-         * Chromium يستخدم IMPORTANT افتراضيًا.
-         */
 
         /*
          * System UI بعد وجود WebView.
@@ -208,12 +205,14 @@ public class MainActivity extends AppCompatActivity {
         /*
          * WebEngineManager الآن فقط.
          * لأنه يحتاج WebView حقيقي.
+         *
+         * تمرير null للـ splashOverlay و progressBar لأننا نعتمد على System Splash.
          */
         engineManager = new WebEngineManager(
                 this,
                 activeWebView,
-                splashContainer,
-                progressBar,
+                null,   // splashOverlay
+                null,   // progressBar
                 () -> splashRemoved = true,
                 () -> splashRemoved
         );
@@ -234,7 +233,7 @@ public class MainActivity extends AppCompatActivity {
                 this,
                 activeWebView,
                 engineManager,
-                progressBar
+                null // progressBar غير مستخدم
         ).setupBackNavigation();
 
         /*
@@ -346,105 +345,27 @@ public class MainActivity extends AppCompatActivity {
          * إذا انتهت الـ 5 ثواني قبل انتهاء WebView startup،
          * نكشف Splash الآن بعد أن أصبح WebView موجودًا.
          */
-        if (splashRevealPending) {
-            releaseSplash();
+        if (splashRemoved) {
+            // إذا تم طلب الإصدار بالفعل، نحرره فوراً
+            if (engineManager != null) {
+                engineManager.triggerFinalReveal();
+            }
         }
-    }
-
-    private void createSplashOverlay() {
-
-        splashContainer =
-                new FrameLayout(this);
-
-        splashContainer.setBackgroundColor(
-                Color.parseColor("#F3F4F6")
-        );
-
-        /*
-         * Splash فوق WebView.
-         *
-         * WebView لا يتم تجميده.
-         */
-        rootContainer.addView(
-                splashContainer,
-                new FrameLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT,
-                        ViewGroup.LayoutParams.MATCH_PARENT
-                )
-        );
-
-        ImageView splashIcon =
-                new ImageView(this);
-
-        splashIcon.setImageResource(
-                R.mipmap.ic_launcher
-        );
-
-        FrameLayout.LayoutParams iconParams =
-                new FrameLayout.LayoutParams(
-                        280,
-                        280,
-                        android.view.Gravity.CENTER
-                );
-
-        splashContainer.addView(
-                splashIcon,
-                iconParams
-        );
-
-        progressBar =
-                new ProgressBar(
-                        this,
-                        null,
-                        android.R.attr.progressBarStyleHorizontal
-                );
-
-        progressBar.setMax(100);
-
-        FrameLayout.LayoutParams progressParams =
-                new FrameLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT,
-                        8,
-                        android.view.Gravity.TOP
-                );
-
-        rootContainer.addView(
-                progressBar,
-                progressParams
-        );
-
-        /*
-         * Progress فوق Splash.
-         */
-        progressBar.bringToFront();
-
-        /*
-         * ولكن splash يجب أن يبقى فوق WebView.
-         */
-        splashContainer.bringToFront();
     }
 
     private void releaseSplash() {
 
-        /*
-         * الوقت وصل 5000ms بالضبط.
-         */
         splashRemoved = true;
 
+        Log.i(
+                TAG,
+                "👑 System Splash release requested."
+        );
+
+        // إذا كان المحرك جاهزاً، قم بتنفيذ الإصدار
         if (engineManager != null) {
-
             engineManager.triggerFinalReveal();
-
-            return;
         }
-
-        /*
-         * Chromium لم يكن جاهزًا في نفس اللحظة.
-         * لا نمدد الـ Splash.
-         *
-         * بمجرد إنشاء WebView سيتم كشفه فوراً.
-         */
-        splashRevealPending = true;
     }
 
     // =========================================================
@@ -713,4 +634,4 @@ public class MainActivity extends AppCompatActivity {
         // هنا يمكن تمرير النتائج إلى RoyalAuthManager إذا لزم الأمر
         // حالياً لا يوجد استخدام مباشر
     }
-                    }
+                                }
