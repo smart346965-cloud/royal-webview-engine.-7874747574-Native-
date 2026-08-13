@@ -95,7 +95,7 @@ public final class RoyalWebViewHost {
                                 .authority(clientUri.getAuthority())
                                 .build();
 
-                profile.preconnect(originUri);
+                profile.preconnect(originUri.toString());
                 Log.i(TAG, "🌐 WebView preconnect requested for: " + originUri.toString());
             }
 
@@ -256,4 +256,4 @@ public final class RoyalWebViewHost {
     public static WebView getWebView() {
         return webViewInstance;
     }
-            }
+    }
