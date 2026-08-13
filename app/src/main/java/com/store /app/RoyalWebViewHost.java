@@ -45,12 +45,13 @@ public final class RoyalWebViewHost {
         webViewStartupFailure = null;
         Log.i(TAG, "🔥 WebView startup barrier OPEN.");
 
-        warmUpDefaultProfile(context);
-
+        // 👑 تنفيذ المستمعين أولاً ثم التسخين
         for (Runnable listener : startupListeners) {
             listener.run();
         }
         startupListeners.clear();
+
+        warmUpDefaultProfile(context);
     }
 
     public static synchronized void onWebViewStartupFailed(Throwable error) {
@@ -176,7 +177,10 @@ public final class RoyalWebViewHost {
         }
 
         safeRemoveFromParent();
-        webViewInstance.setVisibility(View.VISIBLE);
+
+        // 👑 الإبقاء على WebView في وضع INVISIBLE حتى يصبح جاهزاً للعرض
+        webViewInstance.setVisibility(View.INVISIBLE);
+
         webViewInstance.onResume();
         webViewInstance.resumeTimers();
 
@@ -237,4 +241,4 @@ public final class RoyalWebViewHost {
     public static WebView getWebView() {
         return webViewInstance;
     }
-                }
+    }
