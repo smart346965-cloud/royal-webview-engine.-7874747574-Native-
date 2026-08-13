@@ -45,13 +45,12 @@ public final class RoyalWebViewHost {
         webViewStartupFailure = null;
         Log.i(TAG, "🔥 WebView startup barrier OPEN.");
 
-        // 👑 تنفيذ المستمعين أولاً ثم التسخين
+        warmUpDefaultProfile(context);
+
         for (Runnable listener : startupListeners) {
             listener.run();
         }
         startupListeners.clear();
-
-        warmUpDefaultProfile(context);
     }
 
     public static synchronized void onWebViewStartupFailed(Throwable error) {
@@ -87,13 +86,31 @@ public final class RoyalWebViewHost {
             }
 
             if (WebViewFeature.isFeatureSupported(WebViewFeature.PRECONNECT)) {
-                profile.preconnect(BuildConfig.CLIENT_URL);
-                Log.i(TAG, "🌐 WebView preconnect requested for: " + BuildConfig.CLIENT_URL);
+                android.net.Uri clientUri =
+                        android.net.Uri.parse(BuildConfig.CLIENT_URL);
+
+                android.net.Uri originUri =
+                        new android.net.Uri.Builder()
+                                .scheme(clientUri.getScheme())
+                                .authority(clientUri.getAuthority())
+                                .build();
+
+                profile.preconnect(originUri);
+                Log.i(TAG, "🌐 WebView preconnect requested for: " + originUri.toString());
             }
 
             if (WebViewFeature.isFeatureSupported(WebViewFeature.ADD_QUIC_HINTS_V1)) {
+                android.net.Uri clientUri =
+                        android.net.Uri.parse(BuildConfig.CLIENT_URL);
+
+                android.net.Uri originUri =
+                        new android.net.Uri.Builder()
+                                .scheme(clientUri.getScheme())
+                                .authority(clientUri.getAuthority())
+                                .build();
+
                 java.util.Set<String> origins = new java.util.HashSet<>();
-                origins.add(BuildConfig.CLIENT_URL);
+                origins.add(originUri.toString());
                 profile.addQuicHints(origins);
                 Log.i(TAG, "🚀 QUIC hint registered for client origin.");
             }
@@ -146,8 +163,6 @@ public final class RoyalWebViewHost {
 
             jsBridgeInstance = new RoyalJsBridge(webView);
             webView.addJavascriptInterface(jsBridgeInstance, "RoyalBridge");
-
-            webView.setVisibility(View.VISIBLE);
 
             webViewInstance = webView;
             isInitialized = true;
@@ -241,4 +256,4 @@ public final class RoyalWebViewHost {
     public static WebView getWebView() {
         return webViewInstance;
     }
-    }
+            }
