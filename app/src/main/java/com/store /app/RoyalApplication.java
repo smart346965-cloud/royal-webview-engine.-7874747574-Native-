@@ -3,14 +3,12 @@ package com.store.app;
 import android.app.Application;
 import android.util.Log;
 
-import androidx.webkit.Profile;
 import androidx.webkit.WebViewCompat;
 import androidx.webkit.WebViewOutcomeReceiver;
 import androidx.webkit.WebViewStartUpConfig;
 import androidx.webkit.WebViewStartUpResult;
 import androidx.webkit.WebViewStartupException;
 
-import java.util.Collections;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -48,12 +46,11 @@ public class RoyalApplication extends Application {
         try {
 
             WebViewStartUpConfig config =
-                    new WebViewStartUpConfig.Builder(STARTUP_EXECUTOR)
-                            .setProfilesToLoadDuringStartup(
-                                    Collections.singleton(Profile.DEFAULT_PROFILE_NAME)
-                            )
-                            .setShouldRunUiThreadStartUpTasks(true)
-                            .build();
+                    new WebViewStartUpConfig.Builder(
+                            STARTUP_EXECUTOR
+                    )
+                    .setShouldRunUiThreadStartUpTasks(true)
+                    .build();
 
             WebViewCompat.startUpWebView(
                     getApplicationContext(),
@@ -110,4 +107,4 @@ public class RoyalApplication extends Application {
             RoyalWebViewHost.onWebViewStartupFailed(t);
         }
     }
-                }
+}
