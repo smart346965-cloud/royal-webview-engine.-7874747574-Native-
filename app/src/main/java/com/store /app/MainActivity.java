@@ -44,6 +44,8 @@ public class MainActivity extends AppCompatActivity {
 
     private boolean splashRemoved = false;
     private boolean isPageLoaded = false; // لمنع إعادة تحميل الصفحة في onResume
+    private boolean webViewReady = false;
+    private boolean firstFrameReady = false;
 
     private WebEngineManager engineManager;
     private WebView activeWebView;
@@ -176,12 +178,23 @@ public class MainActivity extends AppCompatActivity {
                 )
         );
 
-        activeWebView.setVisibility(View.VISIBLE);
+        activeWebView.setVisibility(View.INVISIBLE);
 
         /*
          * إعداد WebView قبل أي navigation.
          */
         setupWebViewClient();
+
+        activeWebView.postVisualStateCallback(
+                0,
+                new WebView.VisualStateCallback() {
+                    @Override
+                    public void onComplete(long requestId) {
+                        firstFrameReady = true;
+                        revealWebViewIfReady();
+                    }
+                }
+        );
 
         /*
          * System UI بعد وجود WebView.
@@ -284,18 +297,37 @@ public class MainActivity extends AppCompatActivity {
             }
         }
 
+        if (restored) {
+            activeWebView.postVisualStateCallback(
+                    0,
+                    new WebView.VisualStateCallback() {
+                        @Override
+                        public void onComplete(long requestId) {
+                            firstFrameReady = true;
+                            revealWebViewIfReady();
+                        }
+                    }
+            );
+        }
+
         if (!restored) {
 
-            activeWebView.loadUrl(
-                    BuildConfig.CLIENT_URL
-            );
+            activeWebView.loadUrl(BuildConfig.CLIENT_URL);
 
             isPageLoaded = true;
 
-            Log.i(
-                    TAG,
-                    "🌐 Initial CLIENT_URL navigation started."
+            activeWebView.postVisualStateCallback(
+                    0,
+                    new WebView.VisualStateCallback() {
+                        @Override
+                        public void onComplete(long requestId) {
+                            firstFrameReady = true;
+                            revealWebViewIfReady();
+                        }
+                    }
             );
+
+            Log.i(TAG, "🌐 Initial CLIENT_URL navigation started.");
         }
 
         /*
@@ -347,19 +379,32 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    private void revealWebViewIfReady() {
+
+        if (!splashRemoved) {
+            return;
+        }
+
+        if (!firstFrameReady) {
+            return;
+        }
+
+        if (activeWebView == null) {
+            return;
+        }
+
+        activeWebView.setVisibility(View.VISIBLE);
+
+        Log.i(TAG, "🎨 First visual state committed. WebView revealed.");
+    }
+
     private void releaseSplash() {
 
         splashRemoved = true;
 
-        Log.i(
-                TAG,
-                "👑 System Splash release requested."
-        );
+        Log.i(TAG, "👑 System Splash release requested.");
 
-        // إذا كان المحرك جاهزاً، قم بتنفيذ الإصدار
-        if (engineManager != null) {
-            engineManager.triggerFinalReveal();
-        }
+        revealWebViewIfReady();
     }
 
     // =========================================================
@@ -507,7 +552,9 @@ public class MainActivity extends AppCompatActivity {
             royalAuthManager = null;
         }
 
-        RoyalWebViewHost.detach();
+        if (!isChangingConfigurations()) {
+            RoyalWebViewHost.detach();
+        }
 
         activeWebView = null;
 
@@ -628,4 +675,4 @@ public class MainActivity extends AppCompatActivity {
         // هنا يمكن تمرير النتائج إلى RoyalAuthManager إذا لزم الأمر
         // حالياً لا يوجد استخدام مباشر
     }
-                                }
+                            }
