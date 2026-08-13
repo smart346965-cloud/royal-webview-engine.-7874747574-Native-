@@ -40,17 +40,30 @@ public final class RoyalWebViewHost {
     // 🚀 دوال إدارة Startup
     // =========================================================
 
-    public static synchronized void onWebViewStartupReady(Context context) {
-        webViewStartupReady = true;
-        webViewStartupFailure = null;
+    public static void onWebViewStartupReady(Context context) {
+
+        ArrayList<Runnable> listeners;
+
+        synchronized (RoyalWebViewHost.class) {
+
+            webViewStartupReady = true;
+            webViewStartupFailure = null;
+
+            listeners = new ArrayList<>(startupListeners);
+            startupListeners.clear();
+        }
+
         Log.i(TAG, "🔥 WebView startup barrier OPEN.");
 
         warmUpDefaultProfile(context);
 
-        for (Runnable listener : startupListeners) {
-            listener.run();
+        for (Runnable listener : listeners) {
+            try {
+                listener.run();
+            } catch (Throwable t) {
+                Log.e(TAG, "Startup listener failed.", t);
+            }
         }
-        startupListeners.clear();
     }
 
     public static synchronized void onWebViewStartupFailed(Throwable error) {
@@ -58,16 +71,33 @@ public final class RoyalWebViewHost {
         Log.e(TAG, "❌ WebView startup barrier FAILED.", error);
     }
 
-    public static synchronized void whenStartupReady(Runnable listener) {
-        if (webViewStartupReady) {
+    public static void whenStartupReady(Runnable listener) {
+
+        boolean runNow = false;
+
+        synchronized (RoyalWebViewHost.class) {
+
+            if (webViewStartupReady) {
+                runNow = true;
+
+            } else if (webViewStartupFailure != null) {
+
+                Log.e(
+                        TAG,
+                        "WebView startup previously failed; listener not executed."
+                );
+
+                return;
+
+            } else {
+
+                startupListeners.add(listener);
+            }
+        }
+
+        if (runNow) {
             listener.run();
-            return;
         }
-        if (webViewStartupFailure != null) {
-            Log.e(TAG, "WebView startup previously failed; listener not executed.");
-            return;
-        }
-        startupListeners.add(listener);
     }
 
     private static void warmUpDefaultProfile(Context context) {
@@ -158,6 +188,10 @@ public final class RoyalWebViewHost {
             settings.setCacheMode(android.webkit.WebSettings.LOAD_DEFAULT);
             settings.setDomStorageEnabled(true);
 
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                settings.setOffscreenPreRaster(false);
+            }
+
             RoyalHybridEngine.prime(webView, activity.getApplicationContext());
             RoyalNetworkEngine.install(activity.getApplicationContext());
 
@@ -193,8 +227,7 @@ public final class RoyalWebViewHost {
 
         safeRemoveFromParent();
 
-        // 👑 الإبقاء على WebView في وضع INVISIBLE حتى يصبح جاهزاً للعرض
-        webViewInstance.setVisibility(View.INVISIBLE);
+        webViewInstance.setVisibility(View.VISIBLE);
 
         webViewInstance.onResume();
         webViewInstance.resumeTimers();
@@ -221,17 +254,31 @@ public final class RoyalWebViewHost {
     }
 
     public static synchronized void destroy() {
+
         if (webViewInstance != null) {
+
             WebView dead = webViewInstance;
+
+            safeRemoveFromParent();
+
             webViewInstance = null;
             jsBridgeInstance = null;
             isInitialized = false;
 
-            safeRemoveFromParent();
-            dead.destroy();
+            try {
+                dead.stopLoading();
+            } catch (Throwable ignored) {
+            }
+
+            try {
+                dead.destroy();
+            } catch (Throwable t) {
+                Log.w(TAG, "WebView destroy failed.", t);
+            }
         }
 
         RoyalHybridEngine.reset();
+
         Log.i(TAG, "💀 WebView engine destroyed.");
     }
 
@@ -256,4 +303,4 @@ public final class RoyalWebViewHost {
     public static WebView getWebView() {
         return webViewInstance;
     }
-    }
+                    }
