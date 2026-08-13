@@ -1,7 +1,7 @@
 package com.store.app;
 
 import android.content.Intent;
-importandroid.graphics.Color;
+import android.graphics.Color;
 import android.graphics.drawable.ColorDrawable;
 import android.net.Uri;
 import android.os.Build;
@@ -43,7 +43,7 @@ public class MainActivity extends AppCompatActivity {
     private static final long FIXED_SPLASH_TIME = 5000; // قيمة ثابتة 5 ثوانٍ بالتمام والكمال
 
     private boolean splashRemoved = false;
-    private boolean isPageLoaded = false;
+    private boolean isPageLoaded = false; // لمنع إعادة تحميل الصفحة في onResume
     private boolean webViewReady = false;
     private boolean visualStateReady = false;
 
@@ -662,4 +662,4 @@ public class MainActivity extends AppCompatActivity {
         // هنا يمكن تمرير النتائج إلى RoyalAuthManager إذا لزم الأمر
         // حالياً لا يوجد استخدام مباشر
     }
-                }
+            }
