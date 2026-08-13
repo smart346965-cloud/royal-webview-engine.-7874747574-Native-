@@ -11,7 +11,6 @@ import android.os.Looper;
 import android.util.Log;
 import android.view.View;
 import android.view.ViewGroup;
-import android.view.ViewTreeObserver;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
 import android.webkit.WebView;
@@ -20,15 +19,11 @@ import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.ProgressBar;
 
-import androidx.activity.OnBackPressedCallback;
 import androidx.appcompat.app.AppCompatActivity;
 
 import com.store.app.offline.OfflineUIController;
 import com.store.app.offline.OfflineStateManager;
 import com.store.app.RoyalAuthManager;
-
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 
 /**
  * 👑 MainActivity - النواة الأساسية لإدارة محرك الويب المخصص
@@ -47,10 +42,8 @@ public class MainActivity extends AppCompatActivity {
 
     private static final String TAG = "RoyalMainActivity";
     private static final long FIXED_SPLASH_TIME = 5000; // قيمة ثابتة 5 ثوانٍ بالتمام والكمال
-    private static final long MEMORY_PURGE_DELAY_MS = 4 * 60 * 1000; // 4 دقائق
 
     private boolean splashRemoved = false;
-    private boolean isPageReady = false; // flag للرندرة
     private boolean isPageLoaded = false; // لمنع إعادة تحميل الصفحة في onResume
 
     private WebEngineManager engineManager;
@@ -58,17 +51,20 @@ public class MainActivity extends AppCompatActivity {
     private ProgressBar progressBar;
 
     private long splashStartTime = 0;
-    private Handler memoryPurgeHandler;
-    private Runnable memoryPurgeRunnable;
-
-    // 🔥 تحسين الخيوط: استخدام ThreadPool لإدارة المهام الخلفية
-    private static final ExecutorService backgroundExecutor = Executors.newFixedThreadPool(2);
 
     // 🔥 مدير واجهات الأوفلاين
     private OfflineUIController offlineController;
 
     // 🔥 مدير المصادقة والدفع
     private RoyalAuthManager royalAuthManager;
+
+    private FrameLayout rootContainer;
+    private FrameLayout splashContainer;
+
+    private final Handler mainHandler =
+            new Handler(Looper.getMainLooper());
+
+    private boolean splashRevealPending = false;
 
     // =========================================================
     // 🚀 دورة الحياة الأساسية
@@ -105,162 +101,350 @@ public class MainActivity extends AppCompatActivity {
         // تفعيل أدوات تصحيح الويب التقنية عبر المتصفح
         WebView.setWebContentsDebuggingEnabled(true);
 
-        // 1️⃣ استدعاء وتهيئة الويب فيو الخالد مباشرة بدون وسطاء
-        if (!RoyalWebViewHost.isReady()) {
-            RoyalWebViewHost.create(getApplicationContext());
+        // =========================================================
+        // 👑 Native root — يظهر فوراً ولا ينتظر Chromium
+        // =========================================================
+
+        rootContainer = new FrameLayout(this);
+        rootContainer.setBackgroundColor(
+                Color.parseColor("#F3F4F6")
+        );
+
+        setContentView(rootContainer);
+
+        /*
+         * Splash يبدأ توقيته من Activity نفسها،
+         * وليس بعد إنشاء WebView.
+         */
+        splashStartTime = System.currentTimeMillis();
+
+        createSplashOverlay();
+
+        /*
+         * =========================================================
+         * Chromium barrier
+         * =========================================================
+         *
+         * إذا كان Chromium لم ينته بعد:
+         * لا ننشئ WebView قبل callback.
+         *
+         * لكن Splash موجود بالفعل.
+         */
+        RoyalWebViewHost.whenStartupReady(
+                () -> initializeWebView(savedInstanceState)
+        );
+
+        /*
+         * =========================================================
+         * Splash timer
+         * =========================================================
+         *
+         * 5000ms ثابتة.
+         *
+         * لا علاقة له بوقت تحميل Chromium.
+         * لا علاقة له بـ FCP.
+         * لا علاقة له بـ onPreDraw.
+         */
+        mainHandler.postDelayed(
+                this::releaseSplash,
+                FIXED_SPLASH_TIME
+        );
+    }
+
+    private void initializeWebView(Bundle savedInstanceState) {
+
+        if (isFinishing() ||
+                (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1
+                        && isDestroyed())) {
+            return;
         }
-        activeWebView = RoyalWebViewHost.attach(this);
 
-        // 2️⃣ تعيين المحرك الخالد كواجهة أساسية مباشرة (استجابة 0ms)
-        setContentView(activeWebView);
+        /*
+         * الآن فقط يسمح لـ Host بإنشاء WebView.
+         */
+        RoyalWebViewHost.create(this);
 
-        // 🔥 [تحسين shouldInterceptRequest]: تفعيل الاختصار لمنع الاستدعاءات الفارغة
+        activeWebView =
+                RoyalWebViewHost.attach(this);
+
+        /*
+         * WebView يدخل خلف الـ Splash.
+         *
+         * index 0 = خلفية
+         * Splash = فوقه
+         */
+        rootContainer.addView(
+                activeWebView,
+                0,
+                new FrameLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.MATCH_PARENT
+                )
+        );
+
+        /*
+         * إعداد WebView قبل أي navigation.
+         */
         setupWebViewClient();
 
-        // 🔥 [تفعيل Renderer Importance API]: أعلى أولوية لمعالج العرض
-        setupRendererPriority();
+        /*
+         * لا تضع Renderer Priority هنا.
+         * Chromium يستخدم IMPORTANT افتراضيًا.
+         */
 
-        // 🔥 [تفعيل Prefetch Native Library]: إجبار النظام على إبقاء المكتبات في الذاكرة
-        setupNativeLibraryPrefetch();
+        /*
+         * System UI بعد وجود WebView.
+         */
+        SystemUI.applyKingMode(
+                this,
+                activeWebView
+        );
 
-        // 🚀 السطر الذهبي: حاول الإحياء الثنائي أولاً
-        boolean sessionRestored = RoyalSessionSentinel.resurrect(activeWebView, this);
+        SystemUI.setDynamicIcons(
+                getWindow(),
+                true
+        );
 
-        if (!sessionRestored) {
-            // إذا لم توجد جلسة، حمّل الرابط الافتراضي
-            activeWebView.loadUrl(BuildConfig.CLIENT_URL);
-        } else {
-            isPageLoaded = true; // تم استعادة الجلسة، الصفحة محملة
+        /*
+         * WebEngineManager الآن فقط.
+         * لأنه يحتاج WebView حقيقي.
+         */
+        engineManager = new WebEngineManager(
+                this,
+                activeWebView,
+                splashContainer,
+                progressBar,
+                () -> splashRemoved = true,
+                () -> splashRemoved
+        );
+
+        engineManager.setSplashStartTime(
+                splashStartTime
+        );
+
+        engineManager.init();
+
+        /*
+         * Navigation manager كان يأخذ engineManager = null
+         * في النسخة القديمة.
+         *
+         * الآن يأخذ object حقيقي.
+         */
+        new com.store.app.navigation.RoyalBackNavigation(
+                this,
+                activeWebView,
+                engineManager,
+                progressBar
+        ).setupBackNavigation();
+
+        /*
+         * =====================================================
+         * استعادة / تحميل الصفحة
+         * =====================================================
+         *
+         * يوجد مالك واحد فقط للـ navigation.
+         */
+
+        boolean restored = false;
+
+        if (savedInstanceState != null) {
+
+            try {
+
+                activeWebView.restoreState(
+                        savedInstanceState
+                );
+
+                restored = true;
+                isPageLoaded = true;
+
+                Log.i(
+                        TAG,
+                        "🔄 WebView restored from Activity state."
+                );
+
+            } catch (Throwable t) {
+
+                Log.w(
+                        TAG,
+                        "WebView restoreState failed.",
+                        t
+                );
+            }
         }
 
-        // 4️⃣ نظام التحكم بالرجوع المستقل نيتف (محسّن) - تم نقله إلى RoyalBackNavigation
-        new com.store.app.navigation.RoyalBackNavigation(this, activeWebView, engineManager, progressBar)
-                .setupBackNavigation();
+        if (!restored) {
 
-        // 5️⃣ الحصانة البصرية وتخصيص شريط النظام بالكامل
-        SystemUI.applyKingMode(this, activeWebView);
-        SystemUI.setDynamicIcons(this.getWindow(), true);
+            restored =
+                    RoyalSessionSentinel.resurrect(
+                            activeWebView,
+                            this
+                    );
 
-        // 6️⃣ بناء وتجهيز طبقة شاشة التحميل (Splash Screen Overlay)
-        setupSplashScreen();
+            if (restored) {
+                isPageLoaded = true;
 
-        // 7️⃣ مراقبة الشبكة وتهيئة مدير الأوفلاين
+                Log.i(
+                        TAG,
+                        "🧊 WebView session resurrected."
+                );
+            }
+        }
+
+        if (!restored) {
+
+            activeWebView.loadUrl(
+                    BuildConfig.CLIENT_URL
+            );
+
+            isPageLoaded = true;
+
+            Log.i(
+                    TAG,
+                    "🌐 Initial CLIENT_URL navigation started."
+            );
+        }
+
+        /*
+         * Offline
+         */
         NetworkMonitor.init(this);
 
-        // 🔗 الربط الثنائي الموحد (تم حذف NetworkMonitor.setWebView)
-        offlineController = new OfflineUIController(this, activeWebView, engineManager);
+        offlineController =
+                new OfflineUIController(
+                        this,
+                        activeWebView,
+                        engineManager
+                );
+
         offlineController.init();
-        OfflineStateManager.getInstance().bind(activeWebView, offlineController);
 
-        // 🔥 تهيئة مدير المصادقة والدفع
-        royalAuthManager = new RoyalAuthManager(this, getApplicationContext());
+        OfflineStateManager
+                .getInstance()
+                .bind(
+                        activeWebView,
+                        offlineController
+                );
 
-        // 🚀 فحص الإنترنت الأولي (عند الإقلاع)
+        /*
+         * Auth / Payment
+         */
+        royalAuthManager =
+                new RoyalAuthManager(
+                        this,
+                        getApplicationContext()
+                );
+
         if (!NetworkMonitor.isInternetAvailable(this)) {
-            if (offlineController != null) {
-                offlineController.setOfflineUIVisibility(true);
-            }
+
+            offlineController.setOfflineUIVisibility(
+                    true
+            );
+        }
+
+        /*
+         * إذا انتهت الـ 5 ثواني قبل انتهاء WebView startup،
+         * نكشف Splash الآن بعد أن أصبح WebView موجودًا.
+         */
+        if (splashRevealPending) {
+            releaseSplash();
         }
     }
 
-    @Override
-    protected void onStart() {
-        super.onStart();
-        // بدء مراقبة حالة التطبيق في المقدمة
+    private void createSplashOverlay() {
+
+        splashContainer =
+                new FrameLayout(this);
+
+        splashContainer.setBackgroundColor(
+                Color.parseColor("#F3F4F6")
+        );
+
+        /*
+         * Splash فوق WebView.
+         *
+         * WebView لا يتم تجميده.
+         */
+        rootContainer.addView(
+                splashContainer,
+                new FrameLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.MATCH_PARENT
+                )
+        );
+
+        ImageView splashIcon =
+                new ImageView(this);
+
+        splashIcon.setImageResource(
+                R.mipmap.ic_launcher
+        );
+
+        FrameLayout.LayoutParams iconParams =
+                new FrameLayout.LayoutParams(
+                        280,
+                        280,
+                        android.view.Gravity.CENTER
+                );
+
+        splashContainer.addView(
+                splashIcon,
+                iconParams
+        );
+
+        progressBar =
+                new ProgressBar(
+                        this,
+                        null,
+                        android.R.attr.progressBarStyleHorizontal
+                );
+
+        progressBar.setMax(100);
+
+        FrameLayout.LayoutParams progressParams =
+                new FrameLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        8,
+                        android.view.Gravity.TOP
+                );
+
+        rootContainer.addView(
+                progressBar,
+                progressParams
+        );
+
+        /*
+         * Progress فوق Splash.
+         */
+        progressBar.bringToFront();
+
+        /*
+         * ولكن splash يجب أن يبقى فوق WebView.
+         */
+        splashContainer.bringToFront();
     }
 
-    @Override
-    protected void onStop() {
-        super.onStop();
-        // 🔥 [Time-Based Memory Purge]: تفريغ الذاكرة بعد 4 دقائق في الخلفية
-        scheduleMemoryPurge();
-    }
+    private void releaseSplash() {
 
-    @Override
-    protected void onPause() {
-        super.onPause();
-        // إيقاف مؤقت للعمليات الرسومية غير النشطة في الخلفية للحفاظ على طاقة الجهاز
-        if (activeWebView != null) {
-            activeWebView.onPause();
-        }
-        // إلغاء مؤقت تفريغ الذاكرة عند الخروج الفوري
-        cancelMemoryPurge();
-    }
+        /*
+         * الوقت وصل 5000ms بالضبط.
+         */
+        splashRemoved = true;
 
-    @Override
-    protected void onResume() {
-        super.onResume();
-        if (activeWebView != null) {
-            activeWebView.onResume();
-        }
-        cancelMemoryPurge();
+        if (engineManager != null) {
 
-        // 🔥 تفويض منطق الأوفلاين إلى OfflineUIController
-        if (offlineController != null) {
-            offlineController.onResume();
+            engineManager.triggerFinalReveal();
+
+            return;
         }
 
-        // إذا كانت الصفحة فارغة وتحتاج تحميل (مع عدم وجود إنترنت)
-        if (!isPageLoaded && activeWebView != null && activeWebView.getUrl() == null) {
-            activeWebView.loadUrl(BuildConfig.CLIENT_URL);
-            isPageLoaded = true;
-        }
-    }
-
-    @Override
-    protected void onDestroy() {
-        // 🛡️ التعديل: لا تحمل about:blank، فقط افصل الويب فيو بأمان
-        if (activeWebView != null) {
-            // نكتفي بإيقاف العمليات دون مسح السطح الرسومي
-            activeWebView.stopLoading();
-        }
-        // إلغاء مؤقت تفريغ الذاكرة
-        cancelMemoryPurge();
-
-        // 🔥 تنظيف OfflineUIController
-        if (offlineController != null) {
-            offlineController.destroy();
-            offlineController = null;
-        }
-
-        // 🔥 إلغاء ربط OfflineStateManager
-        OfflineStateManager.getInstance().unbind();
-
-        // 🔥 تنظيف مدير المصادقة والدفع
-        if (royalAuthManager != null) {
-            royalAuthManager.destroy();
-            royalAuthManager = null;
-        }
-
-        RoyalWebViewHost.detach();
-        super.onDestroy();
-    }
-
-    // 🔥 [تحسين onTrimMemory]: استجابة سريعة لضغط الذاكرة
-    @Override
-    public void onTrimMemory(int level) {
-        super.onTrimMemory(level);
-        
-        if (level >= TRIM_MEMORY_MODERATE) {
-            Log.i(TAG, "🚨 Memory Pressure: Level " + level);
-            
-            if (activeWebView != null) {
-                backgroundExecutor.execute(() -> {
-                    try {
-                        // تحرير موارد الرسم الصلبة
-                        runOnUiThread(() -> activeWebView.onPause());
-                        // تفريغ الكاش في الخلفية
-                        activeWebView.clearCache(true);
-                        Log.i(TAG, "🧹 Cache cleared due to memory pressure.");
-                    } catch (Exception e) {
-                        Log.w(TAG, "Memory pressure cleanup error: " + e.getMessage());
-                    }
-                });
-            }
-            
-            // طلب جمع القمامة
-            System.gc();
-        }
+        /*
+         * Chromium لم يكن جاهزًا في نفس اللحظة.
+         * لا نمدد الـ Splash.
+         *
+         * بمجرد إنشاء WebView سيتم كشفه فوراً.
+         */
+        splashRevealPending = true;
     }
 
     // =========================================================
@@ -271,160 +455,199 @@ public class MainActivity extends AppCompatActivity {
      * 🔥 تحسين shouldInterceptRequest: منع الاستدعاءات الفارغة
      */
     private void setupWebViewClient() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            activeWebView.setWebViewClient(new WebViewClient() {
-                @Override
-                public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
-                    // استخدام RoyalNetworkEngine بدلاً من التنفيذ الفارغ
-                    return RoyalNetworkEngine.interceptRequest(request);
-                }
-            });
-            Log.i(TAG, "✅ WebViewClient configured with shouldInterceptRequest optimization.");
-        }
-    }
 
-    /**
-     * 🔥 تفعيل Renderer Importance API: أعلى أولوية لمعالج العرض
-     */
-    private void setupRendererPriority() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            try {
-                activeWebView.setRendererPriorityPolicy(
-                    WebView.RENDERER_PRIORITY_BOUND,  // أعلى أولوية
-                    true                              // Waived when not visible
-                );
-                Log.i(TAG, "✅ Renderer Priority set to BOUND.");
-            } catch (Exception e) {
-                Log.w(TAG, "Renderer priority setup failed: " + e.getMessage());
-            }
-        }
-    }
+        activeWebView.setWebViewClient(
+                new WebViewClient() {
 
-    /**
-     * 🔥 تفعيل Prefetch Native Library: إبقاء المكتبات في الذاكرة
-     */
-    private void setupNativeLibraryPrefetch() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            try {
-                // إجبار النظام على إبقاء المكتبات الأصلية في الذاكرة
-                // يتم ذلك عبر نفس آلية الأولوية (التأثير الجانبي المفيد)
-                activeWebView.setRendererPriorityPolicy(
-                    WebView.RENDERER_PRIORITY_BOUND, true
-                );
-                Log.i(TAG, "✅ Native Library Prefetch enabled.");
-            } catch (Exception e) {
-                Log.w(TAG, "Native library prefetch setup failed: " + e.getMessage());
-            }
-        }
-    }
+                    @Override
+                    public WebResourceResponse shouldInterceptRequest(
+                            WebView view,
+                            WebResourceRequest request) {
 
-    // =========================================================
-    // 🧹 إدارة تفريغ الذاكرة (Memory Purge)
-    // =========================================================
-    private void scheduleMemoryPurge() {
-        cancelMemoryPurge();
-        memoryPurgeHandler = new Handler(Looper.getMainLooper());
-        memoryPurgeRunnable = () -> {
-            if (activeWebView != null && !isFinishing() && !isDestroyed()) {
-                Log.i(TAG, "🧹 Time-Based Memory Purge: Clearing cache...");
-                backgroundExecutor.execute(() -> {
-                    try {
-                        runOnUiThread(() -> {
-                            if (activeWebView != null) {
-                                activeWebView.clearCache(true);
-                            }
-                        });
-                        System.gc();
-                        Log.i(TAG, "✅ Memory purge completed.");
-                    } catch (Exception e) {
-                        Log.w(TAG, "Memory purge error: " + e.getMessage());
+                        /*
+                         * يجب أن يكون هذا Short-Circuit فعليًا.
+                         *
+                         * إذا RoyalNetworkEngine لا يريد الطلب:
+                         * return null فوراً.
+                         *
+                         * لا Networking blocking هنا.
+                         */
+                        return RoyalNetworkEngine
+                                .interceptRequest(request);
                     }
-                });
-            }
-        };
-        memoryPurgeHandler.postDelayed(memoryPurgeRunnable, MEMORY_PURGE_DELAY_MS);
-        Log.i(TAG, "⏳ Memory purge scheduled in " + (MEMORY_PURGE_DELAY_MS / 60000) + " minutes.");
-    }
 
-    private void cancelMemoryPurge() {
-        if (memoryPurgeHandler != null && memoryPurgeRunnable != null) {
-            memoryPurgeHandler.removeCallbacks(memoryPurgeRunnable);
-            memoryPurgeHandler = null;
-            memoryPurgeRunnable = null;
-            Log.i(TAG, "⏹️ Memory purge cancelled.");
-        }
-    }
+                    @Override
+                    public boolean onRenderProcessGone(
+                            WebView view,
+                            android.webkit.RenderProcessGoneDetail detail) {
 
-    // =========================================================
-    // ⚙️ إعدادات واجهة السبلاش (بدون تغيير)
-    // =========================================================
+                        if (detail.didCrash()) {
 
-    private void setupSplashScreen() {
-        splashStartTime = System.currentTimeMillis();
+                            Log.e(
+                                    TAG,
+                                    "💥 Chromium renderer crashed."
+                            );
 
-        // 👑 [تعديل جراحي ملكي 2]: تجميد الشاشة حتى اكتمال الـ 5 ثوانٍ، ثم إطلاق أنيميشن الـ Fade-out
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            findViewById(android.R.id.content).getViewTreeObserver().addOnPreDrawListener(
-                    new ViewTreeObserver.OnPreDrawListener() {
-                        @Override
-                        public boolean onPreDraw() {
-                            if (splashRemoved) {
-                                // انقضت الـ 5 ثوانٍ.. نسمح للنظام بالرسم ليبدأ أنيميشن الـ Fade-Out
-                                findViewById(android.R.id.content).getViewTreeObserver().removeOnPreDrawListener(this);
-                                return true;
-                            } else {
-                                // الـ 5 ثوانٍ لم تنتهِ بعد.. جمّد الشاشة بصلابة!
-                                return false;
-                            }
+                        } else {
+
+                            Log.e(
+                                    TAG,
+                                    "⚠️ Chromium renderer was killed by system."
+                            );
                         }
+
+                        /*
+                         * WebView الذي فقد Renderer انتهى.
+                         *
+                         * لا نحاول إعادة استخدامه.
+                         */
+                        if (view.getParent() instanceof ViewGroup) {
+
+                            ((ViewGroup) view.getParent())
+                                    .removeView(view);
+                        }
+
+                        RoyalWebViewHost.destroy();
+
+                        activeWebView = null;
+
+                        /*
+                         * إعادة بناء Activity يعطي:
+                         *
+                         * Activity
+                         * ↓
+                         * WebView جديد
+                         * ↓
+                         * CLIENT_URL
+                         */
+                        if (!isFinishing()) {
+                            recreate();
+                        }
+
+                        return true;
                     }
-            );
+                }
+        );
+    }
+
+    // =========================================================
+    // 🔄 دورة الحياة المحدّثة
+    // =========================================================
+
+    @Override
+    protected void onPause() {
+
+        if (activeWebView != null) {
+            activeWebView.onPause();
         }
 
-        final FrameLayout splashContainer = new FrameLayout(this);
-        splashContainer.setBackgroundColor(Color.parseColor("#F3F4F6"));
+        super.onPause();
+    }
 
-        ImageView splashIcon = new ImageView(this);
-        splashIcon.setImageResource(R.mipmap.ic_launcher);
-        FrameLayout.LayoutParams iconParams = new FrameLayout.LayoutParams(280, 280, android.view.Gravity.CENTER);
-        splashIcon.setLayoutParams(iconParams);
-        splashContainer.addView(splashIcon);
+    @Override
+    protected void onResume() {
 
-        addContentView(splashContainer, new ViewGroup.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        super.onResume();
 
-        progressBar = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
-        progressBar.setMax(100);
-        addContentView(progressBar, new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 8));
+        if (activeWebView != null) {
+            activeWebView.onResume();
+        }
 
-        engineManager = new WebEngineManager(
-                this, activeWebView, splashContainer, progressBar,
-                () -> splashRemoved = true, () -> splashRemoved
-        );
-        engineManager.setSplashStartTime(splashStartTime);
-        engineManager.init();
+        if (offlineController != null) {
+            offlineController.onResume();
+        }
 
-        // 🚀 الـ Handler المعتمد للـ 5 ثوانٍ
-        new Handler(Looper.getMainLooper()).postDelayed(() -> {
-            if (!splashRemoved) {
-                engineManager.triggerFinalReveal();
-            }
-        }, FIXED_SPLASH_TIME);
+        if (!isPageLoaded
+                && activeWebView != null
+                && activeWebView.getUrl() == null) {
 
-        // 🛡️ تعطيل الاستجابة التلقائية للجسور
-        if (RoyalWebViewHost.getBridge() != null) {
-            RoyalWebViewHost.getBridge().setOnHideSplashCallback(() -> {
-                Log.i(TAG, "⚡ Page ready, but Splash is LOCKED by engineer's timer.");
-            });
+            activeWebView.loadUrl(
+                    BuildConfig.CLIENT_URL
+            );
+
+            isPageLoaded = true;
         }
     }
+
+    @Override
+    protected void onDestroy() {
+
+        mainHandler.removeCallbacksAndMessages(null);
+
+        if (activeWebView != null) {
+            activeWebView.stopLoading();
+        }
+
+        if (offlineController != null) {
+            offlineController.destroy();
+            offlineController = null;
+        }
+
+        OfflineStateManager
+                .getInstance()
+                .unbind();
+
+        if (royalAuthManager != null) {
+            royalAuthManager.destroy();
+            royalAuthManager = null;
+        }
+
+        RoyalWebViewHost.detach();
+
+        activeWebView = null;
+
+        super.onDestroy();
+    }
+
+    // =========================================================
+    // 💾 حفظ واستعادة الحالة
+    // =========================================================
+
+    @Override
+    protected void onSaveInstanceState(Bundle outState) {
+
+        if (activeWebView != null) {
+
+            try {
+
+                if (androidx.webkit.WebViewFeature.isFeatureSupported(
+                        androidx.webkit.WebViewFeature.SAVE_STATE)) {
+
+                    androidx.webkit.WebViewCompat.saveState(
+                            activeWebView,
+                            outState,
+                            1024 * 1024,
+                            false
+                    );
+
+                } else {
+
+                    activeWebView.saveState(
+                            outState
+                    );
+                }
+
+            } catch (Throwable t) {
+
+                Log.w(
+                        TAG,
+                        "WebView state save failed.",
+                        t
+                );
+            }
+        }
+
+        super.onSaveInstanceState(outState);
+    }
+
+    // لا نستخدم onRestoreInstanceState، لأن الاستعادة تتم في initializeWebView.
 
     // =========================================================
     // 🔄 نتائج النشاطات والصلاحيات (محسّن)
     // =========================================================
 
     @Override
-    protected void onActivityResult(int requestCode, int resultCode, android.content.Intent data) {
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
 
         // 🔥 معالجة اختيار الملفات (رفع الصور)
@@ -490,36 +713,4 @@ public class MainActivity extends AppCompatActivity {
         // هنا يمكن تمرير النتائج إلى RoyalAuthManager إذا لزم الأمر
         // حالياً لا يوجد استخدام مباشر
     }
-
-    // =========================================================
-    // 🔧 حفظ واستعادة الحالة المحسّن (saveState/restoreState)
-    // =========================================================
-
-    @Override
-    protected void onSaveInstanceState(Bundle outState) {
-        super.onSaveInstanceState(outState);
-        if (activeWebView != null) {
-            try {
-                // حفظ الحالة في Bundle للتسريع
-                activeWebView.saveState(outState);
-                Log.i(TAG, "💾 WebView state saved.");
-            } catch (Exception e) {
-                Log.w(TAG, "SaveState failed: " + e.getMessage());
-            }
-        }
-    }
-
-    @Override
-    protected void onRestoreInstanceState(Bundle savedInstanceState) {
-        super.onRestoreInstanceState(savedInstanceState);
-        if (activeWebView != null && savedInstanceState != null) {
-            try {
-                activeWebView.restoreState(savedInstanceState);
-                isPageLoaded = true;
-                Log.i(TAG, "🔄 WebView state restored.");
-            } catch (Exception e) {
-                Log.w(TAG, "RestoreState failed: " + e.getMessage());
-            }
-        }
-    }
-    }
+                    }
