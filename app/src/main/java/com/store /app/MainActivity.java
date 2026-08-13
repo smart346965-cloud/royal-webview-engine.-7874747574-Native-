@@ -19,6 +19,7 @@ import android.widget.FrameLayout;
 import android.widget.ProgressBar;
 
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.view.WindowCompat;
 
 import com.store.app.offline.OfflineUIController;
 import com.store.app.offline.OfflineStateManager;
@@ -87,6 +88,9 @@ public class MainActivity extends AppCompatActivity {
         }
 
         super.onCreate(savedInstanceState);
+
+        // 👑 Edge-to-Edge
+        WindowCompat.enableEdgeToEdge(getWindow());
 
         getWindow().setBackgroundDrawable(
                 new ColorDrawable(Color.parseColor("#F3F4F6"))
@@ -653,13 +657,25 @@ public class MainActivity extends AppCompatActivity {
     // =========================================================
 
     @Override
-    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
-        // تمرير النتيجة إلى محرك القدرات (لرفع الملفات)
-        if (engineManager != null && engineManager.getCapabilitiesHandler() != null) {
-            engineManager.getCapabilitiesHandler().handlePermissionResult(requestCode, grantResults);
+    public void onRequestPermissionsResult(
+            int requestCode,
+            String[] permissions,
+            int[] grantResults) {
+
+        super.onRequestPermissionsResult(
+                requestCode,
+                permissions,
+                grantResults
+        );
+
+        if (engineManager != null
+                && engineManager.getCapabilitiesHandler() != null) {
+
+            engineManager.getCapabilitiesHandler()
+                    .handlePermissionResult(
+                            requestCode,
+                            grantResults
+                    );
         }
-        // هنا يمكن تمرير النتائج إلى RoyalAuthManager إذا لزم الأمر
-        // حالياً لا يوجد استخدام مباشر
     }
-            }
+                            }
