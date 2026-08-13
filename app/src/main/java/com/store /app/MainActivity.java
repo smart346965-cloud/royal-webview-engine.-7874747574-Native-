@@ -1,7 +1,7 @@
 package com.store.app;
 
 import android.content.Intent;
-import android.graphics.Color;
+importandroid.graphics.Color;
 import android.graphics.drawable.ColorDrawable;
 import android.net.Uri;
 import android.os.Build;
@@ -43,9 +43,9 @@ public class MainActivity extends AppCompatActivity {
     private static final long FIXED_SPLASH_TIME = 5000; // قيمة ثابتة 5 ثوانٍ بالتمام والكمال
 
     private boolean splashRemoved = false;
-    private boolean isPageLoaded = false; // لمنع إعادة تحميل الصفحة في onResume
+    private boolean isPageLoaded = false;
     private boolean webViewReady = false;
-    private boolean firstFrameReady = false;
+    private boolean visualStateReady = false;
 
     private WebEngineManager engineManager;
     private WebView activeWebView;
@@ -99,9 +99,6 @@ public class MainActivity extends AppCompatActivity {
         } catch (Exception e) {
             Log.e(TAG, "Failed to initialize RoyalPanopticon: " + e.getMessage());
         }
-
-        // تفعيل أدوات تصحيح الويب التقنية عبر المتصفح
-        WebView.setWebContentsDebuggingEnabled(true);
 
         // =========================================================
         // 👑 Native root — يظهر فوراً ولا ينتظر Chromium
@@ -178,23 +175,10 @@ public class MainActivity extends AppCompatActivity {
                 )
         );
 
-        activeWebView.setVisibility(View.INVISIBLE);
-
         /*
          * إعداد WebView قبل أي navigation.
          */
         setupWebViewClient();
-
-        activeWebView.postVisualStateCallback(
-                0,
-                new WebView.VisualStateCallback() {
-                    @Override
-                    public void onComplete(long requestId) {
-                        firstFrameReady = true;
-                        revealWebViewIfReady();
-                    }
-                }
-        );
 
         /*
          * System UI بعد وجود WebView.
@@ -257,9 +241,7 @@ public class MainActivity extends AppCompatActivity {
 
             try {
 
-                activeWebView.restoreState(
-                        savedInstanceState
-                );
+                activeWebView.restoreState(savedInstanceState);
 
                 restored = true;
                 isPageLoaded = true;
@@ -281,13 +263,13 @@ public class MainActivity extends AppCompatActivity {
 
         if (!restored) {
 
-            restored =
-                    RoyalSessionSentinel.resurrect(
-                            activeWebView,
-                            this
-                    );
+            restored = RoyalSessionSentinel.resurrect(
+                    activeWebView,
+                    this
+            );
 
             if (restored) {
+
                 isPageLoaded = true;
 
                 Log.i(
@@ -297,38 +279,21 @@ public class MainActivity extends AppCompatActivity {
             }
         }
 
-        if (restored) {
-            activeWebView.postVisualStateCallback(
-                    0,
-                    new WebView.VisualStateCallback() {
-                        @Override
-                        public void onComplete(long requestId) {
-                            firstFrameReady = true;
-                            revealWebViewIfReady();
-                        }
-                    }
-            );
-        }
-
         if (!restored) {
 
-            activeWebView.loadUrl(BuildConfig.CLIENT_URL);
+            activeWebView.loadUrl(
+                    BuildConfig.CLIENT_URL
+            );
 
             isPageLoaded = true;
 
-            activeWebView.postVisualStateCallback(
-                    0,
-                    new WebView.VisualStateCallback() {
-                        @Override
-                        public void onComplete(long requestId) {
-                            firstFrameReady = true;
-                            revealWebViewIfReady();
-                        }
-                    }
+            Log.i(
+                    TAG,
+                    "🌐 Initial CLIENT_URL navigation started."
             );
-
-            Log.i(TAG, "🌐 Initial CLIENT_URL navigation started.");
         }
+
+        waitForVisualReady();
 
         /*
          * Offline
@@ -379,13 +344,39 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    private void waitForVisualReady() {
+
+        if (activeWebView == null) {
+            return;
+        }
+
+        activeWebView.postVisualStateCallback(
+                System.nanoTime(),
+                new WebView.VisualStateCallback() {
+
+                    @Override
+                    public void onComplete(long requestId) {
+
+                        visualStateReady = true;
+
+                        Log.i(
+                                TAG,
+                                "🎨 WebView visual state ready."
+                        );
+
+                        revealWebViewIfReady();
+                    }
+                }
+        );
+    }
+
     private void revealWebViewIfReady() {
 
         if (!splashRemoved) {
             return;
         }
 
-        if (!firstFrameReady) {
+        if (!visualStateReady) {
             return;
         }
 
@@ -393,9 +384,10 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
 
-        activeWebView.setVisibility(View.VISIBLE);
-
-        Log.i(TAG, "🎨 First visual state committed. WebView revealed.");
+        Log.i(
+                TAG,
+                "👑 Visual state ready. Content can be exposed."
+        );
     }
 
     private void releaseSplash() {
@@ -471,15 +463,10 @@ public class MainActivity extends AppCompatActivity {
 
                         activeWebView = null;
 
-                        /*
-                         * إعادة بناء Activity يعطي:
-                         *
-                         * Activity
-                         * ↓
-                         * WebView جديد
-                         * ↓
-                         * CLIENT_URL
-                         */
+                        splashRemoved = false;
+                        visualStateReady = false;
+                        isPageLoaded = false;
+
                         if (!isFinishing()) {
                             recreate();
                         }
@@ -675,4 +662,4 @@ public class MainActivity extends AppCompatActivity {
         // هنا يمكن تمرير النتائج إلى RoyalAuthManager إذا لزم الأمر
         // حالياً لا يوجد استخدام مباشر
     }
-                            }
+                }
