@@ -4,7 +4,6 @@ import android.app.Activity;
 import android.content.Context;
 import android.content.MutableContextWrapper;
 import android.graphics.Color;
-import android.net.Uri;
 import android.os.Build;
 import android.os.Looper;
 import android.util.Log;
@@ -12,233 +11,176 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.webkit.CookieManager;
 import android.webkit.WebView;
+
 import androidx.webkit.Profile;
+import androidx.webkit.ProfileStore;
 import androidx.webkit.WebViewCompat;
 import androidx.webkit.WebViewFeature;
 
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import com.store.app.BuildConfig;
 
-// 👑 استيراد كلاس الحارس المجمد
-import com.store.app.RoyalSessionSentinel;
+import java.util.ArrayList;
 
 public final class RoyalWebViewHost {
     private static final String TAG = "RoyalWebViewHost";
-    private static final String BASE_URL = "https://kith.com/";
-    private static final long MAX_UPTIME = 3 * 60 * 60 * 1000L; // 3 ساعات
 
     private static WebView webViewInstance;
     private static MutableContextWrapper contextWrapper;
     private static RoyalJsBridge jsBridgeInstance;
     private static volatile boolean isInitialized = false;
-    private static long lastRestartTime = 0;
 
-    // 🧵 مشاركة Executor واحد لكل العمليات الخلفية
-    private static final ExecutorService BACKGROUND_EXECUTOR = Executors.newSingleThreadExecutor();
+    // حالات Startup
+    private static volatile boolean webViewStartupReady = false;
+    private static volatile Throwable webViewStartupFailure;
+    private static final ArrayList<Runnable> startupListeners = new ArrayList<>();
 
     private RoyalWebViewHost() {}
 
-    /**
-     * 🚀 إقلاع النواة المبكر (Async Startup)
-     * تهيئة آمنة تتوافق مع كافة الإصدارات دون رموز تجريبية مفقودة
-     */
-    public static void startEngineAsync(Context context) {
-        Log.i(TAG, "🚀 Bootstrapping Chromium asynchronously...");
-        BACKGROUND_EXECUTOR.execute(() -> {
-            try {
-                if (WebViewFeature.isFeatureSupported(WebViewFeature.START_SAFE_BROWSING)) {
-                    WebViewCompat.startSafeBrowsing(context.getApplicationContext(), value -> 
-                        Log.i(TAG, "✅ Chromium Engine Pre-warmed Successfully.")
-                    );
-                }
-            } catch (Throwable e) {
-                Log.w(TAG, "Chromium bootstrap notice: " + e.getMessage());
-            }
-        });
+    // =========================================================
+    // 🚀 دوال إدارة Startup
+    // =========================================================
+
+    public static synchronized void onWebViewStartupReady(Context context) {
+        webViewStartupReady = true;
+        webViewStartupFailure = null;
+        Log.i(TAG, "🔥 WebView startup barrier OPEN.");
+
+        warmUpDefaultProfile(context);
+
+        for (Runnable listener : startupListeners) {
+            listener.run();
+        }
+        startupListeners.clear();
     }
 
-    public static synchronized void create(Context applicationContext) {
-        // تأكيد الخيط الرئيسي
-        if (Looper.myLooper() != Looper.getMainLooper()) {
-            Log.w(TAG, "create() called off main thread, posting...");
-            Looper.getMainLooper().getThread().getUncaughtExceptionHandler();
+    public static synchronized void onWebViewStartupFailed(Throwable error) {
+        webViewStartupFailure = error;
+        Log.e(TAG, "❌ WebView startup barrier FAILED.", error);
+    }
+
+    public static synchronized void whenStartupReady(Runnable listener) {
+        if (webViewStartupReady) {
+            listener.run();
             return;
+        }
+        if (webViewStartupFailure != null) {
+            Log.e(TAG, "WebView startup previously failed; listener not executed.");
+            return;
+        }
+        startupListeners.add(listener);
+    }
+
+    private static void warmUpDefaultProfile(Context context) {
+        try {
+            if (!WebViewFeature.isFeatureSupported(WebViewFeature.MULTI_PROFILE)) {
+                Log.w(TAG, "MULTI_PROFILE not supported.");
+                return;
+            }
+
+            Profile profile = ProfileStore.getInstance()
+                    .getOrCreateProfile(Profile.DEFAULT_PROFILE_NAME);
+
+            if (WebViewFeature.isFeatureSupported(WebViewFeature.WARM_UP_RENDERER_PROCESS)) {
+                profile.warmUpRendererProcess();
+                Log.i(TAG, "🧠 Chromium renderer warm-up requested.");
+            }
+
+            if (WebViewFeature.isFeatureSupported(WebViewFeature.PRECONNECT)) {
+                profile.preconnect(BuildConfig.CLIENT_URL);
+                Log.i(TAG, "🌐 WebView preconnect requested for: " + BuildConfig.CLIENT_URL);
+            }
+
+            if (WebViewFeature.isFeatureSupported(WebViewFeature.ADD_QUIC_HINTS_V1)) {
+                java.util.Set<String> origins = new java.util.HashSet<>();
+                origins.add(BuildConfig.CLIENT_URL);
+                profile.addQuicHints(origins);
+                Log.i(TAG, "🚀 QUIC hint registered for client origin.");
+            }
+
+        } catch (Throwable t) {
+            Log.w(TAG, "Profile warm-up failed: " + t.getMessage(), t);
+        }
+    }
+
+    // =========================================================
+    // 🚀 إقلاع النواة (create)
+    // =========================================================
+
+    public static synchronized void create(Activity activity) {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            throw new IllegalStateException("RoyalWebViewHost.create() must run on Main Looper.");
+        }
+
+        if (!webViewStartupReady) {
+            throw new IllegalStateException("WebView startup is not complete yet.");
         }
 
         if (webViewInstance != null && isInitialized) {
-            Log.d(TAG, "Engine already initialized, skipping.");
             return;
         }
 
         try {
-            Log.i(TAG, "🔥 Rocket Ignite: Pre-warming Immortal Engine...");
+            Log.i(TAG, "🔥 Creating production WebView on UI thread.");
 
-            // 1. تهيئة السياق
             if (contextWrapper == null) {
-                contextWrapper = new MutableContextWrapper(applicationContext.getApplicationContext());
+                contextWrapper = new MutableContextWrapper(activity);
+            } else {
+                contextWrapper.setBaseContext(activity);
             }
 
-            // 2. تسريع الكوكيز
-            CookieManager cookieManager = CookieManager.getInstance();
-            cookieManager.setAcceptCookie(true);
+            CookieManager.getInstance().setAcceptCookie(true);
 
-            // 3. خلق النواة
-            webViewInstance = new WebView(contextWrapper);
+            WebView webView = new WebView(contextWrapper);
+            webViewInstance = webView;
 
-            // 🔥 [التحسين 4]: تسخين المكتبات الأصلية مسبقاً (Native Library Prefetch)
-            BACKGROUND_EXECUTOR.execute(() -> {
-                try {
-                    // محاولة تحميل المكتبة الأصلية لتسخينها في الذاكرة
-                    System.loadLibrary("webviewchromium");
-                    Log.i(TAG, "📚 Native Library Prefetched successfully.");
-                } catch (Throwable e) {
-                    // المكتبة قد تكون محملة مسبقاً أو غير موجودة باسم ثابت، نتجاهل الخطأ
-                    Log.d(TAG, "Native library prefetch note: " + e.getMessage());
-                }
-            });
+            webView.setBackgroundColor(Color.parseColor("#F3F4F6"));
+            WebView.setWebContentsDebuggingEnabled(BuildConfig.DEBUG);
 
-            // 🔥 [التحسين 5]: تضخيم الواجهة مسبقاً (Pre-inflation)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                webViewInstance.setElevation(0);
-                webViewInstance.setTransitionName("royal_webview");
-            }
-            Log.i(TAG, "🏗️ View Hierarchy pre-inflated.");
-
-            // 4. إعدادات الأولوية القصوى (معالج العرض)
-            // 🔥 [التحسين 12]: Renderer Importance API - HIGH priority
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                webViewInstance.setRendererPriorityPolicy(
-                    WebView.RENDERER_PRIORITY_BOUND,  // HIGH priority
-                    true                              // Waived when not visible
-                );
-                Log.i(TAG, "⚡ Renderer priority set to BOUND.");
-            }
-
-            // 5. التسريع العتادي (مهم جداً للرسم المباشر)
-            webViewInstance.setLayerType(View.LAYER_TYPE_HARDWARE, null);
-
-            // 🔥 [التحسين 11]: تفعيل OffscreenPreRaster (رسم البلاطات خارج الشاشة)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                webViewInstance.getSettings().setOffscreenPreRaster(true);
-                Log.i(TAG, "🎨 OffscreenPreRaster enabled.");
-            }
-
-            // 6 & 7. 👑 ضبط كاش التنقل وإعدادات الذاكرة المتقدمة قياسياً
-            android.webkit.WebSettings settings = webViewInstance.getSettings();
+            android.webkit.WebSettings settings = webView.getSettings();
             settings.setCacheMode(android.webkit.WebSettings.LOAD_DEFAULT);
             settings.setDomStorageEnabled(true);
-            settings.setDatabaseEnabled(true);
-            Log.i(TAG, "📦 DOM & Disk Caching Policies Active.");
 
-            // 8. حقن المحركات المخصصة
-            RoyalHybridEngine.prime(webViewInstance, applicationContext);
-            RoyalNetworkEngine.install(applicationContext);
+            RoyalHybridEngine.prime(webView, activity.getApplicationContext());
+            RoyalNetworkEngine.install(activity.getApplicationContext());
 
-            // 9. جسر JavaScript
-            jsBridgeInstance = new RoyalJsBridge(webViewInstance);
-            webViewInstance.addJavascriptInterface(jsBridgeInstance, "RoyalBridge");
+            jsBridgeInstance = new RoyalJsBridge(webView);
+            webView.addJavascriptInterface(jsBridgeInstance, "RoyalBridge");
 
-            // 10. تكوين الخلفية (لتجنب الومضات البيضاء)
-            webViewInstance.setBackgroundColor(Color.parseColor("#F3F4F6"));
-            // ⚠️ استخدم INVISIBLE بدل VISIBLE لتجنب الرسم غير الضروري أثناء التسخين
-            webViewInstance.setVisibility(View.INVISIBLE);
+            webView.setVisibility(View.VISIBLE);
 
-            // 11. تحميل صفحة وهمية لتسخين المحرك بالكامل
-            String warmUpHtml = "<html><body style='background:#F3F4F6;'></body></html>";
-            webViewInstance.loadDataWithBaseURL(BASE_URL, warmUpHtml, "text/html", "UTF-8", null);
-
-            lastRestartTime = System.currentTimeMillis();
-
-            // 12. 🌐 التسخين المسبق المعتمد من نواة كروميوم
-            warmupNetworkAndRenderer(webViewInstance);
-
-            // 13. 👑 إعلان الجاهزية
+            webViewInstance = webView;
             isInitialized = true;
-            Log.i(TAG, "✅ Engine is HOT and Ready.");
 
-        } catch (Exception e) {
+            Log.i(TAG, "✅ Production WebView created and ready.");
+
+        } catch (Throwable t) {
             isInitialized = false;
             webViewInstance = null;
-            Log.e(TAG, "❌ FATAL: Initialization failed, resetting...", e);
+            jsBridgeInstance = null;
+            Log.e(TAG, "❌ WebView creation failed.", t);
+            throw t;
         }
     }
 
-    /**
-     * 🔥 تسخين الشبكة وربط المقابس (Socket Pre-connect) بأمان نيتف خالص
-     */
-    private static void warmupNetworkAndRenderer(WebView webView) {
-        if (webView == null) return;
-
-        BACKGROUND_EXECUTOR.execute(() -> {
-            try {
-                // فتح اتصال شبكي استباقي (DNS Lookup + TCP Handshake) لمنع التأخير عند طلب أول صفحة
-                java.net.URL url = new java.net.URL(BASE_URL);
-                java.net.HttpURLConnection conn = (java.net.HttpURLConnection) url.openConnection();
-                conn.setRequestMethod("HEAD");
-                conn.setConnectTimeout(2500);
-                conn.setReadTimeout(2500);
-                conn.connect();
-                conn.disconnect();
-                Log.i(TAG, "🌐 Network Sockets & DNS pre-warmed for: " + BASE_URL);
-            } catch (Throwable e) {
-                Log.d(TAG, "Network pre-warm note: " + e.getMessage());
-            }
-        });
-    }
-
-    /**
-     * 🔥 تحضير Spare Renderer (معالج عرض احتياطي)
-     * يتم استدعاؤها من Application.onCreate() لتسخين عملية الرندر مبكراً
-     * هذا يقلل وقت إنشاء أول WebView بنسبة تصل إلى 50%
-     */
-    public static void prepareSpareRenderer(Context context) {
-        BACKGROUND_EXECUTOR.execute(() -> {
-            try {
-                Log.i(TAG, "🧠 Preparing Spare Renderer...");
-                // إنشاء WebView مؤقت في الخلفية
-                // هذا الطلب يجبر النظام على إنشاء عملية Renderer جديدة وتجهيزها
-                WebView tempWebView = new WebView(context.getApplicationContext());
-                tempWebView.setVisibility(View.INVISIBLE);
-                tempWebView.loadUrl("about:blank");
-                
-                // نتركه يعمل للحظات ثم نتخلص منه، تاركين الـ Renderer جاهزاً
-                Thread.sleep(50); // وقت كافٍ لبدء العملية
-                tempWebView.destroy();
-                
-                Log.i(TAG, "✅ Spare Renderer prepared successfully.");
-            } catch (Exception e) {
-                Log.w(TAG, "⚠️ Spare Renderer preparation failed: " + e.getMessage());
-            }
-        });
-    }
+    // =========================================================
+    // 🔗 attach / detach / destroy
+    // =========================================================
 
     public static synchronized WebView attach(Activity activity) {
         if (!isInitialized || webViewInstance == null) {
-            create(activity.getApplicationContext());
+            create(activity);
         }
 
-        checkSoftRestart(activity.getApplicationContext());
+        if (contextWrapper != null) {
+            contextWrapper.setBaseContext(activity);
+        }
 
-        Log.i(TAG, "🔗 Attaching to: " + activity.getClass().getSimpleName());
-
-        contextWrapper.setBaseContext(activity);
         safeRemoveFromParent();
-
-        // إظهار الويب فيو الآن فقط
         webViewInstance.setVisibility(View.VISIBLE);
-
-        // 🔥 [التحسين 6]: محاولة استعادة الجلسة المجمدة (Freeze Dried Tabs)
-        if (RoyalSessionSentinel.resurrect(webViewInstance, activity)) {
-            Log.i(TAG, "🧊 Session restored from freeze.");
-        } else {
-            // إذا لم توجد جلسة، تحميل الصفحة الرئيسية
-            webViewInstance.loadUrl(BASE_URL);
-            Log.i(TAG, "🌐 Loading fresh page.");
-        }
-
         webViewInstance.onResume();
         webViewInstance.resumeTimers();
 
+        Log.i(TAG, "🔗 WebView attached to " + activity.getClass().getSimpleName());
         return webViewInstance;
     }
 
@@ -246,39 +188,37 @@ public final class RoyalWebViewHost {
         if (webViewInstance == null) return;
 
         safeRemoveFromParent();
+        RoyalSessionSentinel.freeze(webViewInstance);
+
+        webViewInstance.onPause();
+        webViewInstance.pauseTimers();
+        webViewInstance.setVisibility(View.INVISIBLE);
 
         if (contextWrapper != null) {
             contextWrapper.setBaseContext(webViewInstance.getContext().getApplicationContext());
         }
 
-        // 🔥 [التحسين 7]: تجميد الجلسة قبل الخروج (Freeze)
-        RoyalSessionSentinel.freeze(webViewInstance);
-        Log.i(TAG, "❄️ Session frozen.");
-
-        webViewInstance.onPause();
-        webViewInstance.pauseTimers();
-        webViewInstance.setVisibility(View.INVISIBLE);
+        Log.i(TAG, "❄️ WebView detached and session frozen.");
     }
 
     public static synchronized void destroy() {
         if (webViewInstance != null) {
-            safeRemoveFromParent();
-            webViewInstance.loadUrl("about:blank");
-            webViewInstance.destroy();
+            WebView dead = webViewInstance;
             webViewInstance = null;
+            jsBridgeInstance = null;
             isInitialized = false;
+
+            safeRemoveFromParent();
+            dead.destroy();
         }
+
         RoyalHybridEngine.reset();
-        Log.i(TAG, "💀 Engine destroyed.");
+        Log.i(TAG, "💀 WebView engine destroyed.");
     }
 
-    public static void checkSoftRestart(Context context) {
-        if (System.currentTimeMillis() - lastRestartTime > MAX_UPTIME) {
-            Log.w(TAG, "♻️ Max uptime reached, restarting engine...");
-            destroy();
-            create(context);
-        }
-    }
+    // =========================================================
+    // 🧹 أدوات مساعدة
+    // =========================================================
 
     private static void safeRemoveFromParent() {
         if (webViewInstance != null && webViewInstance.getParent() instanceof ViewGroup) {
@@ -297,4 +237,4 @@ public final class RoyalWebViewHost {
     public static WebView getWebView() {
         return webViewInstance;
     }
-            }
+                }
