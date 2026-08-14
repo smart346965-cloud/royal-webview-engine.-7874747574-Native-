@@ -5,7 +5,6 @@ import android.content.Context;
 import android.util.Log;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
-import android.webkit.CookieManager;
 
 import java.io.BufferedInputStream;
 import java.io.InputStream;
@@ -56,20 +55,18 @@ public final class RoyalNetworkEngine {
 
     public static void install(Context context) {
         try {
-            ActivityManager am = (ActivityManager) context.getSystemService(Context.ACTIVITY_SERVICE);
-            isLowEndDevice = am.isLowRamDevice();
-        } catch (Exception ignored) {}
+            ActivityManager am =
+                    (ActivityManager) context.getSystemService(Context.ACTIVITY_SERVICE);
 
-        // 👑 تفعيل قنوات الاتصال الساخنة (Keep-Alive) وضبط الـ Multiplexing على مستوى النظام
-        System.setProperty("http.keepAlive", "true");
-        System.setProperty("http.maxConnections", "30"); // رفع سقف القنوات المفتوحة مسبقاً لتمرير عدة طلبات معاً
+            isLowEndDevice = am != null && am.isLowRamDevice();
+
+        } catch (Exception ignored) {
+            isLowEndDevice = false;
+        }
 
         RoyalCacheManager.init(context);
 
-        // 🔥 [التحسين 5]: تسخين الجلسة عبر Warmup URL Fetch
-        warmupSession(context, "https://css-tricks.com");
-
-        Log.i(TAG, "🌐 Royal Network Advisor V5 Engine Active (Anti-Freeze Edition).");
+        Log.i(TAG, "🌐 Royal Network Engine Active.");
     }
 
     // [تعديل دالة interceptRequest]
@@ -201,11 +198,12 @@ public final class RoyalNetworkEngine {
                     return;
                 }
 
-                if (isHighPriority || execPriority == ResourcePriority.VERY_HIGH) {
-                    android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_FOREGROUND);
-                } else {
-                    android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND);
-                }
+                // تحديد أولوية الخيط بشكل مناسب
+                android.os.Process.setThreadPriority(
+                        isHighPriority || execPriority == ResourcePriority.VERY_HIGH
+                                ? android.os.Process.THREAD_PRIORITY_DEFAULT
+                                : android.os.Process.THREAD_PRIORITY_BACKGROUND
+                );
 
                 HttpURLConnection connection = null;
                 try {
@@ -217,7 +215,7 @@ public final class RoyalNetworkEngine {
 
                     connection.setRequestProperty(
                             "Accept-Encoding",
-                            "gzip, deflate, br"
+                            "gzip"
                     );
 
                     connection.setRequestProperty(
@@ -225,13 +223,11 @@ public final class RoyalNetworkEngine {
                             "*/*"
                     );
 
-                    connection.setRequestProperty("Cache-Control", "max-age=60");
-                    connection.setRequestProperty("Connection", "keep-alive");
                     connection.setConnectTimeout(1200);
                     connection.setReadTimeout(1200);
 
                     int code = connection.getResponseCode();
-                    if (code >= 200 && code < 300) {
+                    if (code == HttpURLConnection.HTTP_OK) {
                         String cacheControl = connection.getHeaderField("Cache-Control");
 
                         if (cacheControl != null) {
@@ -239,8 +235,7 @@ public final class RoyalNetworkEngine {
                             String cc = cacheControl.toLowerCase();
 
                             if (cc.contains("no-store")
-                                    || cc.contains("private")
-                                    || cc.contains("no-cache")) {
+                                    || cc.contains("private")) {
 
                                 return;
                             }
@@ -362,105 +357,27 @@ public final class RoyalNetworkEngine {
 
     // [تعديل دالة warmupHost الموجودة في أسفل RoyalNetworkEngine.java]
     private static void warmupHost(String urlString) {
+        if (urlString == null || urlString.isEmpty()) return;
+
         try {
             URL url = new URL(urlString);
             String host = url.getHost();
-            int port = url.getPort() != -1 ? url.getPort() : (url.getProtocol().equalsIgnoreCase("https") ? 443 : 80);
 
-            if (warmedHosts.contains(host)) return;
+            if (host == null || host.isEmpty()) return;
+
+            if (!warmedHosts.add(host)) return;
 
             if (warmedHosts.size() > MAX_WARMED_HOSTS) {
                 java.util.Iterator<String> it = warmedHosts.iterator();
-                int remove = MAX_WARMED_HOSTS / 3;
+                int remove = Math.max(1, MAX_WARMED_HOSTS / 3);
+
                 while (it.hasNext() && remove-- > 0) {
                     it.next();
                     it.remove();
                 }
             }
-            warmedHosts.add(host);
 
-            prefetchExecutor.execute(() -> {
-                try {
-                    // 1. ترجمة العنوان (DNS Lookup)
-                    java.net.InetAddress addr = java.net.InetAddress.getByName(host);
-
-                    // 2. فتح مقبس حقيقي (TCP/TLS Preconnect) لتجهيز القناة في ذاكرة النظام
-                    if (port == 443) {
-                        javax.net.ssl.SSLSocketFactory factory = (javax.net.ssl.SSLSocketFactory) javax.net.ssl.SSLSocketFactory.getDefault();
-                        try (javax.net.ssl.SSLSocket socket = (javax.net.ssl.SSLSocket) factory.createSocket(addr, port)) {
-                            socket.setSoTimeout(1000);
-                            socket.startHandshake(); // إتمام مصافحة TLS مسبقاً
-                        }
-                    } else {
-                        try (java.net.Socket socket = new java.net.Socket(addr, port)) {
-                            socket.setSoTimeout(1000);
-                        }
-                    }
-                } catch (Exception ignored) {}
-            });
-        } catch (Exception ignored) {}
-    }
-
-    /**
-     * 🌐 تسخين NetworkService مبكراً
-     * يتم استدعاؤها من Application.onCreate() لتسخين خدمة الشبكة
-     * هذا يقلل وقت إنشاء أول اتصال شبكي[reference:10]
-     */
-    public static void warmupNetworkService(Context context) {
-        prefetchExecutor.execute(() -> {
-            try {
-                Log.i(TAG, "🌐 Warming up Network Service...");
-                // استخدام WebViewCompat لبدء تسخين الشبكة بطريقة آمنة
-                // هذه الميزة متاحة في الإصدارات الحديثة من AndroidX WebKit
-                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                    // محاكاة طلب شبكة خفيف لتسخين NetworkService
-                    java.net.URL url = new java.net.URL("https://kith.com/");
-                    java.net.HttpURLConnection conn = (java.net.HttpURLConnection) url.openConnection();
-                    conn.setRequestMethod("HEAD");
-                    conn.setConnectTimeout(1000);
-                    conn.setReadTimeout(1000);
-                    conn.connect();
-                    conn.disconnect();
-                    Log.i(TAG, "✅ Network Service warmed up successfully.");
-                }
-            } catch (Exception e) {
-                Log.w(TAG, "⚠️ Network Service warmup failed: " + e.getMessage());
-            }
-        });
-    }
-
-    /**
-     * 🔥 تسخين الجلسة عبر Warmup URL Fetch
-     * ينشئ جلسة HTTP قابلة لإعادة الاستخدام مع الكوكيز
-     */
-    public static void warmupSession(Context context, String targetUrl) {
-        prefetchExecutor.execute(() -> {
-            try {
-                URL url = new URL(targetUrl);
-                HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-                conn.setRequestMethod("HEAD");
-                conn.setInstanceFollowRedirects(true);
-                conn.setConnectTimeout(2000);
-                conn.setReadTimeout(2000);
-                
-                // حقن الكوكيز لإنشاء جلسة معتمدة
-                String cookies = CookieManager.getInstance().getCookie(targetUrl);
-                if (cookies != null && !cookies.isEmpty()) {
-                    conn.setRequestProperty("Cookie", cookies);
-                }
-                conn.setRequestProperty("Connection", "keep-alive");
-                conn.setRequestProperty("Accept-Encoding", "gzip, deflate, br");
-                
-                int code = conn.getResponseCode();
-                if (code >= 200 && code < 300) {
-                    // 🔥 لا نستدعي conn.disconnect() - نبقي الاتصال مفتوحاً في الـ Pool
-                    Log.i(TAG, "✅ Warmup session established for: " + targetUrl);
-                } else {
-                    Log.d(TAG, "Warmup session response code: " + code);
-                }
-            } catch (Exception e) {
-                Log.d(TAG, "Warmup session failed: " + e.getMessage());
-            }
-        });
-    }
+        } catch (Exception ignored) {
         }
+    }
+                }
