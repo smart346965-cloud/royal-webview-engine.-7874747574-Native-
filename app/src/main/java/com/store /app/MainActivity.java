@@ -19,6 +19,7 @@ import android.widget.FrameLayout;
 import android.widget.ProgressBar;
 
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.splashscreen.SplashScreen;
 import androidx.core.view.WindowCompat;
 
 import com.store.app.offline.OfflineUIController;
@@ -71,80 +72,80 @@ public class MainActivity extends AppCompatActivity {
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
-        // 👑 System Splash هو الـ Splash الوحيد للتطبيق
-        // التعديل: إزالة setKeepOnScreenCondition (غير مدعومة) واستخدام splashScreenView مباشرة
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            getSplashScreen().setOnExitAnimationListener(
-                    splashScreenView -> {
-                        splashScreenView.animate()
-                                .alpha(0f)
-                                .setDuration(500)
-                                .withEndAction(
-                                        splashScreenView::remove
-                                )
-                                .start();
-                    }
-            );
-        }
+
+        final SplashScreen splashScreen =
+                SplashScreen.installSplashScreen(this);
+
+        splashStartTime = System.currentTimeMillis();
+
+        /*
+         * 👑 Splash ثابت لمدة 5 ثوانٍ حقيقية.
+         *
+         * WebView / Chromium يعملان بالتوازي في الخلفية.
+         * لا ننتظر WebView حتى يبدأ.
+         */
+        splashScreen.setKeepOnScreenCondition(
+                () -> System.currentTimeMillis() - splashStartTime
+                        < FIXED_SPLASH_TIME
+        );
+
+        splashScreen.setOnExitAnimationListener(
+                splashScreenView -> {
+
+                    splashScreenView.getView()
+                            .animate()
+                            .alpha(0f)
+                            .setDuration(500L)
+                            .withEndAction(
+                                    splashScreenView::remove
+                            )
+                            .start();
+                }
+        );
 
         super.onCreate(savedInstanceState);
 
-        // 👑 Edge-to-Edge
         WindowCompat.enableEdgeToEdge(getWindow());
 
         getWindow().setBackgroundDrawable(
-                new ColorDrawable(Color.parseColor("#F3F4F6"))
+                new ColorDrawable(
+                        Color.parseColor("#F3F4F6")
+                )
         );
 
-        // 🔍 تفعيل محرك الفحص والتشخيص الذكي
         try {
             RoyalPanopticon.startAwareness();
-            Log.i(TAG, "RoyalPanopticon Engine: Active and running in background.");
+
+            Log.i(
+                    TAG,
+                    "RoyalPanopticon Engine: Active and running in background."
+            );
+
         } catch (Exception e) {
-            Log.e(TAG, "Failed to initialize RoyalPanopticon: " + e.getMessage());
+
+            Log.e(
+                    TAG,
+                    "Failed to initialize RoyalPanopticon.",
+                    e
+            );
         }
 
-        // =========================================================
-        // 👑 Native root — يظهر فوراً ولا ينتظر Chromium
-        // =========================================================
-
         rootContainer = new FrameLayout(this);
+
         rootContainer.setBackgroundColor(
                 Color.parseColor("#F3F4F6")
         );
 
         setContentView(rootContainer);
 
-        splashStartTime = System.currentTimeMillis();
-
         /*
-         * =========================================================
-         * Chromium barrier
-         * =========================================================
+         * Chromium startup barrier.
          *
-         * إذا كان Chromium لم ينته بعد:
-         * لا ننشئ WebView قبل callback.
-         *
-         * لكن Splash موجود بالفعل.
+         * RoyalApplication بدأ WebView startup
+         * منذ لحظة إنشاء الـ process.
          */
         RoyalWebViewHost.whenStartupReady(
                 () -> initializeWebView(savedInstanceState)
-        );
-
-        /*
-         * =========================================================
-         * Splash timer
-         * =========================================================
-         *
-         * 5000ms ثابتة.
-         *
-         * لا علاقة له بوقت تحميل Chromium.
-         * لا علاقة له بـ FCP.
-         * لا علاقة له بـ onPreDraw.
-         */
-        mainHandler.postDelayed(
-                this::releaseSplash,
-                FIXED_SPLASH_TIME
         );
     }
 
@@ -178,11 +179,6 @@ public class MainActivity extends AppCompatActivity {
                         ViewGroup.LayoutParams.MATCH_PARENT
                 )
         );
-
-        /*
-         * إعداد WebView قبل أي navigation.
-         */
-        setupWebViewClient();
 
         /*
          * System UI بعد وجود WebView.
@@ -297,8 +293,6 @@ public class MainActivity extends AppCompatActivity {
             );
         }
 
-        waitForVisualReady();
-
         /*
          * Offline
          */
@@ -335,150 +329,6 @@ public class MainActivity extends AppCompatActivity {
                     true
             );
         }
-
-        /*
-         * إذا انتهت الـ 5 ثواني قبل انتهاء WebView startup،
-         * نكشف Splash الآن بعد أن أصبح WebView موجودًا.
-         */
-        if (splashRemoved) {
-            // إذا تم طلب الإصدار بالفعل، نحرره فوراً
-            if (engineManager != null) {
-                engineManager.triggerFinalReveal();
-            }
-        }
-    }
-
-    private void waitForVisualReady() {
-
-        if (activeWebView == null) {
-            return;
-        }
-
-        activeWebView.postVisualStateCallback(
-                System.nanoTime(),
-                new WebView.VisualStateCallback() {
-
-                    @Override
-                    public void onComplete(long requestId) {
-
-                        visualStateReady = true;
-
-                        Log.i(
-                                TAG,
-                                "🎨 WebView visual state ready."
-                        );
-
-                        revealWebViewIfReady();
-                    }
-                }
-        );
-    }
-
-    private void revealWebViewIfReady() {
-
-        if (!splashRemoved) {
-            return;
-        }
-
-        if (!visualStateReady) {
-            return;
-        }
-
-        if (activeWebView == null) {
-            return;
-        }
-
-        Log.i(
-                TAG,
-                "👑 Visual state ready. Content can be exposed."
-        );
-    }
-
-    private void releaseSplash() {
-
-        splashRemoved = true;
-
-        Log.i(TAG, "👑 System Splash release requested.");
-
-        revealWebViewIfReady();
-    }
-
-    // =========================================================
-    // 🔧 دوال الإعدادات المحسّنة
-    // =========================================================
-
-    /**
-     * 🔥 تحسين shouldInterceptRequest: منع الاستدعاءات الفارغة
-     */
-    private void setupWebViewClient() {
-
-        activeWebView.setWebViewClient(
-                new WebViewClient() {
-
-                    @Override
-                    public WebResourceResponse shouldInterceptRequest(
-                            WebView view,
-                            WebResourceRequest request) {
-
-                        /*
-                         * يجب أن يكون هذا Short-Circuit فعليًا.
-                         *
-                         * إذا RoyalNetworkEngine لا يريد الطلب:
-                         * return null فوراً.
-                         *
-                         * لا Networking blocking هنا.
-                         */
-                        return RoyalNetworkEngine
-                                .interceptRequest(request);
-                    }
-
-                    @Override
-                    public boolean onRenderProcessGone(
-                            WebView view,
-                            android.webkit.RenderProcessGoneDetail detail) {
-
-                        if (detail.didCrash()) {
-
-                            Log.e(
-                                    TAG,
-                                    "💥 Chromium renderer crashed."
-                            );
-
-                        } else {
-
-                            Log.e(
-                                    TAG,
-                                    "⚠️ Chromium renderer was killed by system."
-                            );
-                        }
-
-                        /*
-                         * WebView الذي فقد Renderer انتهى.
-                         *
-                         * لا نحاول إعادة استخدامه.
-                         */
-                        if (view.getParent() instanceof ViewGroup) {
-
-                            ((ViewGroup) view.getParent())
-                                    .removeView(view);
-                        }
-
-                        RoyalWebViewHost.destroy();
-
-                        activeWebView = null;
-
-                        splashRemoved = false;
-                        visualStateReady = false;
-                        isPageLoaded = false;
-
-                        if (!isFinishing()) {
-                            recreate();
-                        }
-
-                        return true;
-                    }
-                }
-        );
     }
 
     // =========================================================
@@ -678,4 +528,4 @@ public class MainActivity extends AppCompatActivity {
                     );
         }
     }
-                            }
+}
