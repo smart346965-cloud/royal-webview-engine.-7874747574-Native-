@@ -154,10 +154,7 @@ public final class RoyalWebViewHost {
     // 🚀 إقلاع النواة (create)
     // =========================================================
 
-    public static synchronized void create(
-            Activity activity,
-            WebEngineManager webEngineManager
-    ) {
+    public static synchronized void create(Activity activity) {
         if (Looper.myLooper() != Looper.getMainLooper()) {
             throw new IllegalStateException("RoyalWebViewHost.create() must run on Main Looper.");
         }
@@ -198,18 +195,7 @@ public final class RoyalWebViewHost {
             RoyalHybridEngine.prime(webView, activity.getApplicationContext());
             RoyalNetworkEngine.install(activity.getApplicationContext());
 
-            if (webEngineManager == null) {
-                throw new IllegalArgumentException(
-                        "WebEngineManager must not be null."
-                );
-            }
-
-            jsBridgeInstance = new RoyalJsBridge(
-                    webView,
-                    webEngineManager
-            );
-
-            webView.addJavascriptInterface(jsBridgeInstance, "RoyalBridge");
+            // 👑 تم إزالة إنشاء RoyalJsBridge من هنا، سيتم ربطه لاحقاً عبر bindEngineManager
 
             webViewInstance = webView;
             isInitialized = true;
@@ -226,15 +212,63 @@ public final class RoyalWebViewHost {
     }
 
     // =========================================================
+    // 🔗 ربط WebEngineManager مع Bridge
+    // =========================================================
+
+    public static synchronized void bindEngineManager(
+            WebEngineManager webEngineManager
+    ) {
+        if (webViewInstance == null || !isInitialized) {
+            throw new IllegalStateException(
+                    "WebView must be created before binding WebEngineManager."
+            );
+        }
+
+        if (webEngineManager == null) {
+            throw new IllegalArgumentException(
+                    "WebEngineManager must not be null."
+            );
+        }
+
+        try {
+            // إزالة Bridge قديم إن وجد
+            if (jsBridgeInstance != null) {
+                webViewInstance.removeJavascriptInterface("RoyalBridge");
+                jsBridgeInstance = null;
+            }
+
+            jsBridgeInstance = new RoyalJsBridge(
+                    webViewInstance,
+                    webEngineManager
+            );
+
+            webViewInstance.addJavascriptInterface(
+                    jsBridgeInstance,
+                    "RoyalBridge"
+            );
+
+            Log.i(
+                    TAG,
+                    "🔗 RoyalJsBridge successfully bound to WebEngineManager."
+            );
+
+        } catch (Throwable t) {
+            Log.e(
+                    TAG,
+                    "❌ Failed to bind RoyalJsBridge.",
+                    t
+            );
+            throw t;
+        }
+    }
+
+    // =========================================================
     // 🔗 attach / detach / destroy
     // =========================================================
 
-    public static synchronized WebView attach(
-            Activity activity,
-            WebEngineManager webEngineManager
-    ) {
+    public static synchronized WebView attach(Activity activity) {
         if (!isInitialized || webViewInstance == null) {
-            create(activity, webEngineManager);
+            create(activity);
         }
 
         if (contextWrapper != null) {
@@ -319,4 +353,4 @@ public final class RoyalWebViewHost {
     public static WebView getWebView() {
         return webViewInstance;
     }
-    }
+        }
