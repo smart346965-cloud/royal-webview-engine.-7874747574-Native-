@@ -220,7 +220,7 @@ public class WebEngineManager {
         // 🔥 تم حذف كتلة AlgorithmicDarkening وتم الإبقاء على ForceDarkAllowed فقط
         // =========================================================
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            settings.setForceDarkAllowed(false);
+            webView.setForceDarkAllowed(false);
         }
 
         // =========================================================
@@ -786,4 +786,4 @@ public class WebEngineManager {
     public boolean isPageValid() {
         return OfflineStateManager.getInstance().isPageValid();
     }
-            }
+                                    }
