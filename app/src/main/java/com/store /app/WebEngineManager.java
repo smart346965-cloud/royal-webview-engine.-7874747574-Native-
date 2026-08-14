@@ -18,6 +18,8 @@ import androidx.webkit.Navigation;
 import androidx.webkit.NavigationListener;
 import androidx.webkit.Page;
 import androidx.webkit.Profile;
+import androidx.webkit.ProfileStore;
+import androidx.webkit.PrerenderException;
 import androidx.webkit.PrerenderOperationCallback;
 import androidx.webkit.WebSettingsCompat;
 import androidx.webkit.WebViewCompat;
@@ -29,8 +31,6 @@ import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import java.util.HashSet;
 import java.util.Set;
-import java.util.concurrent.Executor;
-import java.util.concurrent.Executors;
 
 public class WebEngineManager {
 
@@ -61,8 +61,10 @@ public class WebEngineManager {
     // =========================================================
     private Profile webProfile = null;
     private boolean speculativeLoadingReady = false;
+    private static final int MAX_SPECULATIVE_URLS = 32;
     private final Set<String> speculativeUrls = new HashSet<>();
-    private final Executor prerenderCallbackExecutor = Executors.newSingleThreadExecutor();
+    private CancellationSignal activePrerenderCancellationSignal = null;
+    private String activePrerenderUrl = null;
 
     public interface SplashStateChecker {
         boolean isRemoved();
@@ -98,7 +100,19 @@ public class WebEngineManager {
 
         activity.runOnUiThread(() -> {
             try {
-                webProfile = Profile.getDefaultProfile();
+                if (!WebViewFeature.isFeatureSupported(
+                        WebViewFeature.MULTI_PROFILE)) {
+
+                    Log.w(TAG,
+                            "⚠️ MULTI_PROFILE not supported; speculative profile unavailable.");
+
+                    speculativeLoadingReady = false;
+                    return;
+                }
+
+                webProfile = ProfileStore
+                        .getInstance()
+                        .getOrCreateProfile(Profile.DEFAULT_PROFILE_NAME);
 
                 speculativeLoadingReady =
                         webProfile != null;
@@ -139,7 +153,19 @@ public class WebEngineManager {
                 }
 
                 if (webProfile == null) {
-                    webProfile = Profile.getDefaultProfile();
+
+                    if (!WebViewFeature.isFeatureSupported(
+                            WebViewFeature.MULTI_PROFILE)) {
+
+                        Log.w(TAG,
+                                "⚠️ MULTI_PROFILE not supported; cannot obtain default profile.");
+
+                        return;
+                    }
+
+                    webProfile = ProfileStore
+                            .getInstance()
+                            .getOrCreateProfile(Profile.DEFAULT_PROFILE_NAME);
                 }
 
                 if (webProfile == null) return;
@@ -278,9 +304,21 @@ public class WebEngineManager {
                         uri.toString();
 
                 // منع تكرار نفس التنبؤ
-                if (!speculativeUrls.add(normalizedUrl)) {
+                if (speculativeUrls.contains(normalizedUrl)) {
                     return;
                 }
+
+                if (speculativeUrls.size() >= MAX_SPECULATIVE_URLS) {
+
+                    Log.d(
+                            TAG,
+                            "🧹 Speculative URL budget reached; clearing stale predictions."
+                    );
+
+                    speculativeUrls.clear();
+                }
+
+                speculativeUrls.add(normalizedUrl);
 
                 Log.d(TAG,
                         "🧠 High-confidence prediction: "
@@ -304,44 +342,112 @@ public class WebEngineManager {
     // =========================================================
     // 🚀 Chromium Native Prerender
     // =========================================================
+    private void cancelActivePrerender() {
+
+        if (activePrerenderCancellationSignal != null) {
+
+            try {
+
+                activePrerenderCancellationSignal.cancel();
+
+                Log.d(
+                        TAG,
+                        "🛑 Active prerender cancelled: "
+                                + activePrerenderUrl
+                );
+
+            } catch (Throwable e) {
+
+                Log.w(
+                        TAG,
+                        "⚠️ Failed to cancel active prerender.",
+                        e
+                );
+            }
+        }
+
+        activePrerenderCancellationSignal = null;
+        activePrerenderUrl = null;
+    }
+
     private void startPrerender(String url) {
 
-        if (activity == null || webView == null) {
+        if (activity == null || webView == null || url == null) {
             return;
         }
 
         if (!WebViewFeature.isFeatureSupported(
                 WebViewFeature.PRERENDER_WITH_URL)) {
 
-            Log.w(TAG,
-                    "⚠️ PRERENDER_WITH_URL not supported.");
+            Log.w(
+                    TAG,
+                    "⚠️ PRERENDER_WITH_URL not supported."
+            );
 
             return;
         }
 
         try {
 
+            // =====================================================
+            // 🛑 إلغاء عملية الـ prerender السابقة
+            // =====================================================
+
+            if (activePrerenderCancellationSignal != null) {
+
+                activePrerenderCancellationSignal.cancel();
+
+                Log.d(
+                        TAG,
+                        "🛑 Previous prerender cancelled: "
+                                + activePrerenderUrl
+                );
+
+                activePrerenderCancellationSignal = null;
+                activePrerenderUrl = null;
+            }
+
+            // =====================================================
+            // 🚀 إنشاء عملية جديدة
+            // =====================================================
+
             CancellationSignal cancellationSignal =
                     new CancellationSignal();
+
+            activePrerenderCancellationSignal =
+                    cancellationSignal;
+
+            activePrerenderUrl = url;
 
             WebViewCompat.prerenderUrlAsync(
                     webView,
                     url,
                     cancellationSignal,
-                    prerenderCallbackExecutor,
+                    activity.getMainExecutor(),
+
                     new PrerenderOperationCallback() {
 
                         @Override
                         public void onError(
-                                int errorCode) {
+                                @NonNull PrerenderException exception) {
 
                             Log.w(
                                     TAG,
                                     "⚠️ Prerender rejected: "
                                             + url
-                                            + " code="
-                                            + errorCode
+                                            + " error="
+                                            + exception.getMessage(),
+                                    exception
                             );
+
+                            // لا نمسح عملية أحدث بالخطأ
+                            if (url.equals(activePrerenderUrl)) {
+
+                                activePrerenderCancellationSignal =
+                                        null;
+
+                                activePrerenderUrl = null;
+                            }
                         }
 
                         @Override
@@ -359,14 +465,26 @@ public class WebEngineManager {
                     }
             );
 
-            Log.d(TAG,
-                    "🚀 Prerender started: " + url);
+            Log.d(
+                    TAG,
+                    "🚀 Prerender started: "
+                            + url
+            );
 
         } catch (Throwable e) {
 
-            Log.w(TAG,
-                    "❌ Prerender failed: " + url,
-                    e);
+            Log.w(
+                    TAG,
+                    "❌ Prerender failed: "
+                            + url,
+                    e
+            );
+
+            if (url.equals(activePrerenderUrl)) {
+
+                activePrerenderCancellationSignal = null;
+                activePrerenderUrl = null;
+            }
         }
     }
 
@@ -396,6 +514,8 @@ public class WebEngineManager {
 
         attachClients();
 
+        initializeSpeculativeLoading();
+
         // ⚡ Preconnect للـ origin الأساسي مبكراً
         String clientUrl = BuildConfig.CLIENT_URL;
 
@@ -423,7 +543,15 @@ public class WebEngineManager {
 
                 @Override
                 public void onNavigationStarted(@NonNull Navigation navigation) {
-                    Log.i("Performance", "🚀 Navigation started");
+
+                    speculativeUrls.clear();
+
+                    cancelActivePrerender();
+
+                    Log.i(
+                            "Performance",
+                            "🚀 Navigation started"
+                    );
                 }
 
                 @Override
@@ -1111,5 +1239,24 @@ public class WebEngineManager {
 
     public boolean isPageValid() {
         return OfflineStateManager.getInstance().isPageValid();
+    }
+
+    // ==========================================
+    // 🧹 دورة الحياة (destroy)
+    // ==========================================
+    public void destroy() {
+
+        cancelActivePrerender();
+
+        speculativeUrls.clear();
+
+        webProfile = null;
+
+        speculativeLoadingReady = false;
+
+        Log.i(
+                TAG,
+                "🧹 WebEngineManager destroyed."
+        );
     }
     }
