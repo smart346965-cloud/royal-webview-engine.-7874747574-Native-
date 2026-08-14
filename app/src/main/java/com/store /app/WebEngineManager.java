@@ -191,34 +191,24 @@ public class WebEngineManager {
         });
     }
 
-    public void triggerFinalReveal() {
-        if (splashChecker.isRemoved()) return;
-
-        long currentTime = System.currentTimeMillis();
-        long elapsed = currentTime - splashStartTime;
-        
-        long remaining = Math.max(0, 5000 - elapsed);
-
-        new Handler(Looper.getMainLooper()).postDelayed(() -> {
-            if (!splashChecker.isRemoved()) {
-                removeSplashSmoothly();
-                Log.i("RoyalEngine", "👑 Time's up! Fixed Splash Released.");
-            }
-        }, remaining);
-    }
+    // =========================================================
+    // ❌ تم حذف الدالة triggerFinalReveal() نهائياً
+    // =========================================================
 
     private void configureSettings() {
         WebSettings settings = webView.getSettings();
 
         settings.setEnableSmoothTransition(true); 
         
+        // 🔥 تعديل OffscreenPreRaster إلى false
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            settings.setOffscreenPreRaster(true);
+            settings.setOffscreenPreRaster(false);
         }
 
-        webView.setLayerType(View.LAYER_TYPE_HARDWARE, null);
+        // 🔥 تم حذف webView.setLayerType(View.LAYER_TYPE_HARDWARE, null);
         
-        settings.setLayoutAlgorithm(WebSettings.LayoutAlgorithm.TEXT_AUTOSIZING);
+        // 🔥 تعديل LayoutAlgorithm إلى NORMAL
+        settings.setLayoutAlgorithm(WebSettings.LayoutAlgorithm.NORMAL);
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             webView.setVerticalScrollbarThumbDrawable(null);
@@ -226,14 +216,20 @@ public class WebEngineManager {
 
         webView.setOverScrollMode(View.OVER_SCROLL_NEVER);
 
+        // =========================================================
+        // 🔥 تم حذف كتلة AlgorithmicDarkening وتم الإبقاء على ForceDarkAllowed فقط
+        // =========================================================
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            webView.setForceDarkAllowed(false);
+            settings.setForceDarkAllowed(false);
         }
 
+        // =========================================================
+        // 🔥 إعدادات JavaScript و DOM و Database (بدون تكرار)
+        // =========================================================
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(true);
-
         settings.setDatabaseEnabled(true);
+
         settings.setCacheMode(WebSettings.LOAD_DEFAULT);
         settings.setSafeBrowsingEnabled(true);
         settings.setAllowFileAccess(true);
@@ -246,10 +242,6 @@ public class WebEngineManager {
             settings.setMediaPlaybackRequiresUserGesture(false);
         }
 
-        if (WebViewFeature.isFeatureSupported(WebViewFeature.ALGORITHMIC_DARKENING)) {
-            WebSettingsCompat.setAlgorithmicDarkeningAllowed(settings, true);
-        }
-
         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
         settings.setSupportMultipleWindows(false);
         settings.setSupportZoom(false);
@@ -259,9 +251,6 @@ public class WebEngineManager {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             cookieManager.setAcceptThirdPartyCookies(webView, true);
         }
-        
-        settings.setDomStorageEnabled(true);
-        settings.setDatabaseEnabled(true);
     }
 
     private void attachClients() {
@@ -329,6 +318,37 @@ public class WebEngineManager {
                     }
 
                     RoyalNetworkEngine.notifyRenderStart();
+
+                    // =========================================================
+                    // 🔥 إضافة Visual State Callback
+                    // =========================================================
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M
+                            && WebViewFeature.isFeatureSupported(
+                                    WebViewFeature.VISUAL_STATE_CALLBACK
+                            )) {
+
+                        WebViewCompat.postVisualStateCallback(
+                                view,
+                                System.nanoTime(),
+                                new WebViewCompat.VisualStateCallback() {
+
+                                    @Override
+                                    public void onComplete(long requestId) {
+
+                                        Log.i(
+                                                TAG,
+                                                "🎨 Visual state ready for first valid draw."
+                                        );
+
+                                        RoyalPanopticon.recordMetric(
+                                                "VisualStateReady",
+                                                System.currentTimeMillis()
+                                        );
+                                    }
+                                }
+                        );
+                    }
+
                     syncStatusBarColor(view);
 
                     if (NetworkMonitor.isInternetAvailable(context)
@@ -344,16 +364,30 @@ public class WebEngineManager {
                 }
             }
 
+            // =========================================================
+            // 🔥 [تعديل 11] onRenderProcessGone المُصحَّح
+            // =========================================================
             @Override
-            public boolean onRenderProcessGone(WebView view, RenderProcessGoneDetail detail) {
-                android.util.Log.e("RoyalEngine", "☠️ FATAL: Chromium Renderer crashed! Auto-Recovery...");
+            public boolean onRenderProcessGone(
+                    WebView view,
+                    RenderProcessGoneDetail detail
+            ) {
+
+                Log.e(
+                        TAG,
+                        detail.didCrash()
+                                ? "☠️ Chromium Renderer crashed."
+                                : "⚠️ Chromium Renderer killed by system."
+                );
+
                 RoyalNetworkEngine.notifyRenderIdle();
+
                 RoyalWebViewHost.destroy();
-                if (activity != null) {
-                    // ✅ التعديل المطلوب: استخدم activity مباشرة بدلاً من activity.getApplicationContext()
-                    RoyalWebViewHost.create(activity);
+
+                if (activity != null && !activity.isFinishing()) {
                     activity.recreate();
                 }
+
                 return true;
             }
 
@@ -373,6 +407,9 @@ public class WebEngineManager {
                 Log.w(TAG, "🛡️ Legacy main frame error detected. Page invalid.");
             }
 
+            // =========================================================
+            // 🔥 [تعديل 10] shouldInterceptRequest المبسَّط
+            // =========================================================
             @Override
             public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
                 if (request == null || request.getUrl() == null) return null;
@@ -467,22 +504,16 @@ public class WebEngineManager {
                     return new WebResourceResponse("text/html", "UTF-8", 200, "OK", null, stubStream);
                 }
 
-                boolean isCoreResource = request.isForMainFrame() || url.contains(".js") || url.contains(".css") || url.contains(".wasm");
-                if (isCoreResource) {
-                    android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_FOREGROUND);
-                }
-
-                long startIntercept = System.currentTimeMillis();
+                // =========================================================
+                // 🔥 الجزء المحسَّن من shouldInterceptRequest (بدون قياس زمن أو تعديل أولوية)
+                // =========================================================
                 WebResourceResponse royalResponse = RoyalNetworkEngine.interceptRequest(request);
-                long duration = System.currentTimeMillis() - startIntercept;
-                
-                RoyalPanopticon.recordExecution("NetworkInterceptor", duration, true, 0);
 
                 if (royalResponse != null) {
                     return royalResponse;
                 }
-                
-                return super.shouldInterceptRequest(view, request);
+
+                return null; // ❌ لا نستخدم super.shouldInterceptRequest
             }
 
             // =========================================================
@@ -755,4 +786,4 @@ public class WebEngineManager {
     public boolean isPageValid() {
         return OfflineStateManager.getInstance().isPageValid();
     }
-    }
+            }
