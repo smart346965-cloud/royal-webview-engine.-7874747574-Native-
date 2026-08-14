@@ -1,7 +1,7 @@
 package com.store.app;
 
 import android.content.Intent;
-import android.graphics.Color;
+importandroid.graphics.Color;
 import android.graphics.drawable.ColorDrawable;
 import android.net.Uri;
 import android.os.Build;
@@ -207,6 +207,9 @@ public class MainActivity extends AppCompatActivity {
                 () -> splashRemoved = true,
                 () -> splashRemoved
         );
+
+        // 🔗 ربط الـ Bridge بعد اكتمال WebEngineManager
+        RoyalWebViewHost.bindEngineManager(engineManager);
 
         engineManager.setSplashStartTime(
                 splashStartTime
@@ -528,4 +531,4 @@ public class MainActivity extends AppCompatActivity {
                     );
         }
     }
-        }
+                    }
