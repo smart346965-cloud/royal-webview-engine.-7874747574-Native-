@@ -428,6 +428,15 @@ public class WebEngineManager {
                     new PrerenderOperationCallback() {
 
                         @Override
+                        public void onPrerenderActivated() {
+
+                            Log.d(
+                                    TAG,
+                                    "🚀 Prerender activated: " + url
+                            );
+                        }
+
+                        @Override
                         public void onError(
                                 @NonNull PrerenderException exception) {
 
@@ -440,27 +449,10 @@ public class WebEngineManager {
                                     exception
                             );
 
-                            // لا نمسح عملية أحدث بالخطأ
                             if (url.equals(activePrerenderUrl)) {
-
-                                activePrerenderCancellationSignal =
-                                        null;
-
+                                activePrerenderCancellationSignal = null;
                                 activePrerenderUrl = null;
                             }
-                        }
-
-                        @Override
-                        public void onStatusUpdated(
-                                int status) {
-
-                            Log.d(
-                                    TAG,
-                                    "🚀 Prerender status="
-                                            + status
-                                            + " url="
-                                            + url
-                            );
                         }
                     }
             );
@@ -1259,4 +1251,4 @@ public class WebEngineManager {
                 "🧹 WebEngineManager destroyed."
         );
     }
-    }
+        }
