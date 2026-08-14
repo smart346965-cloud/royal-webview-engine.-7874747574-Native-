@@ -105,7 +105,7 @@ public class MainActivity extends AppCompatActivity {
 
         super.onCreate(savedInstanceState);
 
-        WindowCompat.enableEdgeToEdge(getWindow());
+        WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
 
         getWindow().setBackgroundDrawable(
                 new ColorDrawable(
@@ -528,4 +528,4 @@ public class MainActivity extends AppCompatActivity {
                     );
         }
     }
-                    }
+        }
