@@ -154,7 +154,10 @@ public final class RoyalWebViewHost {
     // 🚀 إقلاع النواة (create)
     // =========================================================
 
-    public static synchronized void create(Activity activity) {
+    public static synchronized void create(
+            Activity activity,
+            WebEngineManager webEngineManager
+    ) {
         if (Looper.myLooper() != Looper.getMainLooper()) {
             throw new IllegalStateException("RoyalWebViewHost.create() must run on Main Looper.");
         }
@@ -195,7 +198,17 @@ public final class RoyalWebViewHost {
             RoyalHybridEngine.prime(webView, activity.getApplicationContext());
             RoyalNetworkEngine.install(activity.getApplicationContext());
 
-            jsBridgeInstance = new RoyalJsBridge(webView);
+            if (webEngineManager == null) {
+                throw new IllegalArgumentException(
+                        "WebEngineManager must not be null."
+                );
+            }
+
+            jsBridgeInstance = new RoyalJsBridge(
+                    webView,
+                    webEngineManager
+            );
+
             webView.addJavascriptInterface(jsBridgeInstance, "RoyalBridge");
 
             webViewInstance = webView;
@@ -216,9 +229,12 @@ public final class RoyalWebViewHost {
     // 🔗 attach / detach / destroy
     // =========================================================
 
-    public static synchronized WebView attach(Activity activity) {
+    public static synchronized WebView attach(
+            Activity activity,
+            WebEngineManager webEngineManager
+    ) {
         if (!isInitialized || webViewInstance == null) {
-            create(activity);
+            create(activity, webEngineManager);
         }
 
         if (contextWrapper != null) {
@@ -303,4 +319,4 @@ public final class RoyalWebViewHost {
     public static WebView getWebView() {
         return webViewInstance;
     }
-                    }
+    }
