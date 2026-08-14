@@ -1,7 +1,7 @@
 package com.store.app;
 
 import android.content.Intent;
-importandroid.graphics.Color;
+import android.graphics.Color;
 import android.graphics.drawable.ColorDrawable;
 import android.net.Uri;
 import android.os.Build;
