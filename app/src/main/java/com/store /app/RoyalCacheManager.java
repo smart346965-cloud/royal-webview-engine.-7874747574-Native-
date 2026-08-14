@@ -29,9 +29,9 @@ public final class RoyalCacheManager {
     // 👑 تحويل السقف إلى متغير ديناميكي يلتهم المساحة المتاحة بذكاء
     private static long MAX_DISK_CACHE;
 
-    // 1. رفع سقف الـ RAM L1 إلى 50 ميجابايت بدلاً من 20 (لسرعة البرق في الصور)
-    private static final int RAM_LIMIT = 50 * 1024 * 1024;
-    private static final int RAM_THRESHOLD = 5 * 1024 * 1024; // رفع عتبة الترقية للرام إلى 5 ميجا
+    // 1. رفع سقف الـ RAM L1 إلى 32 ميجابايت (مناسب للـ CSS/JS/fonts)
+    private static final int RAM_LIMIT = 32 * 1024 * 1024;
+    private static final int RAM_THRESHOLD = 2 * 1024 * 1024; // عتبة ترقية للرام
 
     // [حقن في بداية RoyalCacheManager]
     private static final long BLIND_TRUST_WINDOW = 100; // نافذة الثقة (100 مللي ثانية)
@@ -65,6 +65,14 @@ public final class RoyalCacheManager {
         MIME.put(".mjs", "application/javascript");
         MIME.put(".svg", "image/svg+xml");
         MIME.put(".html", "text/html");
+        // MIME إضافية
+        MIME.put(".js", "text/javascript");
+        MIME.put(".css", "text/css");
+        MIME.put(".json", "application/json");
+        MIME.put(".xml", "application/xml");
+        MIME.put(".mp4", "video/mp4");
+        MIME.put(".webm", "video/webm");
+        MIME.put(".mp3", "audio/mpeg");
     }
 
     private RoyalCacheManager() {}
@@ -77,12 +85,12 @@ public final class RoyalCacheManager {
         cacheDir = new File(extCache != null ? extCache : context.getCacheDir(), "royal_warehouse_v5");
         if (!cacheDir.exists()) cacheDir.mkdirs();
 
-        // 🚀 تنفيذ أمر الـ 4 جيجابايت:
-        // نأخذ 4GB كقيمة ثابتة إذا توفرت المساحة، أو 25% من مساحة الهاتف الفارغة!
+        // 🚀 مساحة قرص L2 محسوبة: 1GB كحد أقصى، أو 20% من المساحة المتاحة، بحد أدنى 256MB
         long usableSpace = cacheDir.getUsableSpace();
-        long targetCache = 4096L * 1024 * 1024; // 4 GB
+        long targetCache = 1024L * 1024 * 1024; // 1 GB
+        long safeSpace = Math.max(256L * 1024 * 1024, usableSpace / 5);
 
-        MAX_DISK_CACHE = Math.min(targetCache, (long) (usableSpace * 0.25));
+        MAX_DISK_CACHE = Math.min(targetCache, safeSpace);
 
         Log.i(TAG, "🏗️ Royal Warehouse Initialized: " + (MAX_DISK_CACHE / (1024 * 1024)) + " MB Allocated.");
 
@@ -112,6 +120,16 @@ public final class RoyalCacheManager {
                 if (accept != null && (accept.contains("application/json") || accept.contains("text/event-stream"))) {
                     return null; // دعه يمر للإنترنت لأنه بيانات ديناميكية
                 }
+
+                // حماية من الطلبات الشخصية (Authorization, Range)
+                String authorization = requestHeaders.get("Authorization");
+                if (authorization != null && !authorization.isEmpty()) {
+                    return null;
+                }
+                String range = requestHeaders.get("Range");
+                if (range != null && !range.isEmpty()) {
+                    return null;
+                }
             }
 
             if (!isCacheable(url)) return null;
@@ -125,7 +143,7 @@ public final class RoyalCacheManager {
             if (mem != null) {
                 return new WebResourceResponse(
                         getMime(url),
-                        "UTF-8",
+                        getEncoding(url),
                         200,
                         "OK",
                         buildResponseHeaders(url, null, mem.length),
@@ -200,7 +218,7 @@ public final class RoyalCacheManager {
 
                     return new WebResourceResponse(
                             getMime(url),
-                            "UTF-8",
+                            getEncoding(url),
                             200,
                             "OK",
                             buildResponseHeaders(url, meta != null ? meta.etag : null, data.length),
@@ -211,7 +229,7 @@ public final class RoyalCacheManager {
                 // 🔥 LARGE → STREAM (بدون RAM)
                 return new WebResourceResponse(
                         getMime(url),
-                        "UTF-8",
+                        getEncoding(url),
                         200,
                         "OK",
                         buildResponseHeaders(url, meta != null ? meta.etag : null, file.length()),
@@ -265,7 +283,10 @@ public final class RoyalCacheManager {
                 if (meta == null) return;
 
                 File finalFile = new File(cacheDir, key);
-                if (finalFile.exists() && finalFile.length() > 0) return;
+                // السماح بالتحديث: حذف الملف القديم إن وجد
+                if (finalFile.exists() && finalFile.length() > 0) {
+                    finalFile.delete();
+                }
 
                 // 🛡️ الكتابة في ملف مؤقت أولاً (Atomic Write)
                 File tmpFile = new File(cacheDir, key + ".tmp");
@@ -301,7 +322,15 @@ public final class RoyalCacheManager {
                     return;
                 } else {
                     // استبدال الملف القديم بالجديد في جزء من الثانية
-                    tmpFile.renameTo(finalFile);
+                    if (!tmpFile.renameTo(finalFile)) {
+                        if (finalFile.exists()) {
+                            finalFile.delete();
+                        }
+                        if (!tmpFile.renameTo(finalFile)) {
+                            tmpFile.delete();
+                            return;
+                        }
+                    }
                 }
 
                 // ⚡ RAM promotion
@@ -359,15 +388,45 @@ public final class RoyalCacheManager {
     // 🧠 RULES
     // ==========================================
 
-    // 2. تعديل منطق الـ isCacheable ليكون "شرهًا" في التخزين
     private static boolean isCacheable(String url) {
-        String clean = url.split("\\?")[0].toLowerCase();
-        // استثناءات أمنية فقط (لا نخزن العمليات المالية)
-        if (clean.contains("/checkout") || clean.contains("/payment") || clean.contains("/auth")) return false;
+        if (url == null || url.isEmpty()) return false;
 
-        // 👑 القاعدة الذهبية: خزن كل شيء آخر!
-        // المتاجر تحتاج لصور عالية الدقة وخطوط وجافا سكريبت ضخم، سنلتهمها جميعاً.
-        return true;
+        String clean = url.split("\\?", 2)[0].toLowerCase(Locale.US);
+
+        if (!clean.startsWith("https://") && !clean.startsWith("http://")) {
+            return false;
+        }
+
+        if (clean.contains("/checkout")
+                || clean.contains("/payment")
+                || clean.contains("/auth")
+                || clean.contains("/login")
+                || clean.contains("/logout")
+                || clean.contains("/account")
+                || clean.contains("/profile")
+                || clean.contains("/cart")) {
+            return false;
+        }
+
+        return isStaticResource(clean);
+    }
+
+    private static boolean isStaticResource(String url) {
+        return url.endsWith(".css")
+                || url.endsWith(".js")
+                || url.endsWith(".mjs")
+                || url.endsWith(".woff")
+                || url.endsWith(".woff2")
+                || url.endsWith(".ttf")
+                || url.endsWith(".otf")
+                || url.endsWith(".png")
+                || url.endsWith(".jpg")
+                || url.endsWith(".jpeg")
+                || url.endsWith(".webp")
+                || url.endsWith(".avif")
+                || url.endsWith(".gif")
+                || url.endsWith(".svg")
+                || url.endsWith(".ico");
     }
 
     private static long resolveTTL(String url) {
@@ -510,16 +569,19 @@ public final class RoyalCacheManager {
     // 👑 [إضافة دالة جديدة] بناء هيدرات HTTP احترافية لتفعيل V8 Bytecode Caching
     private static Map<String, String> buildResponseHeaders(String url, String etag, long contentLength) {
         Map<String, String> headers = new HashMap<>();
-        headers.put("Access-Control-Allow-Origin", "*");
+        // تم حذف Access-Control-Allow-Origin لتجنب تغيير CORS
         headers.put("X-Served-By", "RoyalCacheManager"); // وسم المصدر لمنع التضارب مع SW
         headers.put("Accept-Ranges", "bytes");
         headers.put("Vary", "Accept-Encoding"); // دعم الضغط
 
-        // إجبار V8 على أرشفة الجافاسكريبت والـ CSS في الـ Compilation Cache
-        if (url.endsWith(".js") || url.endsWith(".mjs") || url.endsWith(".css")) {
-            headers.put("Cache-Control", "public, max-age=31536000, immutable");
+        // لا نرسل immutable أو max-age كبير جداً
+        if (url.endsWith(".js")
+                || url.endsWith(".mjs")
+                || url.endsWith(".css")) {
+
+            headers.put("Cache-Control", "public, max-age=300");
         } else {
-            headers.put("Cache-Control", "public, max-age=86400");
+            headers.put("Cache-Control", "public, max-age=300");
         }
 
         if (etag != null && !etag.isEmpty()) {
@@ -542,22 +604,17 @@ public final class RoyalCacheManager {
         return sys != null ? sys : "application/octet-stream";
     }
 
-    private static String md5(String input) {
-        try {
-            MessageDigest md = MessageDigest.getInstance("MD5");
-            byte[] bytes = md.digest(input.getBytes(StandardCharsets.UTF_8));
+    private static String getEncoding(String url) {
+        String mime = getMime(url);
 
-            StringBuilder sb = new StringBuilder();
-            for (byte b : bytes) {
-                String hex = Integer.toHexString(0xff & b);
-                if (hex.length() == 1) sb.append('0');
-                sb.append(hex);
-            }
-            return sb.toString();
-
-        } catch (Exception e) {
-            return String.valueOf(input.hashCode());
+        if (mime.startsWith("text/")
+                || mime.contains("javascript")
+                || mime.contains("json")
+                || mime.contains("xml")) {
+            return "UTF-8";
         }
+
+        return null;
     }
 
     private static File metaFile(String key) {
@@ -617,17 +674,26 @@ public final class RoyalCacheManager {
             String url,
             Map<String, List<String>> headers) {
 
+        if (headers == null) return null;
+
         CacheMeta meta = new CacheMeta();
         long now = System.currentTimeMillis();
 
-        // 🔥 القبضة الحديدية: التجاهل التام لأوامر الخوادم التي تمنع الكاش
+        // 🔥 معالجة Cache-Control
         List<String> cc = headers.get("Cache-Control");
-        if (cc != null) {
-            String val = cc.get(0);
-            String lower = val.toLowerCase(Locale.US);
+        if (cc != null && !cc.isEmpty()) {
+            String lower = cc.get(0).toLowerCase(Locale.US);
 
-            // استخلاص الـ max-age إن وجد، وتجاهل أوامر no-cache و no-store تماماً
-            if (lower.contains("max-age")) {
+            // no-store أو private → لا نخزن
+            if (lower.contains("no-store")
+                    || lower.contains("private")) {
+                return null;
+            }
+
+            // no-cache → صلاحية منتهية فوراً (يطلب validation)
+            if (lower.contains("no-cache")) {
+                meta.expiry = now;
+            } else if (lower.contains("max-age")) {
                 try {
                     String s = lower.split("max-age=")[1].split(",")[0];
                     long seconds = Long.parseLong(s);
@@ -697,25 +763,9 @@ public final class RoyalCacheManager {
         // 1. تفريغ ذاكرة L1 RAM فوراً
         memoryCache.evictAll();
         
-        // 2. إرسال إشارة لـ Service Worker لتقليص كاشه (عبر Native Bridge)
-        // نفترض أن لديك طريقة لإرسال رسالة للـ Service Worker، مثلاً عبر WebView
-        // يمكنك استخدام webView.evaluateJavascript() أو postMessage
-        // نضع هنا الكود النموذجي:
-        try {
-            if (RoyalWebViewHost.getWebView() != null) {
-                RoyalWebViewHost.getWebView().evaluateJavascript(
-                    "navigator.serviceWorker.ready.then(reg => {" +
-                    "  reg.active.postMessage({ type: 'TRIM_MEMORY_PRESSURE' });" +
-                    "});", null);
-            }
-        } catch (Exception ignored) {}
-        
-        // 3. طلب جمع القمامة المباشر
-        System.gc();
-
-        // تنظيف القرص أيضاً (L2) لتخفيف الضغط
+        // 2. تنظيف القرص أيضاً (L2) لتخفيف الضغط
         new Thread(() -> {
             performLRUEviction(); // هذا سيُقلّم حتى 80% من السعة
         }).start();
     }
-                        }
+        }
