@@ -5,6 +5,7 @@ import android.content.Intent;
 import android.graphics.Color;
 import android.net.Uri;
 import android.os.Build;
+import android.os.CancellationSignal;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
@@ -16,6 +17,8 @@ import androidx.annotation.NonNull;
 import androidx.webkit.Navigation;
 import androidx.webkit.NavigationListener;
 import androidx.webkit.Page;
+import androidx.webkit.Profile;
+import androidx.webkit.PrerenderOperationCallback;
 import androidx.webkit.WebSettingsCompat;
 import androidx.webkit.WebViewCompat;
 import androidx.webkit.WebViewFeature;
@@ -24,6 +27,10 @@ import com.store.app.offline.OfflineStateManager;
 
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
+import java.util.HashSet;
+import java.util.Set;
+import java.util.concurrent.Executor;
+import java.util.concurrent.Executors;
 
 public class WebEngineManager {
 
@@ -49,6 +56,14 @@ public class WebEngineManager {
 
     private final RoyalCapabilitiesEngine capabilitiesEngine;
 
+    // =========================================================
+    // ⚡ Speculative Loading Fields
+    // =========================================================
+    private Profile webProfile = null;
+    private boolean speculativeLoadingReady = false;
+    private final Set<String> speculativeUrls = new HashSet<>();
+    private final Executor prerenderCallbackExecutor = Executors.newSingleThreadExecutor();
+
     public interface SplashStateChecker {
         boolean isRemoved();
     }
@@ -72,6 +87,287 @@ public class WebEngineManager {
                 : null;
 
         this.capabilitiesEngine = new RoyalCapabilitiesEngine(this.activity);
+    }
+
+    // =========================================================
+    // ⚡ Initialize Native Speculative Loading
+    // =========================================================
+    private void initializeSpeculativeLoading() {
+
+        if (activity == null) return;
+
+        activity.runOnUiThread(() -> {
+            try {
+                webProfile = Profile.getDefaultProfile();
+
+                speculativeLoadingReady =
+                        webProfile != null;
+
+                if (speculativeLoadingReady) {
+                    Log.i(TAG,
+                            "⚡ Native speculative loading ready.");
+                }
+
+            } catch (Throwable e) {
+                speculativeLoadingReady = false;
+
+                Log.e(TAG,
+                        "❌ Failed to initialize WebView Profile.",
+                        e);
+            }
+        });
+    }
+
+    // =========================================================
+    // ⚡ Native Preconnect
+    // =========================================================
+    private void preconnectOrigin(String url) {
+
+        if (activity == null || url == null) return;
+
+        activity.runOnUiThread(() -> {
+
+            try {
+
+                if (!WebViewFeature.isFeatureSupported(
+                        WebViewFeature.PRECONNECT)) {
+
+                    Log.w(TAG,
+                            "⚠️ PRECONNECT not supported.");
+
+                    return;
+                }
+
+                if (webProfile == null) {
+                    webProfile = Profile.getDefaultProfile();
+                }
+
+                if (webProfile == null) return;
+
+                Uri uri = Uri.parse(url);
+
+                String origin = buildOrigin(uri);
+
+                if (origin == null) return;
+
+                webProfile.preconnect(origin);
+
+                Log.d(TAG,
+                        "⚡ Preconnected: " + origin);
+
+            } catch (Throwable e) {
+
+                Log.w(TAG,
+                        "⚠️ Preconnect failed: " + url,
+                        e);
+            }
+        });
+    }
+
+    private String buildOrigin(Uri uri) {
+
+        if (uri == null) return null;
+
+        String scheme = uri.getScheme();
+        String host = uri.getHost();
+
+        if (scheme == null || host == null) {
+            return null;
+        }
+
+        scheme = scheme.toLowerCase();
+        host = host.toLowerCase();
+
+        if (!"https".equals(scheme)) {
+            return null;
+        }
+
+        int port = uri.getPort();
+
+        if (port == -1 || port == 443) {
+            return scheme + "://" + host;
+        }
+
+        return scheme + "://" + host + ":" + port;
+    }
+
+    // =========================================================
+    // 🔒 Speculative Origin Policy
+    // =========================================================
+    private boolean isSafePredictionUrl(Uri uri) {
+
+        if (uri == null) {
+            return false;
+        }
+
+        String scheme = uri.getScheme();
+        String host = uri.getHost();
+
+        if (scheme == null || host == null) {
+            return false;
+        }
+
+        scheme = scheme.toLowerCase();
+        host = host.toLowerCase();
+
+        // HTTPS فقط
+        if (!"https".equals(scheme)) {
+            return false;
+        }
+
+        if (trustedHost == null ||
+                trustedScheme == null) {
+            return false;
+        }
+
+        // نفس الـ scheme
+        if (!trustedScheme.equalsIgnoreCase(scheme)) {
+            return false;
+        }
+
+        // نفس الـ origin policy
+        int port = uri.getPort();
+
+        if (port == -1) {
+            port = 443;
+        }
+
+        if (port != trustedPort) {
+            return false;
+        }
+
+        String trusted =
+                trustedHost.toLowerCase();
+
+        // Root + subdomains الموثوقة
+        boolean hostMatches =
+                trusted.equals(host)
+                        || host.endsWith("." + trusted);
+
+        if (!hostMatches) {
+            Log.w(TAG,
+                    "🛡️ Prediction rejected: foreign origin -> "
+                            + uri);
+
+            return false;
+        }
+
+        return true;
+    }
+
+    // =========================================================
+    // 🧠 ROYAL PREDICTION ENTRY POINT
+    // =========================================================
+    public void predict(String url) {
+
+        if (activity == null || url == null) {
+            return;
+        }
+
+        activity.runOnUiThread(() -> {
+
+            try {
+
+                Uri uri = Uri.parse(url);
+
+                if (!isSafePredictionUrl(uri)) {
+                    return;
+                }
+
+                String normalizedUrl =
+                        uri.toString();
+
+                // منع تكرار نفس التنبؤ
+                if (!speculativeUrls.add(normalizedUrl)) {
+                    return;
+                }
+
+                Log.d(TAG,
+                        "🧠 High-confidence prediction: "
+                                + normalizedUrl);
+
+                // 1️⃣ افتح DNS/TCP/TLS مبكراً
+                preconnectOrigin(normalizedUrl);
+
+                // 2️⃣ جهّز الصفحة في Chromium
+                startPrerender(normalizedUrl);
+
+            } catch (Throwable e) {
+
+                Log.w(TAG,
+                        "Prediction failed: " + url,
+                        e);
+            }
+        });
+    }
+
+    // =========================================================
+    // 🚀 Chromium Native Prerender
+    // =========================================================
+    private void startPrerender(String url) {
+
+        if (activity == null || webView == null) {
+            return;
+        }
+
+        if (!WebViewFeature.isFeatureSupported(
+                WebViewFeature.PRERENDER_WITH_URL)) {
+
+            Log.w(TAG,
+                    "⚠️ PRERENDER_WITH_URL not supported.");
+
+            return;
+        }
+
+        try {
+
+            CancellationSignal cancellationSignal =
+                    new CancellationSignal();
+
+            WebViewCompat.prerenderUrlAsync(
+                    webView,
+                    url,
+                    cancellationSignal,
+                    prerenderCallbackExecutor,
+                    new PrerenderOperationCallback() {
+
+                        @Override
+                        public void onError(
+                                int errorCode) {
+
+                            Log.w(
+                                    TAG,
+                                    "⚠️ Prerender rejected: "
+                                            + url
+                                            + " code="
+                                            + errorCode
+                            );
+                        }
+
+                        @Override
+                        public void onStatusUpdated(
+                                int status) {
+
+                            Log.d(
+                                    TAG,
+                                    "🚀 Prerender status="
+                                            + status
+                                            + " url="
+                                            + url
+                            );
+                        }
+                    }
+            );
+
+            Log.d(TAG,
+                    "🚀 Prerender started: " + url);
+
+        } catch (Throwable e) {
+
+            Log.w(TAG,
+                    "❌ Prerender failed: " + url,
+                    e);
+        }
     }
 
     public RoyalCapabilitiesEngine getCapabilitiesHandler() {
@@ -99,6 +395,13 @@ public class WebEngineManager {
         configureSettings();
 
         attachClients();
+
+        // ⚡ Preconnect للـ origin الأساسي مبكراً
+        String clientUrl = BuildConfig.CLIENT_URL;
+
+        if (clientUrl != null) {
+            preconnectOrigin(clientUrl);
+        }
 
         if (WebViewFeature.isFeatureSupported(WebViewFeature.NAVIGATION_LISTENER)) {
             WebViewCompat.addNavigationListener(webView, new NavigationListener() {
@@ -664,10 +967,33 @@ public class WebEngineManager {
     }
 
     private void setTrustedOrigin(String url) {
+
+        if (url == null) return;
+
         Uri uri = Uri.parse(url);
-        trustedScheme = uri.getScheme();
-        trustedHost = uri.getHost();
-        trustedPort = uri.getPort() == -1 ? (trustedScheme.equals("https") ? 443 : 80) : uri.getPort();
+
+        String scheme = uri.getScheme();
+        String host = uri.getHost();
+
+        if (scheme == null || host == null) {
+            return;
+        }
+
+        trustedScheme = scheme.toLowerCase();
+        trustedHost = host.toLowerCase();
+
+        trustedPort =
+                uri.getPort() == -1
+                        ? ("https".equals(trustedScheme) ? 443 : 80)
+                        : uri.getPort();
+
+        Log.i(TAG,
+                "🔒 Trusted Origin = "
+                        + trustedScheme
+                        + "://"
+                        + trustedHost
+                        + ":"
+                        + trustedPort);
     }
 
     // =========================================================
@@ -703,7 +1029,7 @@ public class WebEngineManager {
         // السماح بـ subdomains
         boolean hostMatches =
                 trusted.equalsIgnoreCase(targetHost)
-                || targetHost.endsWith("." + trusted);
+                        || targetHost.endsWith("." + trusted);
 
         return hostMatches
                 && trustedScheme.equalsIgnoreCase(targetScheme)
@@ -786,4 +1112,4 @@ public class WebEngineManager {
     public boolean isPageValid() {
         return OfflineStateManager.getInstance().isPageValid();
     }
-                                    }
+    }
