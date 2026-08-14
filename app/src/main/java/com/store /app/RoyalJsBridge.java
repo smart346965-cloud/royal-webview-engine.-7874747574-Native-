@@ -11,42 +11,63 @@ public class RoyalJsBridge {
 
     private static final String TAG = "RoyalJsBridge";
     private final WebView webView;
+    private final WebEngineManager webEngineManager;
     private Runnable onHideSplashCallback;
 
     // 🚀 جسر الصواريخ: مسار خلفي معزول (Single Thread) لمعالجة أوامر JS دون خنق واجهة المستخدم
     private final ExecutorService backgroundExecutor = Executors.newSingleThreadExecutor();
 
-    public RoyalJsBridge(WebView webView) {
+    public RoyalJsBridge(
+            WebView webView,
+            WebEngineManager webEngineManager) {
+
         this.webView = webView;
-        
-        // 👁️ تسجيل الهيكل الشجري للمحركات داخل نظام التشخيص الملكي عند بناء الجسر
-        RoyalPanopticon.registerDependency("WebChromeEngine", "JS-BridgeChannel");
-        RoyalPanopticon.registerDependency("JS-BridgeChannel", "TapWarmupEngine");
+        this.webEngineManager = webEngineManager;
+
+        RoyalPanopticon.registerDependency(
+                "WebChromeEngine",
+                "JS-BridgeChannel"
+        );
+    }
+
+    // =========================================================
+    // 🧠 ROYAL BRIDGE V6
+    // Single Prediction API
+    // =========================================================
+    @JavascriptInterface
+    public void predict(String url) {
+
+        if (url == null || url.length() == 0) {
+            return;
+        }
+
+        if (webEngineManager == null) {
+            return;
+        }
+
+        webView.post(() -> {
+
+            try {
+
+                RoyalPanopticon.pulse(
+                        "JS-BridgeChannel"
+                );
+
+                webEngineManager.predict(url);
+
+            } catch (Exception e) {
+
+                Log.w(
+                        TAG,
+                        "Prediction dispatch failed.",
+                        e
+                );
+            }
+        });
     }
 
     public void setOnHideSplashCallback(Runnable callback) {
         this.onHideSplashCallback = callback;
-    }
-
-    /**
-     * 🚀 Network Warmup
-     * يتم استدعاؤه من TapEngine قبل النقر
-     */
-    @JavascriptInterface
-    public void warmup(String url) {
-        // 🔥 تحويل المعالجة للمسار الخلفي
-        backgroundExecutor.execute(() -> {
-            try {
-                RoyalPanopticon.pulse("TapWarmupEngine");
-                long start = System.currentTimeMillis();
-                RoyalNetworkEngine.warmupLink(url);
-                long duration = System.currentTimeMillis() - start;
-                RoyalPanopticon.recordExecution("TapWarmupEngine", duration, true, 0);
-            } catch (Exception e) {
-                Log.e(TAG, "Warmup failed", e);
-                RoyalPanopticon.recordExecution("TapWarmupEngine", 0, false, 0);
-            }
-        });
     }
 
     /**
