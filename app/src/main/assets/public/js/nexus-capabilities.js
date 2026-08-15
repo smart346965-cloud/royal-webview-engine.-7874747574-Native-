@@ -139,6 +139,73 @@
     };
 
     // =========================================================
+    // 📝 1.6 CAPABILITY COPY / UX TEMPLATES
+    // =========================================================
+
+    const CapabilityCopy = {
+
+        camera: {
+            title: "📷 تفعيل الكاميرا",
+            desc: "نحتاج إلى استخدام كاميرا جهازك لتنفيذ هذه العملية."
+        },
+
+        microphone: {
+            title: "🎤 تفعيل الميكروفون",
+            desc: "نحتاج إلى استخدام الميكروفون لتنفيذ هذه العملية."
+        },
+
+        location: {
+            title: "📍 الوصول إلى موقعك",
+            desc: "نحتاج إلى موقعك الحالي لتقديم خدمة الموقع أو تحديد أقرب نتيجة."
+        },
+
+        biometric: {
+            title: "🔐 استخدام بصمة الجهاز",
+            desc: "يمكن استخدام بصمة الجهاز أو قفل الشاشة للتحقق من هويتك بأمان."
+        },
+
+        notification: {
+            title: "🔔 تفعيل الإشعارات",
+            desc: "فعّل الإشعارات حتى يصلك أهم التحديثات والتنبيهات من التطبيق."
+        },
+
+        bluetooth: {
+            title: "📡 الوصول إلى Bluetooth",
+            desc: "نحتاج إلى Bluetooth للاتصال بجهاز قريب يدعم هذه الخدمة."
+        },
+
+        nfc: {
+            title: "📳 استخدام NFC",
+            desc: "نحتاج إلى NFC لقراءة أو التفاعل مع بطاقة أو جهاز قريب."
+        },
+
+        download: {
+            title: "⬇️ تنزيل الملف",
+            desc: "سيتم حفظ الملف على جهازك ويمكنك الوصول إليه من مجلد التنزيلات."
+        },
+
+        upload: {
+            title: "📁 اختيار ملف",
+            desc: "اختر صورة أو ملفاً من جهازك لإرساله إلى الموقع."
+        },
+
+        share: {
+            title: "↗️ مشاركة",
+            desc: "سيتم فتح خيارات المشاركة الموجودة على جهازك."
+        },
+
+        contacts: {
+            title: "👤 الوصول إلى جهات الاتصال",
+            desc: "نحتاج إلى جهات الاتصال لتنفيذ العملية التي طلبتها."
+        },
+
+        cameraAndMicrophone: {
+            title: "🎥 الكاميرا والميكروفون",
+            desc: "هذه الصفحة تطلب استخدام الكاميرا والميكروفون. لن يتم تشغيلهما إلا بعد موافقتك."
+        }
+    };
+
+    // =========================================================
     // 🛡️ 2. PERMISSION INTELLIGENCE LAYER (نظام صلاحيات ذكي)
     // =========================================================
     const Permissions = {
@@ -201,6 +268,20 @@
                 e.preventDefault();
                 close(onCancel);
             };
+        },
+
+        showCapability: function (type, onAccept, onCancel) {
+
+            const config =
+                CapabilityCopy[type] ||
+                CapabilityCopy.camera;
+
+            this.showPrePermission({
+                title: config.title,
+                desc: config.desc,
+                onAccept: onAccept,
+                onCancel: onCancel
+            });
         },
 
         showPermissionHelp: function (type) {
@@ -303,7 +384,27 @@
                 return true;
 
             } catch (err) {
-                console.warn("Camera error:", err);
+
+                console.warn(
+                    "Camera error:",
+                    err
+                );
+
+                if (
+                    err &&
+                    (
+                        err.name === "NotAllowedError" ||
+                        err.name === "PermissionDeniedError"
+                    )
+                ) {
+
+                    Memory.setDenied("camera");
+
+                    UX.showPermissionHelp(
+                        "الكاميرا"
+                    );
+                }
+
                 return false;
             }
         },
@@ -367,7 +468,29 @@
                 return true;
 
             } catch (err) {
-                console.warn("Microphone error:", err);
+
+                console.warn(
+                    "Microphone error:",
+                    err
+                );
+
+                if (
+                    err &&
+                    (
+                        err.name === "NotAllowedError" ||
+                        err.name === "PermissionDeniedError"
+                    )
+                ) {
+
+                    Memory.setDenied(
+                        "microphone"
+                    );
+
+                    UX.showPermissionHelp(
+                        "الميكروفون"
+                    );
+                }
+
                 return false;
             }
         },
@@ -426,7 +549,7 @@
                 },
                 (error) => {
                     console.warn("📍 Location Denied/Failed:", error.message);
-                    if (error.message === "Permission denied") {
+                    if (error.code === 1) {
                         Memory.setDenied("location");
                         UX.showPermissionHelp("الموقع");
                     }
@@ -443,6 +566,19 @@
                 await navigator.share({ title, text, url });
                 return true;
             } catch (err) {
+
+                if (
+                    err &&
+                    err.name === "AbortError"
+                ) {
+                    return false;
+                }
+
+                console.warn(
+                    "Share failed:",
+                    err
+                );
+
                 return false;
             }
         },
@@ -459,76 +595,251 @@
     // 🧠 4. CONTEXT ANALYZER & EVENT BINDING (ربط العتاد بالـ DOM)
     // =========================================================
     const ContextBinder = {
+
         init: function () {
+
             const handleIntent = (e) => {
-                const target = e.target.closest('[data-nexus-action]');
-                if (!target) return;
 
-                if (e.type === 'touchstart') e.preventDefault();
+                const target =
+                    e.target.closest(
+                        '[data-nexus-action]'
+                    );
 
-                const action = target.getAttribute('data-nexus-action');
-               
+                if (!target) {
+                    return;
+                }
+
+                if (e.type === 'touchstart') {
+                    e.preventDefault();
+                }
+
+                const action =
+                    target.getAttribute(
+                        'data-nexus-action'
+                    );
+
+                // =====================================================
+                // CAMERA
+                // =====================================================
+
                 if (action === 'camera') {
-                    UX.showPrePermission({
-                        title: "📷 تفعيل الكاميرا",
-                        desc: "يرجى منح الإذن للوصول إلى الكاميرا",
-                        onAccept: () => Executor.openCamera()
-                    });
+
+                    UX.showCapability(
+                        "camera",
+                        () =>
+                            Executor.openCamera()
+                    );
+
                     return;
                 }
-               
+
+                // =====================================================
+                // MICROPHONE
+                // =====================================================
+
                 if (action === 'microphone') {
-                    UX.showPrePermission({
-                        title: "🎤 تفعيل الميكروفون",
-                        desc: "يرجى منح الإذن للوصول إلى الميكروفون",
-                        onAccept: () => Executor.openMicrophone()
-                    });
+
+                    UX.showCapability(
+                        "microphone",
+                        () =>
+                            Executor.openMicrophone()
+                    );
+
                     return;
                 }
-               
+
+                // =====================================================
+                // CAMERA + MICROPHONE
+                // =====================================================
+
+                if (
+                    action ===
+                    'camera-microphone'
+                ) {
+
+                    UX.showCapability(
+                        "cameraAndMicrophone",
+                        async () => {
+
+                            try {
+
+                                await navigator.mediaDevices
+                                    .getUserMedia({
+                                        video: true,
+                                        audio: true
+                                    });
+
+                            } catch (error) {
+
+                                console.warn(
+                                    "Camera/Microphone error:",
+                                    error
+                                );
+                            }
+                        }
+                    );
+
+                    return;
+                }
+
+                // =====================================================
+                // BIOMETRIC
+                // =====================================================
+
                 if (action === 'biometric') {
-                    UX.showPrePermission({
-                        title: "🔐 تفعيل البصمة",
-                        desc: "يرجى الموافقة على تفعيل بصمة الجهاز للأمان",
-                        onAccept: () => Executor.startBiometric()
-                    });
+
+                    UX.showCapability(
+                        "biometric",
+                        () =>
+                            Executor.startBiometric()
+                    );
+
                     return;
                 }
-               
-                if (action === 'share') {
-                    const urlToShare = target.getAttribute('data-url') || window.location.href;
-                    const titleToShare = target.getAttribute('data-title') || document.title;
-                    Executor.shareContent(titleToShare, "", urlToShare);
-                    return;
-                }
-               
+
+                // =====================================================
+                // LOCATION
+                // =====================================================
+
                 if (action === 'location') {
-                    UX.showPrePermission({
-                        title: "📍 تحديد الموقع",
-                        desc: "يرجى السماح بالوصول إلى موقعك",
-                        onAccept: () => {
-                            const originalText = target.innerText;
+
+                    UX.showCapability(
+                        "location",
+                        () => {
+
+                            const originalText =
+                                target.innerText;
+
                             target.disabled = true;
-                            target.innerText = "جاري...";
-                           
+                            target.innerText =
+                                "جاري...";
+
                             Executor.requestLocation(
+
                                 (coords) => {
-                                    target.innerText = "تم التحديد ✓";
-                                    target.disabled = false;
+
+                                    target.innerText =
+                                        "تم التحديد ✓";
+
+                                    target.disabled =
+                                        false;
+
+                                    window.dispatchEvent(
+                                        new CustomEvent(
+                                            'nexus:location-ready',
+                                            {
+                                                detail: {
+                                                    latitude:
+                                                        coords.latitude,
+
+                                                    longitude:
+                                                        coords.longitude,
+
+                                                    accuracy:
+                                                        coords.accuracy
+                                                }
+                                            }
+                                        )
+                                    );
                                 },
-                                (err) => {
-                                    target.innerText = originalText;
-                                    target.disabled = false;
+
+                                () => {
+
+                                    target.innerText =
+                                        originalText;
+
+                                    target.disabled =
+                                        false;
                                 }
                             );
                         }
-                    });
+                    );
+
+                    return;
+                }
+
+                // =====================================================
+                // SHARE
+                // =====================================================
+
+                if (action === 'share') {
+
+                    const urlToShare =
+                        target.getAttribute(
+                            'data-url'
+                        ) ||
+                        window.location.href;
+
+                    const titleToShare =
+                        target.getAttribute(
+                            'data-title'
+                        ) ||
+                        document.title;
+
+                    UX.showCapability(
+                        "share",
+                        () =>
+                            Executor.shareContent(
+                                titleToShare,
+                                "",
+                                urlToShare
+                            )
+                    );
+
+                    return;
+                }
+
+                // =====================================================
+                // DOWNLOAD
+                // =====================================================
+
+                if (action === 'download') {
+
+                    const url =
+                        target.getAttribute(
+                            'data-url'
+                        );
+
+                    const filename =
+                        target.getAttribute(
+                            'data-filename'
+                        ) ||
+                        "الملف";
+
+                    UX.showCapability(
+                        "download",
+                        () => {
+
+                            window.dispatchEvent(
+                                new CustomEvent(
+                                    'nexus:download-confirmed',
+                                    {
+                                        detail: {
+                                            url,
+                                            filename
+                                        }
+                                    }
+                                )
+                            );
+                        }
+                    );
+
                     return;
                 }
             };
 
-            document.addEventListener('touchstart', handleIntent, { passive: false });
-            document.addEventListener('click', handleIntent);
+            document.addEventListener(
+                'touchstart',
+                handleIntent,
+                {
+                    passive: false
+                }
+            );
+
+            document.addEventListener(
+                'click',
+                handleIntent
+            );
         }
     };
 
