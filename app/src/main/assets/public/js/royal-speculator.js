@@ -27,9 +27,9 @@
 
     const ROOT_MARGIN = '300px 0px 300px 0px';
 
-    const MAX_VISIBLE_PREDICTIONS = 3;
+    const MAX_VISIBLE_PREDICTIONS = 8;
 
-    const VISIBILITY_COOLDOWN = 1500;
+    const VISIBILITY_COOLDOWN = 2000;
 
     const SENSITIVE_SEGMENTS = [
         '/cart',
@@ -261,6 +261,11 @@
         );
 
         state.visiblePredictions++;
+
+        /* 🟢 تحرير سعة الجافاسكريبت تلقائياً بعد ثانيتين لاستقبال روابط جديدة */
+        setTimeout(function () {
+            state.visiblePredictions = Math.max(0, state.visiblePredictions - 1);
+        }, VISIBILITY_COOLDOWN);
 
         try {
 
