@@ -1,151 +1,414 @@
 /**
  * =========================================================
- * 🔮 ROYAL SPECULATION ENGINE (V5 - Wasm Delegator)
+ * 🔮 ROYAL SPECULATOR V7
+ * Native Visibility Sensor
  * =========================================================
- * Architecture: Complete Delegation to C++ RoyalCoreEngine.
- * No JS Memory arrays, no JS math. Pure Wasm execution.
+ *
+ * JS responsibilities:
+ *  - Observe links entering the predictive viewport.
+ *  - Filter unsafe/sensitive routes.
+ *  - Send eligible URLs to RoyalJsBridge.
+ *
+ * Native responsibilities:
+ *  - Final origin validation.
+ *  - Preconnect.
+ *  - Chromium prerender.
+ *
+ * No:
+ *  - RoyalWasm
+ *  - speculationrules
+ *  - eagerness: immediate
+ *  - scroll manipulation
+ *  - requestAnimationFrame
  */
 
 (function () {
     'use strict';
 
-    /**
-     * 👑 حقن قواعد Speculation Rules API للـ Prerendering الفوري عبر محرك Chromium
-     */
-    function injectNativePrerender(url) {
-        if (!HTMLScriptElement.supports || !HTMLScriptElement.supports('speculationrules')) {
+    const ROOT_MARGIN = '300px 0px 300px 0px';
+
+    const MAX_VISIBLE_PREDICTIONS = 3;
+
+    const VISIBILITY_COOLDOWN = 1500;
+
+    const SENSITIVE_SEGMENTS = [
+        '/cart',
+        '/checkout',
+        '/login',
+        '/logout',
+        '/account',
+        '/register',
+        '/signup',
+        '/sign-up',
+        '/signin',
+        '/sign-in',
+        '/password',
+        '/reset-password',
+        '/forgot-password',
+        '/verify',
+        '/verification',
+        '/payment',
+        '/payments',
+        '/order',
+        '/orders',
+        '/wishlist',
+        '/favorites',
+        '/compare',
+        '/admin',
+        '/dashboard'
+    ];
+
+    const SENSITIVE_QUERY_KEYS = [
+        'token',
+        'access_token',
+        'refresh_token',
+        'auth',
+        'authorization',
+        'session',
+        'session_id',
+        'checkout',
+        'payment',
+        'code'
+    ];
+
+    const state = {
+        predicted = new Map(),
+        visiblePredictions = 0
+    };
+
+    function normalizeUrl(url) {
+        try {
+            const parsed = new URL(
+                url,
+                window.location.href
+            );
+
+            if (
+                parsed.protocol !== 'https:' &&
+                parsed.protocol !== 'http:'
+            ) {
+                return null;
+            }
+
+            parsed.hash = '';
+
+            return parsed.href;
+
+        } catch (_) {
+            return null;
+        }
+    }
+
+    function isSensitiveUrl(url) {
+        try {
+            const parsed = new URL(
+                url,
+                window.location.href
+            );
+
+            const path =
+                parsed.pathname
+                    .toLowerCase()
+                    .replace(/\/+/g, '/')
+                    .replace(/\/$/, '');
+
+            for (
+                let i = 0;
+                i < SENSITIVE_SEGMENTS.length;
+                i++
+            ) {
+                const segment =
+                    SENSITIVE_SEGMENTS[i];
+
+                if (
+                    path === segment ||
+                    path.startsWith(segment + '/')
+                ) {
+                    return true;
+                }
+            }
+
+            const params =
+                parsed.searchParams;
+
+            for (
+                let i = 0;
+                i < SENSITIVE_QUERY_KEYS.length;
+                i++
+            ) {
+                if (
+                    params.has(
+                        SENSITIVE_QUERY_KEYS[i]
+                    )
+                ) {
+                    return true;
+                }
+            }
+
+            return false;
+
+        } catch (_) {
+            return true;
+        }
+    }
+
+    function isEligibleLink(link) {
+        if (
+            !link ||
+            !link.href
+        ) {
             return false;
         }
 
-        // تجنب تكرار الحقن لنفس الرابط
-        if (document.querySelector(`script[data-royal-prerender="${url}"]`)) return true;
+        if (
+            link.hasAttribute('download') ||
+            link.hasAttribute('data-no-prefetch') ||
+            link.hasAttribute('data-no-prerender')
+        ) {
+            return false;
+        }
 
-        const specScript = document.createElement('script');
-        specScript.type = 'speculationrules';
-        specScript.setAttribute('data-royal-prerender', url);
-        specScript.textContent = JSON.stringify({
-            prerender: [{
-                source: "list",
-                urls: [url],
-                eagerness: "immediate"
-            }]
-        });
+        const target =
+            (
+                link.getAttribute('target') ||
+                ''
+            ).toLowerCase();
 
-        document.head.appendChild(specScript);
-        console.log(`👑 [Royal Speculator] Immediate Prerender Injected: ${url}`);
-        return true;
+        if (
+            target &&
+            target !== '_self'
+        ) {
+            return false;
+        }
+
+        const url =
+            normalizeUrl(link.href);
+
+        if (!url) {
+            return false;
+        }
+
+        if (isSensitiveUrl(url)) {
+            return false;
+        }
+
+        try {
+            const parsed =
+                new URL(url);
+
+            /*
+             * JS يمنع التنبؤ بالروابط الخارجية.
+             * Native يعيد فحص origin كطبقة أمان ثانية.
+             */
+            if (
+                parsed.origin !==
+                window.location.origin
+            ) {
+                return false;
+            }
+
+        } catch (_) {
+            return false;
+        }
+
+        return url;
     }
 
-    /**
-     * 🎯 دالة التوجيه المعدلة (تضمن الرندر المسبق الكامل)
-     */
-    function delegateToWasm(url) {
-        // 1. تفعيل الرندر المسبق الشبه كامل للصفحة فوراً (0ms Instant Render)
-        injectNativePrerender(url);
+    function sendToNative(link) {
 
-        // 2. تفويض محرك Wasm C++ لإدارة حسابات الأولوية وتخفيف الذاكرة
-        if (window.RoyalWasm && window.RoyalWasm.core && window.RoyalWasm.intel) {
-            let isEligible = window.RoyalWasm.core.evaluate_speculation(url);
-            if (isEligible) {
-                window.RoyalWasm.intel.inject_speculation_atomic(url);
-            }
+        if (
+            state.visiblePredictions >=
+            MAX_VISIBLE_PREDICTIONS
+        ) {
+            return;
+        }
+
+        const url =
+            isEligibleLink(link);
+
+        if (!url) {
+            return;
+        }
+
+        const now =
+            Date.now();
+
+        const previous =
+            state.predicted.get(url);
+
+        if (
+            previous &&
+            now - previous <
+            VISIBILITY_COOLDOWN
+        ) {
+            return;
+        }
+
+        const bridge =
+            window.RoyalJsBridge;
+
+        if (
+            !bridge ||
+            typeof bridge.predict !==
+                'function'
+        ) {
+            return;
+        }
+
+        state.predicted.set(
+            url,
+            now
+        );
+
+        state.visiblePredictions++;
+
+        try {
+
+            bridge.predict(url);
+
+            link.setAttribute(
+                'data-royal-visible',
+                'true'
+            );
+
+        } catch (_) {
+
+            state.visiblePredictions =
+                Math.max(
+                    0,
+                    state.visiblePredictions - 1
+                );
         }
     }
 
-    // =========================================================
-    // 🟢 VIEWPORT SENSOR (مجرد مستشعر دخول/خروج الشاشة)
-    // =========================================================
     const ViewportPredictor = {
-        init: function () {
-            const observer = new IntersectionObserver((entries) => {
-                entries.forEach(entry => {
-                    const el = entry.target;
-                    
-                    if (entry.isIntersecting) {
-                        if (el.tagName === 'A' && el.href) delegateToWasm(el.href);
-                    } else {
-                        // 🧹 إرسال أمر تنظيف الذاكرة للـ C++ عند خروج الرابط
-                        if (el.tagName === 'A' && el.href && window.RoyalWasm) {
-                            window.RoyalWasm.core.remove_speculation(el.href);
-                        }
-                    }
-                });
-            }, { rootMargin: "400px" });
 
-            this.scanDOM = function () {
-                document.querySelectorAll('a[href]:not([data-royal-warmed])').forEach(el => {
-                    el.setAttribute('data-royal-warmed', 'true');
-                    observer.observe(el);
-                });
-            };
+        init: function () {
+
+            const observer =
+                new IntersectionObserver(
+                    function (entries) {
+
+                        entries.forEach(
+                            function (entry) {
+
+                                if (
+                                    !entry.isIntersecting
+                                ) {
+                                    return;
+                                }
+
+                                const element =
+                                    entry.target;
+
+                                if (
+                                    element.tagName !==
+                                    'A'
+                                ) {
+                                    return;
+                                }
+
+                                sendToNative(
+                                    element
+                                );
+                            }
+                        );
+                    },
+                    {
+                        root: null,
+                        rootMargin:
+                            ROOT_MARGIN,
+                        threshold: 0
+                    }
+                );
+
+            this.scanDOM =
+                function () {
+
+                    const links =
+                        document.querySelectorAll(
+                            'a[href]:not([data-royal-observed])'
+                        );
+
+                    links.forEach(
+                        function (link) {
+
+                            if (
+                                !isEligibleLink(
+                                    link
+                                )
+                            ) {
+                                link.setAttribute(
+                                    'data-royal-observed',
+                                    'true'
+                                );
+
+                                return;
+                            }
+
+                            link.setAttribute(
+                                'data-royal-observed',
+                                'true'
+                            );
+
+                            observer.observe(
+                                link
+                            );
+                        }
+                    );
+                };
 
             this.scanDOM();
-            
-            let scanScheduled = false;
-            const mutationObserver = new MutationObserver(() => {
-                if (scanScheduled) return;
-                scanScheduled = true;
-                setTimeout(() => {
-                    scanScheduled = false;
-                    this.scanDOM();
-                }, 200);
-            });
-            mutationObserver.observe(document.body, { childList: true, subtree: true });
-        }
-    };
 
-    // =========================================================
-    // 🟠 NAVIGATION VELOCITY SENSOR (مستشعر سرعة السكرول)
-    // =========================================================
-    const NavigationPredictor = {
-        init: function () {
-            let lastY = window.scrollY;
-            let lastTime = performance.now();
-            let ticking = false;
+            let scanTimer = null;
 
-            document.addEventListener('scroll', () => {
-                if (!ticking) {
-                    window.requestAnimationFrame(() => {
-                        const currentY = window.scrollY;
-                        const currentTime = performance.now();
-                        const deltaTime = currentTime - lastTime;
-                        
-                        // 🧠 تفويض حساب السرعة والقرار للـ C++
-                        if (window.RoyalWasm && window.RoyalWasm.core) {
-                            let shouldPredictAhead = window.RoyalWasm.core.analyze_scroll_velocity(currentY, lastY, deltaTime);
-                            
-                            if (shouldPredictAhead) {
-                                this.predictAhead();
-                            }
+            const mutationObserver =
+                new MutationObserver(
+                    function () {
+
+                        if (scanTimer !== null) {
+                            return;
                         }
 
-                        lastY = currentY;
-                        lastTime = currentTime;
-                        ticking = false;
-                    });
-                    ticking = true;
-                }
-            }, { passive: true });
-        },
+                        scanTimer =
+                            setTimeout(
+                                function () {
 
-        predictAhead: function () {
-            const links = document.querySelectorAll('a[href]:not([data-royal-warmed])');
-            let warmedCount = 0;
-            for (let i = 0; i < links.length && warmedCount < 2; i++) {
-                if (links[i].href) {
-                    delegateToWasm(links[i].href);
-                    links[i].setAttribute('data-royal-warmed', 'true');
-                    warmedCount++;
-                }
+                                    scanTimer =
+                                        null;
+
+                                    ViewportPredictor
+                                        .scanDOM();
+
+                                },
+                                250
+                            );
+                    }
+                );
+
+            if (document.body) {
+                mutationObserver.observe(
+                    document.body,
+                    {
+                        childList: true,
+                        subtree: true
+                    }
+                );
             }
         }
     };
 
     function startEngine() {
+
         ViewportPredictor.init();
-        NavigationPredictor.init();
-        console.log(`🔮 ROYAL SPECULATION V5: Sensors active, delegating decisions to Wasm Core.`);
+
+        console.log(
+            '🔮 ROYAL SPECULATOR V7: Native Visibility Sensor Active'
+        );
     }
 
-    window.RoyalSpeculator = { init: startEngine };
+    window.RoyalSpeculator = {
+        init: startEngine
+    };
+
 })();
