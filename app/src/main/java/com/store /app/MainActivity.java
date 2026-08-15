@@ -50,6 +50,7 @@ public class MainActivity extends AppCompatActivity {
     private boolean visualStateReady = false;
 
     private WebEngineManager engineManager;
+    private RoyalCapabilitiesEngine capabilitiesEngine; // ✅ إضافة تعريف المحرك
     private WebView activeWebView;
     private ProgressBar progressBar;
 
@@ -207,6 +208,9 @@ public class MainActivity extends AppCompatActivity {
                 () -> splashRemoved = true,
                 () -> splashRemoved
         );
+
+        // ✅ ربط المحرك
+        capabilitiesEngine = engineManager.getCapabilitiesHandler();
 
         // 🔗 ربط الـ Bridge بعد اكتمال WebEngineManager
         RoyalWebViewHost.bindEngineManager(engineManager);
@@ -376,6 +380,11 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onDestroy() {
 
+        // ✅ إضافة التدمير للمحرك كأولوية
+        if (capabilitiesEngine != null) {
+            capabilitiesEngine.destroy();
+        }
+
         mainHandler.removeCallbacksAndMessages(null);
 
         if (activeWebView != null) {
@@ -456,17 +465,20 @@ public class MainActivity extends AppCompatActivity {
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
 
-        // 🔥 معالجة اختيار الملفات (رفع الصور)
+        // ✅ إضافة ربط الخبير للمحرك
+        if (capabilitiesEngine != null) {
+            capabilitiesEngine.handleActivityResult(requestCode, resultCode, data);
+        }
+
+        // 🔥 معالجة اختيار الملفات (منطقك القائم)
         if (requestCode == RoyalCapabilitiesEngine.FILECHOOSER_RESULTCODE) {
             if (RoyalCapabilitiesEngine.filePathCallback == null) return;
 
             Uri[] results = null;
-
             if (resultCode == android.app.Activity.RESULT_OK) {
                 if (data != null) {
                     String dataString = data.getDataString();
                     android.content.ClipData clipData = data.getClipData();
-
                     if (clipData != null) {
                         results = new Uri[clipData.getItemCount()];
                         for (int i = 0; i < clipData.getItemCount(); i++) {
@@ -477,7 +489,6 @@ public class MainActivity extends AppCompatActivity {
                     }
                 }
             }
-
             RoyalCapabilitiesEngine.filePathCallback.onReceiveValue(results);
             RoyalCapabilitiesEngine.filePathCallback = null;
             return;
@@ -521,14 +532,9 @@ public class MainActivity extends AppCompatActivity {
                 grantResults
         );
 
-        if (engineManager != null
-                && engineManager.getCapabilitiesHandler() != null) {
-
-            engineManager.getCapabilitiesHandler()
-                    .handlePermissionResult(
-                            requestCode,
-                            grantResults
-                    );
+        // ✅ التعديل الجراحي الموصى به
+        if (capabilitiesEngine != null) {
+            capabilitiesEngine.handlePermissionResult(requestCode, permissions, grantResults);
         }
     }
-            }
+    }
