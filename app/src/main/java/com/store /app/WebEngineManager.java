@@ -61,10 +61,18 @@ public class WebEngineManager {
     // =========================================================
     private Profile webProfile = null;
     private boolean speculativeLoadingReady = false;
-    private static final int MAX_SPECULATIVE_URLS = 32;
-    private final Set<String> speculativeUrls = new HashSet<>();
+
+    private static final int MAX_SPECULATIVE_URLS = 8;
+
+    private final Set<String> speculativeUrls =
+            new HashSet<>();
+
     private CancellationSignal activePrerenderCancellationSignal = null;
     private String activePrerenderUrl = null;
+
+    private long lastPredictionTime = 0L;
+
+    private static final long PREDICTION_COOLDOWN_MS = 350L;
 
     public interface SplashStateChecker {
         boolean isRemoved();
@@ -96,38 +104,71 @@ public class WebEngineManager {
     // =========================================================
     private void initializeSpeculativeLoading() {
 
-        if (activity == null) return;
+        if (activity == null) {
+            return;
+        }
 
         activity.runOnUiThread(() -> {
+
             try {
+
                 if (!WebViewFeature.isFeatureSupported(
                         WebViewFeature.MULTI_PROFILE)) {
 
-                    Log.w(TAG,
-                            "⚠️ MULTI_PROFILE not supported; speculative profile unavailable.");
+                    Log.w(
+                            TAG,
+                            "⚠️ MULTI_PROFILE not supported."
+                    );
 
                     speculativeLoadingReady = false;
                     return;
                 }
 
-                webProfile = ProfileStore
-                        .getInstance()
-                        .getOrCreateProfile(Profile.DEFAULT_PROFILE_NAME);
+                webProfile =
+                        ProfileStore
+                                .getInstance()
+                                .getOrCreateProfile(
+                                        Profile.DEFAULT_PROFILE_NAME
+                                );
 
                 speculativeLoadingReady =
                         webProfile != null;
 
                 if (speculativeLoadingReady) {
-                    Log.i(TAG,
-                            "⚡ Native speculative loading ready.");
+
+                    /*
+                     * تسخين Renderer نفسه إن كان مدعوماً.
+                     * لا علاقة له بالسكرول ولا يتدخل في مسار اللمس.
+                     */
+                    if (WebViewFeature.isFeatureSupported(
+                            WebViewFeature.WARM_UP_RENDERER_PROCESS)) {
+
+                        try {
+                            webProfile.warmUpRendererProcess();
+                        } catch (Throwable warmupError) {
+                            Log.w(
+                                    TAG,
+                                    "⚠️ Renderer warm-up unavailable.",
+                                    warmupError
+                            );
+                        }
+                    }
+
+                    Log.i(
+                            TAG,
+                            "⚡ Native Chromium speculative engine ready."
+                    );
                 }
 
             } catch (Throwable e) {
+
                 speculativeLoadingReady = false;
 
-                Log.e(TAG,
-                        "❌ Failed to initialize WebView Profile.",
-                        e);
+                Log.e(
+                        TAG,
+                        "❌ Failed to initialize Chromium Profile.",
+                        e
+                );
             }
         });
     }
@@ -286,7 +327,12 @@ public class WebEngineManager {
     // =========================================================
     public void predict(String url) {
 
-        if (activity == null || url == null) {
+        if (
+                activity == null ||
+                webView == null ||
+                url == null ||
+                url.isEmpty()
+        ) {
             return;
         }
 
@@ -296,6 +342,10 @@ public class WebEngineManager {
 
                 Uri uri = Uri.parse(url);
 
+                /*
+                 * طبقة الأمان النهائية Native.
+                 * لا نعتمد على فلتر JavaScript وحده.
+                 */
                 if (!isSafePredictionUrl(uri)) {
                     return;
                 }
@@ -303,38 +353,76 @@ public class WebEngineManager {
                 String normalizedUrl =
                         uri.toString();
 
-                // منع تكرار نفس التنبؤ
-                if (speculativeUrls.contains(normalizedUrl)) {
+                /*
+                 * منع إعادة تسخين الرابط نفسه.
+                 */
+                if (speculativeUrls.contains(
+                        normalizedUrl)) {
                     return;
                 }
 
-                if (speculativeUrls.size() >= MAX_SPECULATIVE_URLS) {
+                /*
+                 * حماية Chromium من استقبال bursts
+                 * كبيرة من طلبات prerender.
+                 */
+                long now =
+                        android.os.SystemClock
+                                .uptimeMillis();
 
-                    Log.d(
-                            TAG,
-                            "🧹 Speculative URL budget reached; clearing stale predictions."
-                    );
+                if (
+                        now - lastPredictionTime <
+                        PREDICTION_COOLDOWN_MS
+                ) {
+                    return;
+                }
+
+                lastPredictionTime = now;
+
+                /*
+                 * Budget صغير ومقصود.
+                 */
+                if (
+                        speculativeUrls.size() >=
+                        MAX_SPECULATIVE_URLS
+                ) {
 
                     speculativeUrls.clear();
                 }
 
-                speculativeUrls.add(normalizedUrl);
+                speculativeUrls.add(
+                        normalizedUrl
+                );
 
-                Log.d(TAG,
-                        "🧠 High-confidence prediction: "
-                                + normalizedUrl);
+                Log.d(
+                        TAG,
+                        "🧠 Native prediction accepted: "
+                                + normalizedUrl
+                );
 
-                // 1️⃣ افتح DNS/TCP/TLS مبكراً
-                preconnectOrigin(normalizedUrl);
+                /*
+                 * المرحلة الأولى:
+                 * DNS + TCP + TLS.
+                 */
+                preconnectOrigin(
+                        normalizedUrl
+                );
 
-                // 2️⃣ جهّز الصفحة في Chromium
-                startPrerender(normalizedUrl);
+                /*
+                 * المرحلة الثانية:
+                 * Chromium prerender.
+                 */
+                startPrerender(
+                        normalizedUrl
+                );
 
             } catch (Throwable e) {
 
-                Log.w(TAG,
-                        "Prediction failed: " + url,
-                        e);
+                Log.w(
+                        TAG,
+                        "⚠️ Native prediction failed: "
+                                + url,
+                        e
+                );
             }
         });
     }
@@ -372,16 +460,23 @@ public class WebEngineManager {
 
     private void startPrerender(String url) {
 
-        if (activity == null || webView == null || url == null) {
+        if (
+                activity == null ||
+                webView == null ||
+                url == null
+        ) {
             return;
         }
 
-        if (!WebViewFeature.isFeatureSupported(
-                WebViewFeature.PRERENDER_WITH_URL)) {
+        if (
+                !WebViewFeature.isFeatureSupported(
+                        WebViewFeature.PRERENDER_WITH_URL
+                )
+        ) {
 
-            Log.w(
+            Log.d(
                     TAG,
-                    "⚠️ PRERENDER_WITH_URL not supported."
+                    "ℹ️ Chromium prerender unavailable."
             );
 
             return;
@@ -389,35 +484,21 @@ public class WebEngineManager {
 
         try {
 
-            // =====================================================
-            // 🛑 إلغاء عملية الـ prerender السابقة
-            // =====================================================
+            /*
+             * لا نسمح بأكثر من prerender نشط
+             * حتى لا يتحول التنبؤ إلى استنزاف للذاكرة.
+             */
+            cancelActivePrerender();
 
-            if (activePrerenderCancellationSignal != null) {
-
-                activePrerenderCancellationSignal.cancel();
-
-                Log.d(
-                        TAG,
-                        "🛑 Previous prerender cancelled: "
-                                + activePrerenderUrl
-                );
-
-                activePrerenderCancellationSignal = null;
-                activePrerenderUrl = null;
-            }
-
-            // =====================================================
-            // 🚀 إنشاء عملية جديدة
-            // =====================================================
-
-            CancellationSignal cancellationSignal =
+            CancellationSignal
+                    cancellationSignal =
                     new CancellationSignal();
 
             activePrerenderCancellationSignal =
                     cancellationSignal;
 
-            activePrerenderUrl = url;
+            activePrerenderUrl =
+                    url;
 
             WebViewCompat.prerenderUrlAsync(
                     webView,
@@ -432,26 +513,48 @@ public class WebEngineManager {
 
                             Log.d(
                                     TAG,
-                                    "🚀 Prerender activated: " + url
+                                    "🚀 Chromium prerender activated: "
+                                            + url
                             );
+
+                            if (
+                                    url.equals(
+                                            activePrerenderUrl
+                                    )
+                            ) {
+
+                                activePrerenderCancellationSignal =
+                                        null;
+
+                                activePrerenderUrl =
+                                        null;
+                            }
                         }
 
                         @Override
                         public void onError(
-                                @NonNull PrerenderException exception) {
+                                @NonNull
+                                PrerenderException exception) {
 
-                            Log.w(
+                            Log.d(
                                     TAG,
-                                    "⚠️ Prerender rejected: "
+                                    "ℹ️ Chromium prerender unavailable/rejected: "
                                             + url
                                             + " error="
-                                            + exception.getMessage(),
-                                    exception
+                                            + exception.getMessage()
                             );
 
-                            if (url.equals(activePrerenderUrl)) {
-                                activePrerenderCancellationSignal = null;
-                                activePrerenderUrl = null;
+                            if (
+                                    url.equals(
+                                            activePrerenderUrl
+                                    )
+                            ) {
+
+                                activePrerenderCancellationSignal =
+                                        null;
+
+                                activePrerenderUrl =
+                                        null;
                             }
                         }
                     }
@@ -459,7 +562,7 @@ public class WebEngineManager {
 
             Log.d(
                     TAG,
-                    "🚀 Prerender started: "
+                    "🚀 Chromium prerender requested: "
                             + url
             );
 
@@ -467,15 +570,22 @@ public class WebEngineManager {
 
             Log.w(
                     TAG,
-                    "❌ Prerender failed: "
+                    "⚠️ Chromium prerender failed: "
                             + url,
                     e
             );
 
-            if (url.equals(activePrerenderUrl)) {
+            if (
+                    url.equals(
+                            activePrerenderUrl
+                    )
+            ) {
 
-                activePrerenderCancellationSignal = null;
-                activePrerenderUrl = null;
+                activePrerenderCancellationSignal =
+                        null;
+
+                activePrerenderUrl =
+                        null;
             }
         }
     }
@@ -619,60 +729,89 @@ public class WebEngineManager {
     // =========================================================
 
     private void configureSettings() {
-        WebSettings settings = webView.getSettings();
 
-        settings.setEnableSmoothTransition(true); 
-        
-        // 🔥 تعديل OffscreenPreRaster إلى false
+        WebSettings settings =
+                webView.getSettings();
+
+        /*
+         * =====================================================
+         * 🚀 NATIVE COMPOSITOR SCROLL
+         * =====================================================
+         *
+         * لا LayerType يدوي.
+         * لا scroll animation من التطبيق.
+         * لا JS scroll interception.
+         */
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             settings.setOffscreenPreRaster(false);
         }
 
-        // 🔥 تم حذف webView.setLayerType(View.LAYER_TYPE_HARDWARE, null);
-        
-        // 🔥 تعديل LayoutAlgorithm إلى NORMAL
-        settings.setLayoutAlgorithm(WebSettings.LayoutAlgorithm.NORMAL);
+        settings.setLayoutAlgorithm(
+                WebSettings.LayoutAlgorithm.NORMAL
+        );
+
+        webView.setOverScrollMode(
+                View.OVER_SCROLL_NEVER
+        );
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            webView.setForceDarkAllowed(false);
             webView.setVerticalScrollbarThumbDrawable(null);
         }
 
-        webView.setOverScrollMode(View.OVER_SCROLL_NEVER);
+        /*
+         * =====================================================
+         * WebView Core
+         * =====================================================
+         */
 
-        // =========================================================
-        // 🔥 تم حذف كتلة AlgorithmicDarkening وتم الإبقاء على ForceDarkAllowed فقط
-        // =========================================================
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            webView.setForceDarkAllowed(false);
-        }
-
-        // =========================================================
-        // 🔥 إعدادات JavaScript و DOM و Database (بدون تكرار)
-        // =========================================================
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(true);
         settings.setDatabaseEnabled(true);
 
-        settings.setCacheMode(WebSettings.LOAD_DEFAULT);
+        settings.setCacheMode(
+                WebSettings.LOAD_DEFAULT
+        );
+
         settings.setSafeBrowsingEnabled(true);
+
         settings.setAllowFileAccess(true);
         settings.setAllowContentAccess(true);
 
         settings.setAllowUniversalAccessFromFileURLs(false);
         settings.setAllowFileAccessFromFileURLs(false);
-        
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1) {
-            settings.setMediaPlaybackRequiresUserGesture(false);
+
+        if (
+                Build.VERSION.SDK_INT >=
+                Build.VERSION_CODES.JELLY_BEAN_MR1
+        ) {
+            settings.setMediaPlaybackRequiresUserGesture(
+                    false
+            );
         }
 
-        settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
+        settings.setMixedContentMode(
+                WebSettings.MIXED_CONTENT_NEVER_ALLOW
+        );
+
         settings.setSupportMultipleWindows(false);
         settings.setSupportZoom(false);
 
-        CookieManager cookieManager = CookieManager.getInstance();
+        CookieManager cookieManager =
+                CookieManager.getInstance();
+
         cookieManager.setAcceptCookie(true);
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            cookieManager.setAcceptThirdPartyCookies(webView, true);
+
+        if (
+                Build.VERSION.SDK_INT >=
+                Build.VERSION_CODES.LOLLIPOP
+        ) {
+
+            cookieManager.setAcceptThirdPartyCookies(
+                    webView,
+                    true
+            );
         }
     }
 
@@ -845,56 +984,7 @@ public class WebEngineManager {
                     return new WebResourceResponse("application/javascript", "UTF-8", stubStream);
                 }
 
-                if (url.endsWith("/royal_nucleus.js")) {
-                    try {
-                        java.io.InputStream jsStream = context.getAssets().open("public/js/royal_nucleus.js");
-                        java.util.Map<String, String> headers = new java.util.HashMap<>();
-                        headers.put("Content-Type", "application/javascript");
-                        headers.put("Access-Control-Allow-Origin", "*");
-                        
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                            return new WebResourceResponse("application/javascript", "UTF-8", 200, "OK", headers, jsStream);
-                        } else {
-                            return new WebResourceResponse("application/javascript", "UTF-8", jsStream);
-                        }
-                    } catch (Exception e) {
-                        android.util.Log.e("RoyalEngine", "❌ FATAL: Failed to serve local JS Core!", e);
-                    }
-                }
-
-                if (url.endsWith("/nexus-worker.js") || url.contains("nexus-worker.js")) {
-                    try {
-                        java.io.InputStream workerStream = context.getAssets().open("public/js/nexus-worker.js");
-                        java.util.Map<String, String> headers = new java.util.HashMap<>();
-                        headers.put("Content-Type", "application/javascript");
-                        headers.put("Access-Control-Allow-Origin", "*");
-                        
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                            return new WebResourceResponse("application/javascript", "UTF-8", 200, "OK", headers, workerStream);
-                        } else {
-                            return new WebResourceResponse("application/javascript", "UTF-8", workerStream);
-                        }
-                    } catch (Exception e) {
-                        android.util.Log.e("RoyalEngine", "❌ FATAL: Failed to serve local Nexus Worker Core!", e);
-                    }
-                }
-
-                if (url.endsWith("/royal_nucleus.wasm")) {
-                    try {
-                        java.io.InputStream wasmStream = context.getAssets().open("public/js/royal_nucleus.wasm");
-                        java.util.Map<String, String> headers = new java.util.HashMap<>();
-                        headers.put("Content-Type", "application/wasm");
-                        headers.put("Access-Control-Allow-Origin", "*");
-                        
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                            return new WebResourceResponse("application/wasm", null, 200, "OK", headers, wasmStream);
-                        } else {
-                            return new WebResourceResponse("application/wasm", null, wasmStream);
-                        }
-                    } catch (Exception e) {
-                        android.util.Log.e("RoyalEngine", "❌ FATAL: Failed to serve local WASM Core!", e);
-                    }
-                }
+                // تم حذف كتل royal_nucleus.js و nexus-worker.js و royal_nucleus.wasm
 
                 if (url.endsWith("/nexus-service-worker.js")) {
                     try {
@@ -902,7 +992,7 @@ public class WebEngineManager {
                         java.util.Map<String, String> headers = new java.util.HashMap<>();
                         headers.put("Content-Type", "application/javascript");
                         headers.put("Service-Worker-Allowed", "/");
-                        headers.put("Cache-Control", "no-cache"); 
+                        headers.put("Cache-Control", "no-cache");
 
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
                             return new WebResourceResponse("application/javascript", "UTF-8", 200, "OK", headers, swStream);
@@ -917,7 +1007,7 @@ public class WebEngineManager {
                 // ✅ الكود الجديد: حماية السجل وتفعيل الأوفلاين النيتيف
                 if (!NetworkMonitor.isInternetAvailable(context) && request.isForMainFrame()) {
                     Log.i(TAG, "📴 Offline main-frame request intercepted. Triggering Native Offline UI.");
-                    
+
                     // إبلاغ مدير الأوفلاين لإظهار الواجهة النيتيف فوراً (OfflineUIController)
                     OfflineStateManager.getInstance().setErrorPage(true, request.getUrl().toString());
 
@@ -1251,4 +1341,4 @@ public class WebEngineManager {
                 "🧹 WebEngineManager destroyed."
         );
     }
-        }
+}
