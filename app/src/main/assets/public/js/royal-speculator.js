@@ -72,8 +72,8 @@
     ];
 
     const state = {
-        predicted = new Map(),
-        visiblePredictions = 0
+        predicted: new Map(),
+        visiblePredictions: 0
     };
 
     function normalizeUrl(url) {
