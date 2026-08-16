@@ -5,75 +5,190 @@ import android.content.Context;
 import android.content.Intent;
 import android.graphics.Color;
 import android.net.Uri;
+import android.os.SystemClock;
+import android.util.Base64;
 import android.util.Log;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.browser.customtabs.CustomTabsIntent;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.security.SecureRandom;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * 👑 RoyalAuthManager
  *
- * مسؤول فقط عن:
+ * Nexus Sensitive Flow Controller
  *
- * 1. فتح عمليات المصادقة الخارجية في Custom Tabs.
- * 2. فتح بوابات الدفع الحساسة في Custom Tabs.
- * 3. استقبال Redirect العائد إلى التطبيق.
- * 4. إعادة نتيجة العملية إلى MainActivity / WebView.
+ * المسؤول عن:
  *
- * مهم:
- * هذا الملف لا يحول التصفح العادي إلى Custom Tabs.
+ * 1. إدارة تدفقات المصادقة الحساسة.
+ * 2. إطلاق External User-Agent عبر Custom Tabs.
+ * 3. إنشاء والتحقق من state عالي entropy.
+ * 4. استقبال Deep Link callback.
+ * 5. منع replay / callback injection.
+ * 6. التحقق الصارم من scheme + host + path.
+ * 7. استقبال Nexus One-Time Handoff Ticket.
+ * 8. فصل AUTH عن PAYMENT.
+ * 9. عدم معرفة أي OAuth Provider.
  *
- * يعتمد على:
+ * مهم جداً:
+ *
+ * هذا الملف لا يعرف Google.
+ * هذا الملف لا يعرف Apple.
+ * هذا الملف لا يعرف Microsoft.
+ * هذا الملف لا يعرف LinkedIn.
+ * هذا الملف لا يعرف Shopify / Salla / WooCommerce / Laravel...
+ *
+ * Nexus Bridge هو الذي يعرف كيفية إنهاء عملية المصادقة
+ * على موقع العميل وإنشاء One-Time Handoff Ticket.
+ *
+ * Browser:
+ *
  * androidx.browser:browser:1.8.0
  *
- * لا يعتمد على AuthTabIntent لأن Auth Tab API أضيفت
- * في AndroidX Browser 1.9.0.
+ * لاحقاً يمكن إضافة Auth Tab كمسار أحدث
+ * بدون إعادة تصميم هذا الـ Manager.
  */
 public final class RoyalAuthManager {
 
     private static final String TAG = "RoyalAuthManager";
 
     // =========================================================
-    // 🔐 Deep Link Configuration
+    // 🔐 CALLBACK CONFIGURATION
     // =========================================================
 
     /**
-     * يجب أن يتطابق هذا الـ scheme مع AndroidManifest.
+     * يجب أن يتطابق حرفياً مع AndroidManifest.xml
      *
-     * مثال:
-     *
-     * nexusauth://callback
+     * com.store.app.auth://callback
      */
-    public static final String AUTH_SCHEME = "nexusauth";
+    public static final String AUTH_SCHEME =
+            "com.store.app.auth";
 
-    public static final String AUTH_HOST = "callback";
+    public static final String AUTH_HOST =
+            "callback";
 
     /**
-     * نوع العملية الموجودة حالياً.
+     * المسار المتوقع.
+     *
+     * نستخدم:
+     *
+     * com.store.app.auth://callback
+     *
+     * لذلك path الطبيعي يكون فارغاً أو "/".
      */
+    private static final String AUTH_PATH = "";
+
+    // =========================================================
+    // 🔐 QUERY PARAMETERS
+    // =========================================================
+
+    private static final String PARAM_STATE =
+            "state";
+
+    private static final String PARAM_TICKET =
+            "ticket";
+
+    private static final String PARAM_ERROR =
+            "error";
+
+    private static final String PARAM_ERROR_DESCRIPTION =
+            "error_description";
+
+    /**
+     * لا نقبل access_token / id_token / session_cookie
+     * داخل callback.
+     */
+    private static final String PARAM_ACCESS_TOKEN =
+            "access_token";
+
+    private static final String PARAM_ID_TOKEN =
+            "id_token";
+
+    private static final String PARAM_SESSION_COOKIE =
+            "session_cookie";
+
+    private static final String PARAM_PASSWORD =
+            "password";
+
+    private static final String PARAM_CODE =
+            "code";
+
+    // =========================================================
+    // ⏱ FLOW SECURITY
+    // =========================================================
+
+    /**
+     * مدة صلاحية عملية المصادقة.
+     *
+     * 5 دقائق كافية عادة لتدفق Login.
+     */
+    private static final long AUTH_FLOW_TIMEOUT_MS =
+            5L * 60L * 1000L;
+
+    /**
+     * مدة صلاحية عملية الدفع.
+     *
+     * الدفع قد يحتاج وقتاً أطول قليلاً.
+     */
+    private static final long PAYMENT_FLOW_TIMEOUT_MS =
+            15L * 60L * 1000L;
+
+    /**
+     * طول state بالبايت.
+     *
+     * 32 bytes = 256 bits entropy.
+     */
+    private static final int STATE_BYTES = 32;
+
+    /**
+     * طول nonce الداخلي المستخدم لربط العملية.
+     */
+    private static final int FLOW_NONCE_BYTES = 32;
+
+    // =========================================================
+    // 🔥 FLOW TYPES
+    // =========================================================
+
     private static final int FLOW_NONE = 0;
     private static final int FLOW_AUTH = 1;
     private static final int FLOW_PAYMENT = 2;
 
     // =========================================================
-    // 🔥 Callbacks
+    // 🔥 AUTH CALLBACK
     // =========================================================
 
+    /**
+     * النتيجة الناجحة ليست OAuth access token.
+     *
+     * إنها Nexus One-Time Handoff Ticket.
+     *
+     * الـ Ticket يستخدمه Nexus Bridge / backend
+     * لإتمام session bootstrap.
+     */
     public interface AuthCallback {
 
         void onAuthSuccess(
-                @NonNull String code,
-                @Nullable String state
+                @NonNull String ticket,
+                @NonNull String state
         );
 
-        void onAuthError(@NonNull Exception exception);
+        void onAuthError(
+                @NonNull Exception exception
+        );
 
         void onAuthCancel();
     }
+
+    // =========================================================
+    // 💳 PAYMENT CALLBACK
+    // =========================================================
 
     public interface PaymentCallback {
 
@@ -89,30 +204,88 @@ public final class RoyalAuthManager {
     }
 
     // =========================================================
-    // 🔥 Core State
+    // 🔐 FLOW SESSION
+    // =========================================================
+
+    private static final class FlowSession {
+
+        final int flowType;
+
+        final String state;
+
+        final String nonce;
+
+        final long createdAtElapsed;
+
+        final long expiresAtElapsed;
+
+        /**
+         * الرابط الذي بدأنا منه العملية.
+         *
+         * لا يتم تسجيله كاملاً في Log.
+         */
+        final Uri launchUri;
+
+        FlowSession(
+                int flowType,
+                @NonNull String state,
+                @NonNull String nonce,
+                long createdAtElapsed,
+                long expiresAtElapsed,
+                @NonNull Uri launchUri
+        ) {
+
+            this.flowType = flowType;
+            this.state = state;
+            this.nonce = nonce;
+            this.createdAtElapsed = createdAtElapsed;
+            this.expiresAtElapsed = expiresAtElapsed;
+            this.launchUri = launchUri;
+        }
+
+        boolean isExpired() {
+
+            return SystemClock.elapsedRealtime()
+                    > expiresAtElapsed;
+        }
+    }
+
+    // =========================================================
+    // 🚀 CORE
     // =========================================================
 
     private final Activity activity;
+
     private final Context context;
 
     private final CustomTabsIntent customTabsIntent;
 
-    private final AtomicReference<AuthCallback> pendingAuthCallback =
+    private final SecureRandom secureRandom;
+
+    private final AtomicReference<AuthCallback>
+            pendingAuthCallback =
             new AtomicReference<>(null);
 
-    private final AtomicReference<PaymentCallback> pendingPaymentCallback =
+    private final AtomicReference<PaymentCallback>
+            pendingPaymentCallback =
             new AtomicReference<>(null);
 
-    private final AtomicReference<String> pendingState =
+    private final AtomicReference<FlowSession>
+            activeSession =
             new AtomicReference<>(null);
 
-    private final AtomicBoolean flowActive =
+    private final AtomicBoolean destroyed =
             new AtomicBoolean(false);
 
-    private volatile int currentFlow = FLOW_NONE;
+    /**
+     * يمنع معالجة callback ثانية لنفس العملية
+     * حتى لو وصل Intent مكرر.
+     */
+    private final AtomicBoolean callbackConsumed =
+            new AtomicBoolean(false);
 
     // =========================================================
-    // 🚀 Constructor
+    // 🚀 CONSTRUCTOR
     // =========================================================
 
     public RoyalAuthManager(
@@ -121,7 +294,12 @@ public final class RoyalAuthManager {
     ) {
 
         this.activity = activity;
-        this.context = context.getApplicationContext();
+
+        this.context =
+                context.getApplicationContext();
+
+        this.secureRandom =
+                new SecureRandom();
 
         this.customTabsIntent =
                 new CustomTabsIntent.Builder()
@@ -144,13 +322,18 @@ public final class RoyalAuthManager {
                                 android.R.anim.fade_out
                         )
 
-                        .addDefaultShareMenuItem()
+                        /*
+                         * لا نضيف share menu في تدفق المصادقة.
+                         *
+                         * تقليل الخيارات داخل sensitive flow
+                         * أفضل من ناحية UX والأمان.
+                         */
 
                         .build();
 
         Log.i(
                 TAG,
-                "✅ RoyalAuthManager initialized - Browser 1.8 compatible"
+                "RoyalAuthManager initialized"
         );
     }
 
@@ -159,21 +342,46 @@ public final class RoyalAuthManager {
     // =========================================================
 
     /**
-     * إطلاق رابط تسجيل الدخول الخارجي.
+     * إطلاق Sensitive Authentication Flow.
      *
-     * ملاحظة:
-     * الرابط يجب أن يحتوي على redirect_uri الذي يعيد المستخدم
-     * إلى:
+     * الـ state يتم توليده داخلياً.
      *
-     * nexusauth://callback
+     * لا نقبل state من caller.
+     *
+     * وهذا مهم جداً حتى لا يصبح caller نقطة ضعف.
      */
     public boolean launchAuthTab(
             @NonNull String url,
-            @NonNull String state,
             @NonNull AuthCallback callback
     ) {
 
-        if (flowActive.get()) {
+        if (destroyed.get()) {
+
+            callback.onAuthError(
+                    new IllegalStateException(
+                            "RoyalAuthManager has been destroyed"
+                    )
+            );
+
+            return false;
+        }
+
+        if (callback == null) {
+            return false;
+        }
+
+        if (!isValidHttpsUrl(url)) {
+
+            callback.onAuthError(
+                    new IllegalArgumentException(
+                            "Authentication URL must use HTTPS"
+                    )
+            );
+
+            return false;
+        }
+
+        if (!beginExclusiveFlow(FLOW_AUTH)) {
 
             callback.onAuthError(
                     new IllegalStateException(
@@ -184,53 +392,163 @@ public final class RoyalAuthManager {
             return false;
         }
 
-        if (!isValidHttpUrl(url)) {
+        final String state =
+                generateSecureRandomToken(
+                        STATE_BYTES
+                );
 
-            callback.onAuthError(
-                    new IllegalArgumentException(
-                            "Invalid authentication URL"
-                    )
-            );
+        final String nonce =
+                generateSecureRandomToken(
+                        FLOW_NONCE_BYTES
+                );
 
-            return false;
-        }
+        final Uri uri =
+                Uri.parse(url);
+
+        final long now =
+                SystemClock.elapsedRealtime();
+
+        final FlowSession session =
+                new FlowSession(
+                        FLOW_AUTH,
+                        state,
+                        nonce,
+                        now,
+                        now + AUTH_FLOW_TIMEOUT_MS,
+                        uri
+                );
+
+        activeSession.set(session);
+
+        callbackConsumed.set(false);
 
         pendingAuthCallback.set(callback);
-        pendingState.set(state);
 
         pendingPaymentCallback.set(null);
 
-        currentFlow = FLOW_AUTH;
-        flowActive.set(true);
+        /*
+         * لا نعتمد على أن caller أضاف state.
+         *
+         * Nexus يضيف state بنفسه.
+         */
+        Uri finalUri =
+                appendOrReplaceQueryParameter(
+                        uri,
+                        PARAM_STATE,
+                        state
+                );
 
         try {
 
             Log.i(
                     TAG,
-                    "🔐 Launching authentication Custom Tab"
+                    "Launching AUTH Custom Tab"
             );
 
             customTabsIntent.launchUrl(
                     activity,
-                    Uri.parse(url)
+                    finalUri
             );
 
             return true;
 
-        } catch (Exception e) {
+        } catch (Throwable e) {
 
             Log.e(
                     TAG,
-                    "❌ Authentication Custom Tab launch failed",
+                    "Authentication Custom Tab launch failed",
                     e
             );
 
-            clearFlow();
+            clearActiveFlow();
 
-            callback.onAuthError(e);
+            callback.onAuthError(
+                    new IllegalStateException(
+                            "Unable to launch authentication flow",
+                            e
+                    )
+            );
 
             return false;
         }
+    }
+
+    // =========================================================
+    // 🔐 GENERIC SENSITIVE FLOW
+    // =========================================================
+
+    /**
+     * نقطة مهمة جداً لـ Nexus:
+     *
+     * WebEngineManager لا يحتاج معرفة Google أو Apple
+     * أو أي Provider.
+     *
+     * عندما يقرر Navigation Classifier أن الرابط
+     * Sensitive، يمكنه تمرير الرابط إلى هذه الدالة.
+     *
+     * هذه الدالة تبدأ AUTH flow عام.
+     *
+     * لاحقاً Nexus Bridge هو الذي يحدد كيفية إنهاء العملية.
+     */
+    public boolean launchSensitiveFlow(
+            @NonNull String url,
+            @NonNull AuthCallback callback
+    ) {
+
+        return launchAuthTab(
+                url,
+                callback
+        );
+    }
+
+    /**
+     * overload مناسب إذا كان caller يريد فقط إطلاق
+     * sensitive flow ولا يحتاج callback UI مباشر.
+     *
+     * النتيجة ستصل لاحقاً عبر handleRedirectIntent().
+     */
+    public boolean launchSensitiveFlow(
+            @NonNull String url
+    ) {
+
+        return launchAuthTab(
+                url,
+                new AuthCallback() {
+
+                    @Override
+                    public void onAuthSuccess(
+                            @NonNull String ticket,
+                            @NonNull String state
+                    ) {
+
+                        Log.i(
+                                TAG,
+                                "Sensitive flow completed"
+                        );
+                    }
+
+                    @Override
+                    public void onAuthError(
+                            @NonNull Exception exception
+                    ) {
+
+                        Log.w(
+                                TAG,
+                                "Sensitive flow failed",
+                                exception
+                        );
+                    }
+
+                    @Override
+                    public void onAuthCancel() {
+
+                        Log.i(
+                                TAG,
+                                "Sensitive flow cancelled"
+                        );
+                    }
+                }
+        );
     }
 
     // =========================================================
@@ -242,7 +560,29 @@ public final class RoyalAuthManager {
             @NonNull PaymentCallback callback
     ) {
 
-        if (flowActive.get()) {
+        if (destroyed.get()) {
+
+            callback.onPaymentError(
+                    new IllegalStateException(
+                            "RoyalAuthManager has been destroyed"
+                    )
+            );
+
+            return false;
+        }
+
+        if (!isValidHttpsUrl(url)) {
+
+            callback.onPaymentError(
+                    new IllegalArgumentException(
+                            "Payment URL must use HTTPS"
+                    )
+            );
+
+            return false;
+        }
+
+        if (!beginExclusiveFlow(FLOW_PAYMENT)) {
 
             callback.onPaymentError(
                     new IllegalStateException(
@@ -253,114 +593,237 @@ public final class RoyalAuthManager {
             return false;
         }
 
-        if (!isValidHttpUrl(url)) {
+        final String state =
+                generateSecureRandomToken(
+                        STATE_BYTES
+                );
 
-            callback.onPaymentError(
-                    new IllegalArgumentException(
-                            "Invalid payment URL"
-                    )
-            );
+        final String nonce =
+                generateSecureRandomToken(
+                        FLOW_NONCE_BYTES
+                );
 
-            return false;
-        }
+        final Uri uri =
+                Uri.parse(url);
+
+        final long now =
+                SystemClock.elapsedRealtime();
+
+        final FlowSession session =
+                new FlowSession(
+                        FLOW_PAYMENT,
+                        state,
+                        nonce,
+                        now,
+                        now + PAYMENT_FLOW_TIMEOUT_MS,
+                        uri
+                );
+
+        activeSession.set(session);
+
+        callbackConsumed.set(false);
 
         pendingPaymentCallback.set(callback);
-        pendingAuthCallback.set(null);
-        pendingState.set(null);
 
-        currentFlow = FLOW_PAYMENT;
-        flowActive.set(true);
+        pendingAuthCallback.set(null);
+
+        Uri finalUri =
+                appendOrReplaceQueryParameter(
+                        uri,
+                        PARAM_STATE,
+                        state
+                );
 
         try {
 
             Log.i(
                     TAG,
-                    "💳 Launching payment Custom Tab"
+                    "Launching PAYMENT Custom Tab"
             );
 
             customTabsIntent.launchUrl(
                     activity,
-                    Uri.parse(url)
+                    finalUri
             );
 
             return true;
 
-        } catch (Exception e) {
+        } catch (Throwable e) {
 
             Log.e(
                     TAG,
-                    "❌ Payment Custom Tab launch failed",
+                    "Payment Custom Tab launch failed",
                     e
             );
 
-            clearFlow();
+            clearActiveFlow();
 
-            callback.onPaymentError(e);
+            callback.onPaymentError(
+                    new IllegalStateException(
+                            "Unable to launch payment flow",
+                            e
+                    )
+            );
 
             return false;
         }
     }
 
     // =========================================================
-    // 🔗 CALLBACK ROUTER
+    // 🔗 REDIRECT ENTRY POINT
     // =========================================================
 
     /**
-     * هذه أهم دالة في النظام.
+     * MainActivity تستدعي هذه الدالة.
      *
-     * MainActivity تستدعيها عند وصول Intent جديد.
+     * مهم:
      *
-     * مثال:
+     * هذه الدالة لا تثق في Intent القادم.
      *
-     * nexusauth://callback?code=ABC&state=XYZ
+     * بل تتحقق من:
+     *
+     * 1. Intent action
+     * 2. scheme
+     * 3. host
+     * 4. path
+     * 5. active flow
+     * 6. timeout
+     * 7. state
+     * 8. single consumption
+     * 9. result type
      */
-    public boolean handleRedirect(
+    public boolean handleRedirectIntent(
             @Nullable Intent intent
     ) {
+
+        if (destroyed.get()) {
+            return false;
+        }
 
         if (intent == null) {
             return false;
         }
 
-        Uri uri = intent.getData();
+        final Uri uri =
+                intent.getData();
 
         if (uri == null) {
             return false;
         }
 
+        /*
+         * لا نثق في Intent implicit بشكل كامل.
+         *
+         * يجب أن يكون VIEW.
+         */
+        String action =
+                intent.getAction();
+
+        if (action != null &&
+                !Intent.ACTION_VIEW.equals(action)) {
+
+            return false;
+        }
+
+        if (!isExpectedCallbackUri(uri)) {
+
+            return false;
+        }
+
+        /*
+         * لا نقبل callback إذا لم تبدأ عملية
+         * من داخل Nexus.
+         */
+        FlowSession session =
+                activeSession.get();
+
+        if (session == null) {
+
+            Log.w(
+                    TAG,
+                    "Rejected callback: no active flow"
+            );
+
+            return false;
+        }
+
+        /*
+         * Timeout.
+         */
+        if (session.isExpired()) {
+
+            Log.w(
+                    TAG,
+                    "Rejected callback: flow expired"
+            );
+
+            notifyExpiredFlow(session.flowType);
+
+            clearActiveFlow();
+
+            return true;
+        }
+
+        /*
+         * Replay protection.
+         */
+        if (!callbackConsumed.compareAndSet(
+                false,
+                true
+        )) {
+
+            Log.w(
+                    TAG,
+                    "Rejected duplicate callback"
+            );
+
+            return true;
+        }
+
         Log.i(
                 TAG,
-                "🔗 Redirect received: " + sanitizeUriForLog(uri)
+                "Valid Nexus callback received"
         );
 
-        if (!AUTH_SCHEME.equalsIgnoreCase(uri.getScheme())) {
-            return false;
-        }
+        if (session.flowType == FLOW_AUTH) {
 
-        if (!AUTH_HOST.equalsIgnoreCase(uri.getHost())) {
-            return false;
-        }
-
-        if (currentFlow == FLOW_AUTH) {
-
-            handleAuthRedirect(uri);
+            handleAuthRedirect(
+                    uri,
+                    session
+            );
 
             return true;
         }
 
-        if (currentFlow == FLOW_PAYMENT) {
+        if (session.flowType == FLOW_PAYMENT) {
 
-            handlePaymentRedirect(uri);
+            handlePaymentRedirect(
+                    uri,
+                    session
+            );
 
             return true;
         }
 
-        Log.w(
-                TAG,
-                "⚠️ Redirect received without active flow"
-        );
+        clearActiveFlow();
 
         return false;
+    }
+
+    /**
+     * compatibility alias.
+     *
+     * لأن النسخة السابقة من MainActivity قد تستخدم:
+     *
+     * handleRedirect(...)
+     */
+    public boolean handleRedirect(
+            @Nullable Intent intent
+    ) {
+
+        return handleRedirectIntent(
+                intent
+        );
     }
 
     // =========================================================
@@ -368,97 +831,133 @@ public final class RoyalAuthManager {
     // =========================================================
 
     private void handleAuthRedirect(
-            @NonNull Uri uri
+            @NonNull Uri uri,
+            @NonNull FlowSession session
     ) {
 
-        AuthCallback callback =
+        final AuthCallback callback =
                 pendingAuthCallback.getAndSet(null);
 
-        String returnedState =
-                uri.getQueryParameter("state");
-
-        String expectedState =
-                pendingState.get();
-
-        /**
-         * حماية مهمة جداً:
+        /*
+         * أول شيء:
          *
-         * لا نقبل callback إذا كان state مختلفاً.
+         * state.
          */
-        if (expectedState != null) {
+        final String returnedState =
+                uri.getQueryParameter(
+                        PARAM_STATE
+                );
 
-            if (returnedState == null ||
-                    !constantTimeEquals(
-                            expectedState,
-                            returnedState
-                    )) {
+        if (returnedState == null ||
+                returnedState.isEmpty()) {
 
-                clearFlow();
+            finishAuthWithError(
+                    callback,
+                    new SecurityException(
+                            "Missing OAuth state"
+                    )
+            );
 
-                if (callback != null) {
-
-                    callback.onAuthError(
-                            new SecurityException(
-                                    "OAuth state validation failed"
-                            )
-                    );
-                }
-
-                return;
-            }
+            return;
         }
 
-        String error =
-                uri.getQueryParameter("error");
+        if (!constantTimeEquals(
+                session.state,
+                returnedState
+        )) {
 
-        if (error != null && !error.isEmpty()) {
+            finishAuthWithError(
+                    callback,
+                    new SecurityException(
+                            "OAuth state validation failed"
+                    )
+            );
 
-            String description =
+            return;
+        }
+
+        /*
+         * لا نسمح بتمرير credentials حساسة
+         * عبر Deep Link.
+         */
+        if (containsForbiddenCredential(
+                uri
+        )) {
+
+            finishAuthWithError(
+                    callback,
+                    new SecurityException(
+                            "Sensitive credential found in redirect"
+                    )
+            );
+
+            return;
+        }
+
+        /*
+         * OAuth error.
+         */
+        final String error =
+                uri.getQueryParameter(
+                        PARAM_ERROR
+                );
+
+        if (error != null &&
+                !error.isEmpty()) {
+
+            final String description =
                     uri.getQueryParameter(
-                            "error_description"
+                            PARAM_ERROR_DESCRIPTION
                     );
 
-            clearFlow();
-
-            if (callback != null) {
-
-                callback.onAuthError(
-                        new Exception(
-                                description != null
-                                        ? description
-                                        : error
-                        )
-                );
-            }
+            finishAuthWithError(
+                    callback,
+                    new Exception(
+                            sanitizeErrorMessage(
+                                    description,
+                                    error
+                            )
+                    )
+            );
 
             return;
         }
 
-        String code =
-                uri.getQueryParameter("code");
-
-        if (code == null || code.isEmpty()) {
-
-            clearFlow();
-
-            if (callback != null) {
-
-                callback.onAuthError(
-                        new Exception(
-                                "OAuth callback did not contain authorization code"
-                        )
+        /*
+         * Nexus لا يقبل code كجلسة.
+         *
+         * النتيجة المطلوبة:
+         *
+         * one-time handoff ticket
+         */
+        final String ticket =
+                uri.getQueryParameter(
+                        PARAM_TICKET
                 );
-            }
+
+        if (!isValidTicket(ticket)) {
+
+            finishAuthWithError(
+                    callback,
+                    new SecurityException(
+                            "Invalid or missing Nexus handoff ticket"
+                    )
+            );
 
             return;
         }
 
-        clearFlow();
+        /*
+         * انتهت العملية بنجاح.
+         *
+         * ticket لا يتم تسجيله.
+         */
+        clearActiveFlow();
 
         if (callback != null) {
 
             callback.onAuthSuccess(
-                    code,
+                    ticket,
                     returnedState
             );
         }
@@ -469,61 +968,101 @@ public final class RoyalAuthManager {
     // =========================================================
 
     private void handlePaymentRedirect(
-            @NonNull Uri uri
+            @NonNull Uri uri,
+            @NonNull FlowSession session
     ) {
 
-        PaymentCallback callback =
+        final PaymentCallback callback =
                 pendingPaymentCallback.getAndSet(null);
 
-        String error =
-                uri.getQueryParameter("error");
-
-        if (error != null && !error.isEmpty()) {
-
-            String description =
-                    uri.getQueryParameter(
-                            "error_description"
-                    );
-
-            clearFlow();
-
-            if (callback != null) {
-
-                callback.onPaymentError(
-                        new Exception(
-                                description != null
-                                        ? description
-                                        : error
-                        )
+        /*
+         * الدفع أيضاً مرتبط بالـ state.
+         */
+        final String returnedState =
+                uri.getQueryParameter(
+                        PARAM_STATE
                 );
-            }
+
+        if (returnedState == null ||
+                returnedState.isEmpty() ||
+                !constantTimeEquals(
+                        session.state,
+                        returnedState
+                )) {
+
+            finishPaymentWithError(
+                    callback,
+                    new SecurityException(
+                            "Payment state validation failed"
+                    )
+            );
 
             return;
         }
 
-        String transactionId =
+        /*
+         * لا نقبل tokens في callback.
+         */
+        if (containsForbiddenCredential(
+                uri
+        )) {
+
+            finishPaymentWithError(
+                    callback,
+                    new SecurityException(
+                            "Sensitive credential found in payment redirect"
+                    )
+            );
+
+            return;
+        }
+
+        final String error =
+                uri.getQueryParameter(
+                        PARAM_ERROR
+                );
+
+        if (error != null &&
+                !error.isEmpty()) {
+
+            final String description =
+                    uri.getQueryParameter(
+                            PARAM_ERROR_DESCRIPTION
+                    );
+
+            finishPaymentWithError(
+                    callback,
+                    new Exception(
+                            sanitizeErrorMessage(
+                                    description,
+                                    error
+                            )
+                    )
+            );
+
+            return;
+        }
+
+        final String transactionId =
                 uri.getQueryParameter(
                         "transaction_id"
                 );
 
-        if (transactionId == null ||
-                transactionId.isEmpty()) {
+        if (!isValidOpaqueIdentifier(
+                transactionId
+        )) {
 
-            clearFlow();
-
-            if (callback != null) {
-
-                callback.onPaymentError(
-                        new Exception(
-                                "Payment callback did not contain transaction_id"
-                        )
-                );
-            }
+            finishPaymentWithError(
+                    callback,
+                    new SecurityException(
+                            "Invalid payment transaction identifier"
+                    )
+            );
 
             return;
         }
 
-        clearFlow();
+        clearActiveFlow();
 
         if (callback != null) {
 
@@ -538,12 +1077,29 @@ public final class RoyalAuthManager {
     // =========================================================
 
     /**
-     * استدعاؤها عندما يقرر المستخدم إغلاق
-     * العملية الحساسة قبل إتمامها.
+     * تستخدم عندما يعرف النظام أن المستخدم
+     * أغلق العملية الحساسة.
+     *
+     * ملاحظة:
+     *
+     * Custom Tabs التقليدية لا تعطي دائماً callback
+     * موثوقاً لتمييز "الإغلاق" عن كل حالات lifecycle.
      */
     public void notifyFlowCancelled() {
 
-        int flow = currentFlow;
+        FlowSession session =
+                activeSession.get();
+
+        if (session == null) {
+            return;
+        }
+
+        if (!callbackConsumed.compareAndSet(
+                false,
+                true
+        )) {
+            return;
+        }
 
         AuthCallback authCallback =
                 pendingAuthCallback.getAndSet(null);
@@ -551,7 +1107,10 @@ public final class RoyalAuthManager {
         PaymentCallback paymentCallback =
                 pendingPaymentCallback.getAndSet(null);
 
-        clearFlow();
+        int flow =
+                session.flowType;
+
+        clearActiveFlow();
 
         if (flow == FLOW_AUTH) {
 
@@ -568,62 +1127,363 @@ public final class RoyalAuthManager {
     }
 
     // =========================================================
+    // ⏱ EXPIRATION
+    // =========================================================
+
+    private void notifyExpiredFlow(
+            int flowType
+    ) {
+
+        AuthCallback authCallback =
+                pendingAuthCallback.getAndSet(null);
+
+        PaymentCallback paymentCallback =
+                pendingPaymentCallback.getAndSet(null);
+
+        if (flowType == FLOW_AUTH) {
+
+            if (authCallback != null) {
+
+                authCallback.onAuthError(
+                        new java.util.concurrent.TimeoutException(
+                                "Authentication flow expired"
+                        )
+                );
+            }
+
+        } else if (flowType == FLOW_PAYMENT) {
+
+            if (paymentCallback != null) {
+
+                paymentCallback.onPaymentError(
+                        new java.util.concurrent.TimeoutException(
+                                "Payment flow expired"
+                        )
+                );
+            }
+        }
+    }
+
+    // =========================================================
+    // 🔐 FLOW CONTROL
+    // =========================================================
+
+    private boolean beginExclusiveFlow(
+            int flowType
+    ) {
+
+        FlowSession existing =
+                activeSession.get();
+
+        if (existing != null) {
+
+            if (!existing.isExpired()) {
+                return false;
+            }
+
+            clearActiveFlow();
+        }
+
+        /*
+         * null → temporary reservation
+         *
+         * activeSession سيتم وضعه مباشرة بعد ذلك.
+         */
+        return true;
+    }
+
+    // =========================================================
     // 🔎 STATE
     // =========================================================
 
     public boolean isFlowActive() {
-        return flowActive.get();
+
+        FlowSession session =
+                activeSession.get();
+
+        return session != null &&
+                !session.isExpired();
     }
 
     public boolean isAuthFlowActive() {
-        return currentFlow == FLOW_AUTH &&
-                flowActive.get();
+
+        FlowSession session =
+                activeSession.get();
+
+        return session != null &&
+                session.flowType == FLOW_AUTH &&
+                !session.isExpired();
     }
 
     public boolean isPaymentFlowActive() {
-        return currentFlow == FLOW_PAYMENT &&
-                flowActive.get();
+
+        FlowSession session =
+                activeSession.get();
+
+        return session != null &&
+                session.flowType == FLOW_PAYMENT &&
+                !session.isExpired();
     }
 
     // =========================================================
-    // 🧹 CLEAR
+    // 🔎 CALLBACK VALIDATION
     // =========================================================
 
-    private void clearFlow() {
+    private boolean isExpectedCallbackUri(
+            @NonNull Uri uri
+    ) {
 
-        pendingAuthCallback.set(null);
-        pendingPaymentCallback.set(null);
-        pendingState.set(null);
+        String scheme =
+                uri.getScheme();
 
-        currentFlow = FLOW_NONE;
+        String host =
+                uri.getHost();
 
-        flowActive.set(false);
+        if (scheme == null ||
+                host == null) {
+
+            return false;
+        }
+
+        if (!AUTH_SCHEME.equalsIgnoreCase(
+                scheme
+        )) {
+
+            return false;
+        }
+
+        if (!AUTH_HOST.equalsIgnoreCase(
+                host
+        )) {
+
+            return false;
+        }
+
+        /*
+         * بالنسبة إلى:
+         *
+         * com.store.app.auth://callback
+         *
+         * path عادة null أو "".
+         */
+        String path =
+                uri.getPath();
+
+        if (path != null &&
+                !path.isEmpty() &&
+                !"/".equals(path)) {
+
+            return false;
+        }
+
+        /*
+         * لا نقبل fragment.
+         *
+         * callback يجب أن يكون query فقط.
+         */
+        if (uri.getFragment() != null) {
+
+            return false;
+        }
+
+        return true;
     }
 
     // =========================================================
-    // 🔒 URL VALIDATION
+    // 🔐 CREDENTIAL PROTECTION
     // =========================================================
 
-    private boolean isValidHttpUrl(
+    private boolean containsForbiddenCredential(
+            @NonNull Uri uri
+    ) {
+
+        return hasQueryParameter(
+                    uri,
+                    PARAM_ACCESS_TOKEN
+                )
+                || hasQueryParameter(
+                    uri,
+                    PARAM_ID_TOKEN
+                )
+                || hasQueryParameter(
+                    uri,
+                    PARAM_SESSION_COOKIE
+                )
+                || hasQueryParameter(
+                    uri,
+                    PARAM_PASSWORD
+                );
+    }
+
+    // =========================================================
+    // 🎫 TICKET VALIDATION
+    // =========================================================
+
+    /**
+     * الـ ticket ليس JWT مطلوباً من Android.
+     *
+     * الأفضل أن يكون opaque random identifier
+     * قصير العمر ومستخدم مرة واحدة على server.
+     *
+     * Android يتحقق فقط من:
+     *
+     * - وجوده
+     * - حجمه
+     * - أنه ليس credential واضحاً
+     * - أنه لا يحتوي على control characters
+     */
+    private boolean isValidTicket(
+            @Nullable String ticket
+    ) {
+
+        if (ticket == null ||
+                ticket.isEmpty()) {
+
+            return false;
+        }
+
+        /*
+         * حد أعلى لمنع payload abuse.
+         */
+        if (ticket.length() > 512) {
+            return false;
+        }
+
+        /*
+         * لا نقبل whitespace/control characters.
+         */
+        for (int i = 0;
+             i < ticket.length();
+             i++) {
+
+            char c =
+                    ticket.charAt(i);
+
+            if (Character.isWhitespace(c) ||
+                    Character.isISOControl(c)) {
+
+                return false;
+            }
+        }
+
+        /*
+         * لا نقبل قيم تبدو كـ JWT.
+         *
+         * Nexus ticket المفترض opaque.
+         */
+        if (ticket.startsWith("eyJ")) {
+            return false;
+        }
+
+        return true;
+    }
+
+    // =========================================================
+    // 🔒 OPAQUE IDENTIFIER
+    // =========================================================
+
+    private boolean isValidOpaqueIdentifier(
+            @Nullable String value
+    ) {
+
+        if (value == null ||
+                value.isEmpty() ||
+                value.length() > 256) {
+
+            return false;
+        }
+
+        for (int i = 0;
+             i < value.length();
+             i++) {
+
+            char c =
+                    value.charAt(i);
+
+            if (Character.isWhitespace(c) ||
+                    Character.isISOControl(c)) {
+
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    // =========================================================
+    // 🔐 HTTPS URL VALIDATION
+    // =========================================================
+
+    private boolean isValidHttpsUrl(
             @NonNull String url
     ) {
 
         try {
 
-            Uri uri = Uri.parse(url);
+            Uri uri =
+                    Uri.parse(url);
 
-            String scheme = uri.getScheme();
+            String scheme =
+                    uri.getScheme();
 
-            return "https".equalsIgnoreCase(scheme);
+            String host =
+                    uri.getHost();
 
-        } catch (Exception e) {
+            if (!"https".equalsIgnoreCase(
+                    scheme
+            )) {
+
+                return false;
+            }
+
+            if (host == null ||
+                    host.isEmpty()) {
+
+                return false;
+            }
+
+            /*
+             * لا credentials داخل authority.
+             *
+             * مثال مرفوض:
+             *
+             * https://user:password@example.com
+             */
+            if (uri.getUserInfo() != null) {
+                return false;
+            }
+
+            return true;
+
+        } catch (Throwable e) {
 
             return false;
         }
     }
 
     // =========================================================
-    // 🔐 CONSTANT TIME STATE COMPARISON
+    // 🔐 SECURE RANDOM
+    // =========================================================
+
+    private String generateSecureRandomToken(
+            int numberOfBytes
+    ) {
+
+        byte[] bytes =
+                new byte[numberOfBytes];
+
+        secureRandom.nextBytes(bytes);
+
+        return Base64.encodeToString(
+                bytes,
+                Base64.URL_SAFE
+                        | Base64.NO_WRAP
+                        | Base64.NO_PADDING
+        );
+    }
+
+    // =========================================================
+    // 🔐 CONSTANT-TIME COMPARISON
     // =========================================================
 
     private boolean constantTimeEquals(
@@ -631,33 +1491,164 @@ public final class RoyalAuthManager {
             @NonNull String b
     ) {
 
-        if (a.length() != b.length()) {
-            return false;
-        }
+        byte[] aBytes =
+                a.getBytes(
+                        StandardCharsets.UTF_8
+                );
 
-        int result = 0;
+        byte[] bBytes =
+                b.getBytes(
+                        StandardCharsets.UTF_8
+                );
 
-        for (int i = 0; i < a.length(); i++) {
-
-            result |= a.charAt(i) ^ b.charAt(i);
-        }
-
-        return result == 0;
+        return MessageDigest.isEqual(
+                aBytes,
+                bBytes
+        );
     }
 
     // =========================================================
-    // 🛡️ SAFE LOGGING
+    // 🔗 URI BUILDER
     // =========================================================
 
-    private String sanitizeUriForLog(
-            @NonNull Uri uri
+    private Uri appendOrReplaceQueryParameter(
+            @NonNull Uri uri,
+            @NonNull String parameter,
+            @NonNull String value
     ) {
 
         Uri.Builder builder =
-                uri.buildUpon()
-                        .clearQuery();
+                uri.buildUpon();
 
-        return builder.build().toString();
+        /*
+         * نحذف أي state قدمه الموقع/المصدر
+         * ثم نضع state الذي أنشأه Nexus.
+         */
+        builder.clearQuery();
+
+        for (String key :
+                uri.getQueryParameterNames()) {
+
+            if (parameter.equalsIgnoreCase(
+                    key
+            )) {
+                continue;
+            }
+
+            for (String existingValue :
+                    uri.getQueryParameters(key)) {
+
+                if (existingValue != null) {
+
+                    builder.appendQueryParameter(
+                            key,
+                            existingValue
+                    );
+                }
+            }
+        }
+
+        builder.appendQueryParameter(
+                parameter,
+                value
+        );
+
+        return builder.build();
+    }
+
+    // =========================================================
+    // 🔎 QUERY PARAMETER
+    // =========================================================
+
+    private boolean hasQueryParameter(
+            @NonNull Uri uri,
+            @NonNull String parameter
+    ) {
+
+        return uri.getQueryParameter(
+                parameter
+        ) != null;
+    }
+
+    // =========================================================
+    // 🧹 AUTH ERROR
+    // =========================================================
+
+    private void finishAuthWithError(
+            @Nullable AuthCallback callback,
+            @NonNull Exception exception
+    ) {
+
+        clearActiveFlow();
+
+        if (callback != null) {
+
+            callback.onAuthError(
+                    exception
+            );
+        }
+    }
+
+    // =========================================================
+    // 🧹 PAYMENT ERROR
+    // =========================================================
+
+    private void finishPaymentWithError(
+            @Nullable PaymentCallback callback,
+            @NonNull Exception exception
+    ) {
+
+        clearActiveFlow();
+
+        if (callback != null) {
+
+            callback.onPaymentError(
+                    exception
+            );
+        }
+    }
+
+    // =========================================================
+    // 🧹 CLEAR
+    // =========================================================
+
+    private void clearActiveFlow() {
+
+        activeSession.set(null);
+
+        pendingAuthCallback.set(null);
+
+        pendingPaymentCallback.set(null);
+    }
+
+    // =========================================================
+    // 🛡️ SAFE ERROR MESSAGE
+    // =========================================================
+
+    private String sanitizeErrorMessage(
+            @Nullable String description,
+            @NonNull String fallback
+    ) {
+
+        String value =
+                description != null &&
+                        !description.isEmpty()
+                        ? description
+                        : fallback;
+
+        /*
+         * لا نسمح بتسريب payload ضخم إلى UI/logs.
+         */
+        if (value.length() > 512) {
+
+            value =
+                    value.substring(
+                            0,
+                            512
+                    );
+        }
+
+        return value;
     }
 
     // =========================================================
@@ -666,11 +1657,19 @@ public final class RoyalAuthManager {
 
     public void destroy() {
 
-        clearFlow();
+        if (!destroyed.compareAndSet(
+                false,
+                true
+        )) {
+
+            return;
+        }
+
+        clearActiveFlow();
 
         Log.i(
                 TAG,
-                "🧹 RoyalAuthManager destroyed"
+                "RoyalAuthManager destroyed"
         );
     }
-    }
+                }
