@@ -330,6 +330,9 @@ public class MainActivity extends AppCompatActivity {
                         getApplicationContext()
                 );
 
+        // ✅ معالجة Intent الأولي للـ Auth
+        handleInitialAuthIntent(getIntent());
+
         if (!NetworkMonitor.isInternetAvailable(this)) {
 
             offlineController.setOfflineUIVisibility(
@@ -493,12 +496,6 @@ public class MainActivity extends AppCompatActivity {
             RoyalCapabilitiesEngine.filePathCallback = null;
             return;
         }
-
-        // 🔥 معالجة نتائج المصادقة والدفع
-        if (royalAuthManager != null) {
-            royalAuthManager.handleAuthResult(resultCode, data);
-            royalAuthManager.handlePaymentResult(resultCode, data);
-        }
     }
 
     // =========================================================
@@ -508,11 +505,55 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
-        // إذا كان intent يحتوي على بيانات من Auth Tab أو Custom Tabs
-        if (intent != null && intent.getData() != null) {
-            Uri data = intent.getData();
-            Log.i(TAG, "🔗 Deep link received: " + data.toString());
-            // يمكن معالجتها حسب الحاجة
+
+        setIntent(intent);
+
+        if (intent == null) {
+            return;
+        }
+
+        Uri data = intent.getData();
+
+        if (data == null) {
+            return;
+        }
+
+        Log.i(
+                TAG,
+                "🔗 Deep link received: "
+                        + data.getScheme()
+                        + "://"
+                        + data.getHost()
+                        + data.getPath()
+        );
+
+        if (royalAuthManager != null) {
+            royalAuthManager.handleRedirectIntent(intent);
+        } else {
+            Log.w(
+                    TAG,
+                    "⚠️ Auth callback received before RoyalAuthManager initialization."
+            );
+        }
+    }
+
+    /**
+     * معالجة Intent الأولي للـ Auth (عند بدء النشاط)
+     */
+    private void handleInitialAuthIntent(Intent intent) {
+
+        if (intent == null) {
+            return;
+        }
+
+        Uri data = intent.getData();
+
+        if (data == null) {
+            return;
+        }
+
+        if (royalAuthManager != null) {
+            royalAuthManager.handleRedirectIntent(intent);
         }
     }
 
@@ -537,4 +578,4 @@ public class MainActivity extends AppCompatActivity {
             capabilitiesEngine.handlePermissionResult(requestCode, permissions, grantResults);
         }
     }
-    }
+                }
