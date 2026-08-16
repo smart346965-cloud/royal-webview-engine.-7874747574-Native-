@@ -3,6 +3,7 @@ package com.store.app;
 import android.app.Activity;
 import android.content.Context;
 import android.content.Intent;
+import android.graphics.Color;
 import android.net.Uri;
 import android.util.Log;
 
@@ -10,217 +11,666 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.browser.customtabs.CustomTabsIntent;
 
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
- * 👑 RoyalAuthManager - وحدة إدارة المصادقة والدفع المركزية
- * 
- * تعتمد على Custom Tabs (مع دعم Auth Tab كـ fallback تلقائي)
- * كبديل آمن ومستقر عن SDKs المتعددة.
- * 
- * ✅ المزايا:
- *   - يعمل مع أي مزود OAuth
- *   - Auto-fallback إلى Auth Tab في الأجهزة المدعومة
- *   - تخصيص UI احترافي
- *   - واجهة موحدة للـ Callbacks
+ * 👑 RoyalAuthManager
+ *
+ * مسؤول فقط عن:
+ *
+ * 1. فتح عمليات المصادقة الخارجية في Custom Tabs.
+ * 2. فتح بوابات الدفع الحساسة في Custom Tabs.
+ * 3. استقبال Redirect العائد إلى التطبيق.
+ * 4. إعادة نتيجة العملية إلى MainActivity / WebView.
+ *
+ * مهم:
+ * هذا الملف لا يحول التصفح العادي إلى Custom Tabs.
+ *
+ * يعتمد على:
+ * androidx.browser:browser:1.8.0
+ *
+ * لا يعتمد على AuthTabIntent لأن Auth Tab API أضيفت
+ * في AndroidX Browser 1.9.0.
  */
 public final class RoyalAuthManager {
 
     private static final String TAG = "RoyalAuthManager";
 
-    // ==========================================
-    // 🔥 الواجهات العامة (Callbacks)
-    // ==========================================
+    // =========================================================
+    // 🔐 Deep Link Configuration
+    // =========================================================
+
+    /**
+     * يجب أن يتطابق هذا الـ scheme مع AndroidManifest.
+     *
+     * مثال:
+     *
+     * nexusauth://callback
+     */
+    public static final String AUTH_SCHEME = "nexusauth";
+
+    public static final String AUTH_HOST = "callback";
+
+    /**
+     * نوع العملية الموجودة حالياً.
+     */
+    private static final int FLOW_NONE = 0;
+    private static final int FLOW_AUTH = 1;
+    private static final int FLOW_PAYMENT = 2;
+
+    // =========================================================
+    // 🔥 Callbacks
+    // =========================================================
 
     public interface AuthCallback {
-        void onAuthSuccess(String token, String userId);
-        void onAuthError(Exception exception);
+
+        void onAuthSuccess(
+                @NonNull String code,
+                @Nullable String state
+        );
+
+        void onAuthError(@NonNull Exception exception);
+
         void onAuthCancel();
     }
 
     public interface PaymentCallback {
-        void onPaymentSuccess(String transactionId);
-        void onPaymentError(Exception exception);
+
+        void onPaymentSuccess(
+                @NonNull String transactionId
+        );
+
+        void onPaymentError(
+                @NonNull Exception exception
+        );
+
         void onPaymentCancel();
     }
 
-    // ==========================================
-    // 🔥 المتغيرات
-    // ==========================================
+    // =========================================================
+    // 🔥 Core State
+    // =========================================================
 
     private final Activity activity;
     private final Context context;
 
-    // Custom Tabs Intent (يعمل مع Auth Tab تلقائياً)
     private final CustomTabsIntent customTabsIntent;
 
-    // مراجع للـ Callbacks المعلقة
-    private final AtomicReference<AuthCallback> pendingAuthCallback = new AtomicReference<>();
-    private final AtomicReference<PaymentCallback> pendingPaymentCallback = new AtomicReference<>();
+    private final AtomicReference<AuthCallback> pendingAuthCallback =
+            new AtomicReference<>(null);
 
-    // ==========================================
-    // 🚀 البناء
-    // ==========================================
+    private final AtomicReference<PaymentCallback> pendingPaymentCallback =
+            new AtomicReference<>(null);
 
-    public RoyalAuthManager(@NonNull Activity activity, @NonNull Context context) {
+    private final AtomicReference<String> pendingState =
+            new AtomicReference<>(null);
+
+    private final AtomicBoolean flowActive =
+            new AtomicBoolean(false);
+
+    private volatile int currentFlow = FLOW_NONE;
+
+    // =========================================================
+    // 🚀 Constructor
+    // =========================================================
+
+    public RoyalAuthManager(
+            @NonNull Activity activity,
+            @NonNull Context context
+    ) {
+
         this.activity = activity;
-        this.context = context;
+        this.context = context.getApplicationContext();
 
-        // تهيئة Custom Tabs (يدعم Auth Tab تلقائياً)
-        this.customTabsIntent = new CustomTabsIntent.Builder()
-                .setToolbarColor(android.graphics.Color.parseColor("#007AFF"))
-                .enableUrlBarHiding()
-                .setStartAnimations(context, android.R.anim.fade_in, android.R.anim.fade_out)
-                .setExitAnimations(context, android.R.anim.fade_in, android.R.anim.fade_out)
-                .addDefaultShareMenuItem()
-                .build();
+        this.customTabsIntent =
+                new CustomTabsIntent.Builder()
 
-        Log.i(TAG, "✅ RoyalAuthManager initialized (Custom Tabs)");
+                        .setToolbarColor(
+                                Color.parseColor("#111111")
+                        )
+
+                        .enableUrlBarHiding()
+
+                        .setStartAnimations(
+                                activity,
+                                android.R.anim.fade_in,
+                                android.R.anim.fade_out
+                        )
+
+                        .setExitAnimations(
+                                activity,
+                                android.R.anim.fade_in,
+                                android.R.anim.fade_out
+                        )
+
+                        .addDefaultShareMenuItem()
+
+                        .build();
+
+        Log.i(
+                TAG,
+                "✅ RoyalAuthManager initialized - Browser 1.8 compatible"
+        );
     }
 
-    // ==========================================
-    // 🔐 1. Auth / Custom Tabs (للمصادقات)
-    // ==========================================
+    // =========================================================
+    // 🔐 AUTH FLOW
+    // =========================================================
 
     /**
-     * فتح Custom Tabs للمصادقة (يدعم Auth Tab تلقائياً)
-     * @param url رابط المصادقة
-     * @param callback استدعاء النتيجة
+     * إطلاق رابط تسجيل الدخول الخارجي.
+     *
+     * ملاحظة:
+     * الرابط يجب أن يحتوي على redirect_uri الذي يعيد المستخدم
+     * إلى:
+     *
+     * nexusauth://callback
      */
-    public void launchAuthTab(@NonNull String url, @NonNull AuthCallback callback) {
+    public boolean launchAuthTab(
+            @NonNull String url,
+            @NonNull String state,
+            @NonNull AuthCallback callback
+    ) {
+
+        if (flowActive.get()) {
+
+            callback.onAuthError(
+                    new IllegalStateException(
+                            "Another sensitive flow is already active"
+                    )
+            );
+
+            return false;
+        }
+
+        if (!isValidHttpUrl(url)) {
+
+            callback.onAuthError(
+                    new IllegalArgumentException(
+                            "Invalid authentication URL"
+                    )
+            );
+
+            return false;
+        }
+
         pendingAuthCallback.set(callback);
+        pendingState.set(state);
+
+        pendingPaymentCallback.set(null);
+
+        currentFlow = FLOW_AUTH;
+        flowActive.set(true);
+
         try {
-            Log.i(TAG, "🚀 Launching Custom Tabs (Auth) for: " + url);
-            customTabsIntent.launchUrl(activity, Uri.parse(url));
+
+            Log.i(
+                    TAG,
+                    "🔐 Launching authentication Custom Tab"
+            );
+
+            customTabsIntent.launchUrl(
+                    activity,
+                    Uri.parse(url)
+            );
+
+            return true;
+
         } catch (Exception e) {
-            Log.e(TAG, "❌ Custom Tabs launch failed", e);
-            pendingAuthCallback.set(null);
+
+            Log.e(
+                    TAG,
+                    "❌ Authentication Custom Tab launch failed",
+                    e
+            );
+
+            clearFlow();
+
             callback.onAuthError(e);
+
+            return false;
         }
     }
+
+    // =========================================================
+    // 💳 PAYMENT FLOW
+    // =========================================================
+
+    public boolean launchPaymentTab(
+            @NonNull String url,
+            @NonNull PaymentCallback callback
+    ) {
+
+        if (flowActive.get()) {
+
+            callback.onPaymentError(
+                    new IllegalStateException(
+                            "Another sensitive flow is already active"
+                    )
+            );
+
+            return false;
+        }
+
+        if (!isValidHttpUrl(url)) {
+
+            callback.onPaymentError(
+                    new IllegalArgumentException(
+                            "Invalid payment URL"
+                    )
+            );
+
+            return false;
+        }
+
+        pendingPaymentCallback.set(callback);
+        pendingAuthCallback.set(null);
+        pendingState.set(null);
+
+        currentFlow = FLOW_PAYMENT;
+        flowActive.set(true);
+
+        try {
+
+            Log.i(
+                    TAG,
+                    "💳 Launching payment Custom Tab"
+            );
+
+            customTabsIntent.launchUrl(
+                    activity,
+                    Uri.parse(url)
+            );
+
+            return true;
+
+        } catch (Exception e) {
+
+            Log.e(
+                    TAG,
+                    "❌ Payment Custom Tab launch failed",
+                    e
+            );
+
+            clearFlow();
+
+            callback.onPaymentError(e);
+
+            return false;
+        }
+    }
+
+    // =========================================================
+    // 🔗 CALLBACK ROUTER
+    // =========================================================
 
     /**
-     * معالجة نتيجة المصادقة - يجب استدعاؤها من onActivityResult أو onNewIntent
+     * هذه أهم دالة في النظام.
+     *
+     * MainActivity تستدعيها عند وصول Intent جديد.
+     *
+     * مثال:
+     *
+     * nexusauth://callback?code=ABC&state=XYZ
      */
-    public void handleAuthResult(int resultCode, @Nullable Intent data) {
-        AuthCallback callback = pendingAuthCallback.getAndSet(null);
-        if (callback == null) {
-            Log.w(TAG, "⚠️ No pending AuthCallback");
+    public boolean handleRedirect(
+            @Nullable Intent intent
+    ) {
+
+        if (intent == null) {
+            return false;
+        }
+
+        Uri uri = intent.getData();
+
+        if (uri == null) {
+            return false;
+        }
+
+        Log.i(
+                TAG,
+                "🔗 Redirect received: " + sanitizeUriForLog(uri)
+        );
+
+        if (!AUTH_SCHEME.equalsIgnoreCase(uri.getScheme())) {
+            return false;
+        }
+
+        if (!AUTH_HOST.equalsIgnoreCase(uri.getHost())) {
+            return false;
+        }
+
+        if (currentFlow == FLOW_AUTH) {
+
+            handleAuthRedirect(uri);
+
+            return true;
+        }
+
+        if (currentFlow == FLOW_PAYMENT) {
+
+            handlePaymentRedirect(uri);
+
+            return true;
+        }
+
+        Log.w(
+                TAG,
+                "⚠️ Redirect received without active flow"
+        );
+
+        return false;
+    }
+
+    // =========================================================
+    // 🔐 AUTH REDIRECT
+    // =========================================================
+
+    private void handleAuthRedirect(
+            @NonNull Uri uri
+    ) {
+
+        AuthCallback callback =
+                pendingAuthCallback.getAndSet(null);
+
+        String returnedState =
+                uri.getQueryParameter("state");
+
+        String expectedState =
+                pendingState.get();
+
+        /**
+         * حماية مهمة جداً:
+         *
+         * لا نقبل callback إذا كان state مختلفاً.
+         */
+        if (expectedState != null) {
+
+            if (returnedState == null ||
+                    !constantTimeEquals(
+                            expectedState,
+                            returnedState
+                    )) {
+
+                clearFlow();
+
+                if (callback != null) {
+
+                    callback.onAuthError(
+                            new SecurityException(
+                                    "OAuth state validation failed"
+                            )
+                    );
+                }
+
+                return;
+            }
+        }
+
+        String error =
+                uri.getQueryParameter("error");
+
+        if (error != null && !error.isEmpty()) {
+
+            String description =
+                    uri.getQueryParameter(
+                            "error_description"
+                    );
+
+            clearFlow();
+
+            if (callback != null) {
+
+                callback.onAuthError(
+                        new Exception(
+                                description != null
+                                        ? description
+                                        : error
+                        )
+                );
+            }
+
             return;
         }
 
-        if (resultCode == Activity.RESULT_OK && data != null && data.getData() != null) {
-            Uri resultUri = data.getData();
-            String token = resultUri.getQueryParameter("code");
-            String userId = resultUri.getQueryParameter("user_id");
-            if (token != null && !token.isEmpty()) {
-                Log.i(TAG, "✅ Auth success: token=" + token);
-                callback.onAuthSuccess(token, userId);
-            } else {
-                callback.onAuthError(new Exception("No token received"));
+        String code =
+                uri.getQueryParameter("code");
+
+        if (code == null || code.isEmpty()) {
+
+            clearFlow();
+
+            if (callback != null) {
+
+                callback.onAuthError(
+                        new Exception(
+                                "OAuth callback did not contain authorization code"
+                        )
+                );
             }
-        } else if (resultCode == Activity.RESULT_CANCELED) {
-            callback.onAuthCancel();
-        } else {
-            callback.onAuthError(new Exception("Auth failed with code: " + resultCode));
-        }
-    }
 
-    // ==========================================
-    // 🌐 2. Custom Tabs (للدفع والروابط الخارجية)
-    // ==========================================
-
-    public void launchCustomTabs(@NonNull String url, @NonNull PaymentCallback callback) {
-        pendingPaymentCallback.set(callback);
-        try {
-            Log.i(TAG, "🌐 Launching Custom Tabs for: " + url);
-            customTabsIntent.launchUrl(activity, Uri.parse(url));
-        } catch (Exception e) {
-            Log.e(TAG, "❌ Custom Tabs launch failed", e);
-            pendingPaymentCallback.set(null);
-            callback.onPaymentError(e);
-        }
-    }
-
-    public void handlePaymentResult(int resultCode, @Nullable Intent data) {
-        PaymentCallback callback = pendingPaymentCallback.getAndSet(null);
-        if (callback == null) {
-            Log.w(TAG, "⚠️ No pending PaymentCallback");
             return;
         }
 
-        if (resultCode == Activity.RESULT_OK && data != null && data.getData() != null) {
-            String transactionId = data.getData().getQueryParameter("transaction_id");
-            if (transactionId != null && !transactionId.isEmpty()) {
-                callback.onPaymentSuccess(transactionId);
-            } else {
-                callback.onPaymentError(new Exception("No transaction_id received"));
+        clearFlow();
+
+        if (callback != null) {
+
+            callback.onAuthSuccess(
+                    code,
+                    returnedState
+            );
+        }
+    }
+
+    // =========================================================
+    // 💳 PAYMENT REDIRECT
+    // =========================================================
+
+    private void handlePaymentRedirect(
+            @NonNull Uri uri
+    ) {
+
+        PaymentCallback callback =
+                pendingPaymentCallback.getAndSet(null);
+
+        String error =
+                uri.getQueryParameter("error");
+
+        if (error != null && !error.isEmpty()) {
+
+            String description =
+                    uri.getQueryParameter(
+                            "error_description"
+                    );
+
+            clearFlow();
+
+            if (callback != null) {
+
+                callback.onPaymentError(
+                        new Exception(
+                                description != null
+                                        ? description
+                                        : error
+                        )
+                );
             }
-        } else if (resultCode == Activity.RESULT_CANCELED) {
-            callback.onPaymentCancel();
-        } else {
-            callback.onPaymentError(new Exception("Payment failed with code: " + resultCode));
+
+            return;
+        }
+
+        String transactionId =
+                uri.getQueryParameter(
+                        "transaction_id"
+                );
+
+        if (transactionId == null ||
+                transactionId.isEmpty()) {
+
+            clearFlow();
+
+            if (callback != null) {
+
+                callback.onPaymentError(
+                        new Exception(
+                                "Payment callback did not contain transaction_id"
+                        )
+                );
+            }
+
+            return;
+        }
+
+        clearFlow();
+
+        if (callback != null) {
+
+            callback.onPaymentSuccess(
+                    transactionId
+            );
         }
     }
 
-    // ==========================================
-    // 🔄 3. وحدة التحكم والتوجيه
-    // ==========================================
+    // =========================================================
+    // ❌ CANCEL
+    // =========================================================
 
-    public void handleAuth(@NonNull String provider, @NonNull AuthCallback callback) {
-        String authUrl = buildAuthUrl(provider);
-        if (authUrl != null) {
-            launchAuthTab(authUrl, callback);
-        } else {
-            callback.onAuthError(new Exception("Unsupported auth provider: " + provider));
+    /**
+     * استدعاؤها عندما يقرر المستخدم إغلاق
+     * العملية الحساسة قبل إتمامها.
+     */
+    public void notifyFlowCancelled() {
+
+        int flow = currentFlow;
+
+        AuthCallback authCallback =
+                pendingAuthCallback.getAndSet(null);
+
+        PaymentCallback paymentCallback =
+                pendingPaymentCallback.getAndSet(null);
+
+        clearFlow();
+
+        if (flow == FLOW_AUTH) {
+
+            if (authCallback != null) {
+                authCallback.onAuthCancel();
+            }
+
+        } else if (flow == FLOW_PAYMENT) {
+
+            if (paymentCallback != null) {
+                paymentCallback.onPaymentCancel();
+            }
         }
     }
 
-    public void launchPayment(@NonNull String gateway, @NonNull PaymentCallback callback) {
-        String paymentUrl = buildPaymentUrl(gateway);
-        if (paymentUrl != null) {
-            launchCustomTabs(paymentUrl, callback);
-        } else {
-            callback.onPaymentError(new Exception("Unsupported payment gateway: " + gateway));
-        }
+    // =========================================================
+    // 🔎 STATE
+    // =========================================================
+
+    public boolean isFlowActive() {
+        return flowActive.get();
     }
 
-    // ==========================================
-    // 🧹 4. تنظيف الموارد
-    // ==========================================
+    public boolean isAuthFlowActive() {
+        return currentFlow == FLOW_AUTH &&
+                flowActive.get();
+    }
 
-    public void destroy() {
+    public boolean isPaymentFlowActive() {
+        return currentFlow == FLOW_PAYMENT &&
+                flowActive.get();
+    }
+
+    // =========================================================
+    // 🧹 CLEAR
+    // =========================================================
+
+    private void clearFlow() {
+
         pendingAuthCallback.set(null);
         pendingPaymentCallback.set(null);
-        Log.i(TAG, "🧹 RoyalAuthManager destroyed");
+        pendingState.set(null);
+
+        currentFlow = FLOW_NONE;
+
+        flowActive.set(false);
     }
 
-    // ==========================================
-    // 🔧 دوال مساعدة (بناء الروابط)
-    // ==========================================
+    // =========================================================
+    // 🔒 URL VALIDATION
+    // =========================================================
 
-    private String buildAuthUrl(@NonNull String provider) {
-        switch (provider.toLowerCase()) {
-            case "google":
-                return "https://accounts.google.com/o/oauth2/auth?client_id=YOUR_CLIENT_ID&redirect_uri=YOUR_REDIRECT_URI&response_type=code&scope=email%20profile";
-            case "github":
-                return "https://github.com/login/oauth/authorize?client_id=YOUR_CLIENT_ID&redirect_uri=YOUR_REDIRECT_URI&scope=user:email";
-            case "microsoft":
-            case "azure":
-                return "https://login.microsoftonline.com/common/oauth2/v2.0/authorize?client_id=YOUR_CLIENT_ID&redirect_uri=YOUR_REDIRECT_URI&response_type=code&scope=openid%20profile%20email";
-            default:
-                return null;
+    private boolean isValidHttpUrl(
+            @NonNull String url
+    ) {
+
+        try {
+
+            Uri uri = Uri.parse(url);
+
+            String scheme = uri.getScheme();
+
+            return "https".equalsIgnoreCase(scheme);
+
+        } catch (Exception e) {
+
+            return false;
         }
     }
 
-    private String buildPaymentUrl(@NonNull String gateway) {
-        switch (gateway.toLowerCase()) {
-            case "stripe":
-                return "https://checkout.stripe.com/pay/YOUR_SESSION_ID";
-            case "paypal":
-                return "https://www.paypal.com/checkoutnow?token=YOUR_TOKEN";
-            default:
-                return null;
+    // =========================================================
+    // 🔐 CONSTANT TIME STATE COMPARISON
+    // =========================================================
+
+    private boolean constantTimeEquals(
+            @NonNull String a,
+            @NonNull String b
+    ) {
+
+        if (a.length() != b.length()) {
+            return false;
         }
+
+        int result = 0;
+
+        for (int i = 0; i < a.length(); i++) {
+
+            result |= a.charAt(i) ^ b.charAt(i);
+        }
+
+        return result == 0;
     }
-}
+
+    // =========================================================
+    // 🛡️ SAFE LOGGING
+    // =========================================================
+
+    private String sanitizeUriForLog(
+            @NonNull Uri uri
+    ) {
+
+        Uri.Builder builder =
+                uri.buildUpon()
+                        .clearQuery();
+
+        return builder.build().toString();
+    }
+
+    // =========================================================
+    // 🧹 DESTROY
+    // =========================================================
+
+    public void destroy() {
+
+        clearFlow();
+
+        Log.i(
+                TAG,
+                "🧹 RoyalAuthManager destroyed"
+        );
+    }
+    }
