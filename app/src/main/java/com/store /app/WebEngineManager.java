@@ -14,6 +14,7 @@ import android.view.ViewGroup;
 import android.webkit.*;
 
 import androidx.annotation.NonNull;
+import androidx.browser.customtabs.CustomTabsIntent;
 import androidx.webkit.Navigation;
 import androidx.webkit.NavigationListener;
 import androidx.webkit.Page;
@@ -1075,6 +1076,96 @@ public class WebEngineManager {
     // ==========================================
     // 🧠 محرك الروابط السيادي (معدل)
     // ==========================================
+
+    /**
+     * تحديد ما إذا كان الـ URI يمثل مسار مصادقة حساس (OAuth, Identity Provider).
+     * هذه ليست قائمة ثقة أمنية، بل مجرد classifier لمسار المصادقة.
+     * الحماية الحقيقية هي الـ Bridge/flow state.
+     */
+    private boolean isSensitiveNavigation(Uri uri) {
+
+        if (uri == null) {
+            return false;
+        }
+
+        String scheme = uri.getScheme();
+
+        if (scheme == null) {
+            return false;
+        }
+
+        scheme = scheme.toLowerCase();
+
+        if (!"https".equals(scheme) &&
+                !"http".equals(scheme)) {
+            return false;
+        }
+
+        String host = uri.getHost();
+
+        if (host == null) {
+            return false;
+        }
+
+        host = host.toLowerCase();
+
+        /*
+         * OAuth identity providers.
+         *
+         * هذه ليست قائمة ثقة أمنية.
+         * هي فقط classifier لمسار المصادقة.
+         */
+        return host.equals("accounts.google.com")
+                || host.endsWith(".google.com")
+                || host.equals("appleid.apple.com")
+                || host.endsWith(".microsoftonline.com")
+                || host.equals("login.live.com")
+                || host.endsWith(".linkedin.com")
+                || host.equals("github.com")
+                || host.endsWith(".github.com");
+    }
+
+    /**
+     * إطلاق مسار المصادقة الحساس في Custom Tab.
+     */
+    private boolean launchSensitiveFlow(Uri uri) {
+
+        if (activity == null || uri == null) {
+            return false;
+        }
+
+        try {
+
+            CustomTabsIntent customTabsIntent =
+                    new CustomTabsIntent.Builder()
+                            .setShowTitle(false)
+                            .build();
+
+            customTabsIntent.launchUrl(
+                    activity,
+                    uri
+            );
+
+            Log.i(
+                    TAG,
+                    "🔐 Sensitive navigation launched in Custom Tab: "
+                            + uri
+            );
+
+            return true;
+
+        } catch (Throwable e) {
+
+            Log.e(
+                    TAG,
+                    "❌ Failed to launch sensitive navigation.",
+                    e
+            );
+
+            return false;
+        }
+    }
+
     private boolean handleUriLogic(Uri uri, boolean isMainFrame) {
         if (uri == null) return false;
 
@@ -1090,6 +1181,10 @@ public class WebEngineManager {
 
         if (isSameOrigin(uri)) {
             return false;
+        }
+
+        if (isSensitiveNavigation(uri)) {
+            return launchSensitiveFlow(uri);
         }
 
         switch (scheme) {
@@ -1341,4 +1436,4 @@ public class WebEngineManager {
                 "🧹 WebEngineManager destroyed."
         );
     }
-}
+    }
