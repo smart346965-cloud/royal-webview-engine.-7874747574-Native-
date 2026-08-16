@@ -468,32 +468,8 @@ public class MainActivity extends AppCompatActivity {
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
 
-        // ✅ إضافة ربط الخبير للمحرك
-        if (capabilitiesEngine != null) {
-            capabilitiesEngine.handleActivityResult(requestCode, resultCode, data);
-        }
-
-        // 🔥 معالجة اختيار الملفات (منطقك القائم)
-        if (requestCode == RoyalCapabilitiesEngine.FILECHOOSER_RESULTCODE) {
-            if (RoyalCapabilitiesEngine.filePathCallback == null) return;
-
-            Uri[] results = null;
-            if (resultCode == android.app.Activity.RESULT_OK) {
-                if (data != null) {
-                    String dataString = data.getDataString();
-                    android.content.ClipData clipData = data.getClipData();
-                    if (clipData != null) {
-                        results = new Uri[clipData.getItemCount()];
-                        for (int i = 0; i < clipData.getItemCount(); i++) {
-                            results[i] = clipData.getItemAt(i).getUri();
-                        }
-                    } else if (dataString != null) {
-                        results = new Uri[]{Uri.parse(dataString)};
-                    }
-                }
-            }
-            RoyalCapabilitiesEngine.filePathCallback.onReceiveValue(results);
-            RoyalCapabilitiesEngine.filePathCallback = null;
+        // ✅ معالجة النتائج واختيار الملفات مباشرة عبر محرك القدرات
+        if (capabilitiesEngine != null && capabilitiesEngine.handleActivityResult(requestCode, resultCode, data)) {
             return;
         }
     }
@@ -578,4 +554,4 @@ public class MainActivity extends AppCompatActivity {
             capabilitiesEngine.handlePermissionResult(requestCode, permissions, grantResults);
         }
     }
-                }
+        }
