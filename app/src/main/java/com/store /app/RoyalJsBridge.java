@@ -66,6 +66,31 @@ public class RoyalJsBridge {
         });
     }
 
+    /**
+     * 👑 Native Auto-OAuth Trigger: الاعتراض الآلي المباشر لزر تسجيل الدخول
+     * يفتح الـ Custom Tab من أول كسر في الثانية ويمنع كتابة الـ state في ذاكرة الـ WebView
+     */
+    @JavascriptInterface
+    public void startOAuth(String authUrl) {
+        if (authUrl == null || authUrl.length() == 0) {
+            return;
+        }
+
+        if (webEngineManager == null || webView == null) {
+            return;
+        }
+
+        webView.post(() -> {
+            try {
+                RoyalPanopticon.pulse("JS-BridgeChannel");
+                Log.i(TAG, "🚀 Native Auto-OAuth Intercepted: " + authUrl);
+                webEngineManager.launchSensitiveFlow(android.net.Uri.parse(authUrl));
+            } catch (Exception e) {
+                Log.e(TAG, "startOAuth dispatch failed.", e);
+            }
+        });
+    }
+
     public void setOnHideSplashCallback(Runnable callback) {
         this.onHideSplashCallback = callback;
     }
@@ -154,4 +179,4 @@ public class RoyalJsBridge {
         if (webView == null) return;
         webView.post(() -> webView.evaluateJavascript(script, null));
     }
-}
+            }
