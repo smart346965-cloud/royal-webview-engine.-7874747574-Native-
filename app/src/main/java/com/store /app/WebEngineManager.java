@@ -38,29 +38,85 @@ public class WebEngineManager {
     private static final String TAG = "RoyalEngine";
 
     // =========================================================
-    // 🛡️ السكربت الخفي للحقن الآلي - يعترض أزرار Google/Apple تلقائياً بدون تدخل العميل
+    // 🛡️ السكربت الاحترافي الخفي للحقن الآلي - يعترض كافة مزودي OAuth تلقائياً
     // =========================================================
     private static final String OAUTH_AUTO_INJECTOR_JS =
         "(function() {" +
         "  if (window.__royalOAuthInjected) return;" +
         "  window.__royalOAuthInjected = true;" +
+        "" +
+        "  function isOAuthUrl(url) {" +
+        "    if (!url) return false;" +
+        "    var l = url.toLowerCase();" +
+        "    return l.indexOf('accounts.google.com') !== -1 ||" +
+        "           l.indexOf('appleid.apple.com') !== -1 ||" +
+        "           l.indexOf('facebook.com/v') !== -1 ||" +
+        "           l.indexOf('facebook.com/dialog/oauth') !== -1 ||" +
+        "           l.indexOf('login.microsoftonline.com') !== -1 ||" +
+        "           l.indexOf('login.live.com') !== -1 ||" +
+        "           l.indexOf('github.com/login/oauth') !== -1 ||" +
+        "           l.indexOf('twitter.com/i/oauth2') !== -1 ||" +
+        "           l.indexOf('auth0.com') !== -1;" +
+        "  }" +
+        "" +
+        "  function getValidUrl(target) {" +
+        "    var href = target.getAttribute('href') || target.getAttribute('data-href') || target.getAttribute('action') || '';" +
+        "    if (!href || href === '#' || href.indexOf('javascript:') === 0) return null;" +
+        "    try {" +
+        "      return new URL(href, window.location.href).href;" +
+        "    } catch(e) {" +
+        "      return null;" +
+        "    }" +
+        "  }" +
+        "" +
+        "  /* 1. اعتراض النقر المباشر على الأزرار والروابط التي تحتوي رابط OAuth صريح */" +
         "  document.addEventListener('click', function(e) {" +
-        "    var target = e.target.closest('a, button, [role=\"button\"], input[type=\"submit\"]');" +
+        "    var target = e.target.closest('a, button, [role=\"button\"], input[type=\"submit\"], form');" +
         "    if (!target) return;" +
-        "    var href = target.getAttribute('href') || target.getAttribute('data-href') || '';" +
-        "    var text = (target.innerText || target.textContent || '').toLowerCase();" +
-        "    var idClass = ((target.id || '') + ' ' + (target.className || '')).toLowerCase();" +
-        "    var isGoogle = href.indexOf('accounts.google.com') !== -1 || idClass.indexOf('google') !== -1 || text.indexOf('google') !== -1 || text.indexOf('جوجل') !== -1;" +
-        "    var isApple = href.indexOf('appleid.apple.com') !== -1 || idClass.indexOf('apple') !== -1 || text.indexOf('apple') !== -1;" +
-        "    if ((isGoogle || isApple) && window.RoyalJsBridge) {" +
+        "    var url = getValidUrl(target);" +
+        "    if (url && isOAuthUrl(url) && window.RoyalJsBridge) {" +
         "      e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();" +
-        "      var finalUrl = href;" +
-        "      if (!finalUrl || finalUrl === '#' || finalUrl.indexOf('javascript:') === 0) {" +
-        "        finalUrl = window.location.origin + '/auth/google';" +
-        "      }" +
-        "      window.RoyalJsBridge.startOAuth(finalUrl);" +
+        "      window.RoyalJsBridge.startOAuth(url);" +
         "    }" +
         "  }, true);" +
+        "" +
+        "  /* 2. اعتراض التحويل البرمجي لـ Client-side SDKs (مثل Firebase signInWithRedirect) */" +
+        "  try {" +
+        "    var originalAssign = window.location.assign;" +
+        "    if (typeof originalAssign === 'function') {" +
+        "      window.location.assign = function(url) {" +
+        "        if (isOAuthUrl(url) && window.RoyalJsBridge) {" +
+        "          window.RoyalJsBridge.startOAuth(url);" +
+        "          return;" +
+        "        }" +
+        "        return originalAssign.apply(this, arguments);" +
+        "      };" +
+        "    }" +
+        "    var originalReplace = window.location.replace;" +
+        "    if (typeof originalReplace === 'function') {" +
+        "      window.location.replace = function(url) {" +
+        "        if (isOAuthUrl(url) && window.RoyalJsBridge) {" +
+        "          window.RoyalJsBridge.startOAuth(url);" +
+        "          return;" +
+        "        }" +
+        "        return originalReplace.apply(this, arguments);" +
+        "      };" +
+        "    }" +
+        "    var proto = Object.getPrototypeOf(window.location);" +
+        "    var descriptor = Object.getOwnPropertyDescriptor(proto || window.location, 'href');" +
+        "    if (descriptor && descriptor.set) {" +
+        "      var origSet = descriptor.set;" +
+        "      Object.defineProperty(window.location, 'href', {" +
+        "        set: function(val) {" +
+        "          if (isOAuthUrl(val) && window.RoyalJsBridge) {" +
+        "            window.RoyalJsBridge.startOAuth(val);" +
+        "            return;" +
+        "          }" +
+        "          origSet.call(window.location, val);" +
+        "        }" +
+        "      });" +
+        "    }" +
+        "  } catch(e) {}" +
         "})();";
 
     private final Context context;
@@ -1467,4 +1523,4 @@ public class WebEngineManager {
                 "🧹 WebEngineManager destroyed."
         );
     }
-    }
+            }
