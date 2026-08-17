@@ -25,6 +25,7 @@ import androidx.core.view.WindowCompat;
 import com.store.app.offline.OfflineUIController;
 import com.store.app.offline.OfflineStateManager;
 import com.store.app.RoyalAuthManager;
+import com.store.app.RoyalJsBridge;
 
 /**
  * 👑 MainActivity - النواة الأساسية لإدارة محرك الويب المخصص
@@ -214,6 +215,12 @@ public class MainActivity extends AppCompatActivity {
 
         // 🔗 ربط الـ Bridge بعد اكتمال WebEngineManager
         RoyalWebViewHost.bindEngineManager(engineManager);
+
+        // 🔗 تأكيد ربط واجهة الجافاسكريبت بالـ WebView
+        activeWebView.addJavascriptInterface(
+                new RoyalJsBridge(activeWebView, engineManager),
+                "RoyalJsBridge"
+        );
 
         engineManager.setSplashStartTime(
                 splashStartTime
@@ -496,12 +503,13 @@ public class MainActivity extends AppCompatActivity {
 
         Log.i(
                 TAG,
-                "🔗 Deep link received: "
-                        + data.getScheme()
-                        + "://"
-                        + data.getHost()
-                        + data.getPath()
+                "🔗 Deep link received: " + data.toString()
         );
+
+        // 👑 تسليم رابط العودة للـ WebView لتوليد الـ Session Cookie فوراً
+        if (activeWebView != null && data.toString().contains("/auth")) {
+            activeWebView.loadUrl(data.toString());
+        }
 
         if (royalAuthManager != null) {
             royalAuthManager.handleRedirectIntent(intent);
@@ -554,4 +562,4 @@ public class MainActivity extends AppCompatActivity {
             capabilitiesEngine.handlePermissionResult(requestCode, permissions, grantResults);
         }
     }
-        }
+    }
