@@ -37,6 +37,32 @@ public class WebEngineManager {
 
     private static final String TAG = "RoyalEngine";
 
+    // =========================================================
+    // 🛡️ السكربت الخفي للحقن الآلي - يعترض أزرار Google/Apple تلقائياً بدون تدخل العميل
+    // =========================================================
+    private static final String OAUTH_AUTO_INJECTOR_JS =
+        "(function() {" +
+        "  if (window.__royalOAuthInjected) return;" +
+        "  window.__royalOAuthInjected = true;" +
+        "  document.addEventListener('click', function(e) {" +
+        "    var target = e.target.closest('a, button, [role=\"button\"], input[type=\"submit\"]');" +
+        "    if (!target) return;" +
+        "    var href = target.getAttribute('href') || target.getAttribute('data-href') || '';" +
+        "    var text = (target.innerText || target.textContent || '').toLowerCase();" +
+        "    var idClass = ((target.id || '') + ' ' + (target.className || '')).toLowerCase();" +
+        "    var isGoogle = href.indexOf('accounts.google.com') !== -1 || idClass.indexOf('google') !== -1 || text.indexOf('google') !== -1 || text.indexOf('جوجل') !== -1;" +
+        "    var isApple = href.indexOf('appleid.apple.com') !== -1 || idClass.indexOf('apple') !== -1 || text.indexOf('apple') !== -1;" +
+        "    if ((isGoogle || isApple) && window.RoyalJsBridge) {" +
+        "      e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();" +
+        "      var finalUrl = href;" +
+        "      if (!finalUrl || finalUrl === '#' || finalUrl.indexOf('javascript:') === 0) {" +
+        "        finalUrl = window.location.origin + '/auth/google';" +
+        "      }" +
+        "      window.RoyalJsBridge.startOAuth(finalUrl);" +
+        "    }" +
+        "  }, true);" +
+        "})();";
+
     private final Context context;
     private final android.app.Activity activity;
     private final WebView webView;
@@ -831,6 +857,11 @@ public class WebEngineManager {
             @Override
             public void onPageFinished(WebView view, String url) {
 
+                // 🛡️ حقن سكربت الاعتراض الآلي خفياً عند اكتمال الصفحة
+                if (view != null) {
+                    view.evaluateJavascript(OAUTH_AUTO_INJECTOR_JS, null);
+                }
+
                 RoyalPanopticon.recordNavigationComplete();
                 RoyalNetworkEngine.notifyRenderIdle();
 
@@ -1128,7 +1159,7 @@ public class WebEngineManager {
     /**
      * إطلاق مسار المصادقة الحساس في Custom Tab.
      */
-    private boolean launchSensitiveFlow(Uri uri) {
+    public boolean launchSensitiveFlow(Uri uri) {
 
         if (activity == null || uri == null) {
             return false;
