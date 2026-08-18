@@ -134,10 +134,6 @@ public class WebEngineManager {
     private final Runnable markSplashRemoved;
     private final SplashStateChecker splashChecker;
 
-    private String trustedScheme = null;
-    private String trustedHost = null;
-    private int trustedPort = -1;
-
     private final Runnable scrollFinishedRunnable =
             RoyalNetworkEngine::notifyScrollFinished;
 
@@ -879,93 +875,6 @@ public class WebEngineManager {
     // ❌ تم حذف الدالة triggerFinalReveal() نهائياً
     // =========================================================
 
-    private void configureSettings() {
-
-        WebSettings settings =
-                webView.getSettings();
-
-        /*
-         * =====================================================
-         * 🚀 NATIVE COMPOSITOR SCROLL
-         * =====================================================
-         *
-         * لا LayerType يدوي.
-         * لا scroll animation من التطبيق.
-         * لا JS scroll interception.
-         */
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            settings.setOffscreenPreRaster(false);
-        }
-
-        settings.setLayoutAlgorithm(
-                WebSettings.LayoutAlgorithm.NORMAL
-        );
-
-        webView.setOverScrollMode(
-                View.OVER_SCROLL_NEVER
-        );
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            webView.setForceDarkAllowed(false);
-            webView.setVerticalScrollbarThumbDrawable(null);
-        }
-
-        /*
-         * =====================================================
-         * WebView Core
-         * =====================================================
-         */
-
-        settings.setJavaScriptEnabled(true);
-        settings.setDomStorageEnabled(true);
-        settings.setDatabaseEnabled(true);
-
-        settings.setCacheMode(
-                WebSettings.LOAD_DEFAULT
-        );
-
-        settings.setSafeBrowsingEnabled(true);
-
-        settings.setAllowFileAccess(true);
-        settings.setAllowContentAccess(true);
-
-        settings.setAllowUniversalAccessFromFileURLs(false);
-        settings.setAllowFileAccessFromFileURLs(false);
-
-        if (
-                Build.VERSION.SDK_INT >=
-                Build.VERSION_CODES.JELLY_BEAN_MR1
-        ) {
-            settings.setMediaPlaybackRequiresUserGesture(
-                    false
-            );
-        }
-
-        settings.setMixedContentMode(
-                WebSettings.MIXED_CONTENT_NEVER_ALLOW
-        );
-
-        settings.setSupportMultipleWindows(false);
-        settings.setSupportZoom(false);
-
-        CookieManager cookieManager =
-                CookieManager.getInstance();
-
-        cookieManager.setAcceptCookie(true);
-
-        if (
-                Build.VERSION.SDK_INT >=
-                Build.VERSION_CODES.LOLLIPOP
-        ) {
-
-            cookieManager.setAcceptThirdPartyCookies(
-                    webView,
-                    true
-            );
-        }
-    }
-
     private void attachClients() {
         webView.setWebViewClient(new WebViewClient() {
 
@@ -1412,115 +1321,6 @@ public class WebEngineManager {
         }
     }
 
-    private void syncStatusBarColor(WebView view) {
-        if (activity == null || activity.isFinishing()) return;
-
-        if (!NetworkMonitor.isInternetAvailable(context))
-            return;
-
-        String currentUrl = view.getUrl();
-        if (currentUrl != null && currentUrl.startsWith("file:///android_asset/")) {
-            activity.getWindow().setStatusBarColor(Color.TRANSPARENT);
-            activity.getWindow().setNavigationBarColor(Color.TRANSPARENT);
-            SystemUI.setDynamicIcons(activity.getWindow(), true);
-            return;
-        }
-
-        if (!view.isAttachedToWindow()) {
-            return;
-        }
-
-        view.evaluateJavascript(
-                "(function(){return window.getComputedStyle(document.body).backgroundColor;})();",
-                value -> {
-                    try {
-                        if (value != null && value.contains("rgb")) {
-                            String clean = value.replaceAll("[^0-9,]", "");
-                            String[] parts = clean.split(",");
-                            int r = Integer.parseInt(parts[0].trim());
-                            int g = Integer.parseInt(parts[1].trim());
-                            int b = Integer.parseInt(parts[2].trim());
-                            int color = Color.rgb(r, g, b);
-
-                            activity.getWindow().setStatusBarColor(color);
-                            boolean isLight = SystemUI.isColorLight(color);
-                            SystemUI.setDynamicIcons(activity.getWindow(), isLight);
-                        }
-                    } catch (Exception ignored) {}
-                }
-        );
-    }
-
-    private void setTrustedOrigin(String url) {
-
-        if (url == null) return;
-
-        Uri uri = Uri.parse(url);
-
-        String scheme = uri.getScheme();
-        String host = uri.getHost();
-
-        if (scheme == null || host == null) {
-            return;
-        }
-
-        trustedScheme = scheme.toLowerCase();
-        trustedHost = host.toLowerCase();
-
-        trustedPort =
-                uri.getPort() == -1
-                        ? ("https".equals(trustedScheme) ? 443 : 80)
-                        : uri.getPort();
-
-        Log.i(TAG,
-                "🔒 Trusted Origin = "
-                        + trustedScheme
-                        + "://"
-                        + trustedHost
-                        + ":"
-                        + trustedPort);
-    }
-
-    // =========================================================
-    // 🔥 [تعديل 6] isSameOrigin() المُصحَّحة
-    // =========================================================
-    private boolean isSameOrigin(Uri uri) {
-        if (uri == null) {
-            return false;
-        }
-
-        if (trustedHost == null) {
-            return false;
-        }
-
-        String targetHost = uri.getHost();
-
-        if (targetHost == null) {
-            return false;
-        }
-
-        targetHost = targetHost.toLowerCase();
-
-        String trusted = trustedHost.toLowerCase();
-
-        String targetScheme = uri.getScheme();
-
-        int port = uri.getPort();
-
-        if (port == -1) {
-            port = "https".equals(targetScheme) ? 443 : 80;
-        }
-
-        // السماح بـ subdomains
-        boolean hostMatches =
-                trusted.equalsIgnoreCase(targetHost)
-                        || targetHost.endsWith("." + trusted);
-
-        return hostMatches
-                && trustedScheme.equalsIgnoreCase(targetScheme)
-                && trustedPort == port;
-    }
-
     // ==============================
     // 🔒 Safe back navigation helper
     // ==============================
@@ -1574,4 +1374,4 @@ public class WebEngineManager {
     public boolean isOnErrorPage() {
         return OfflineStateManager.getInstance().isOnErrorPage();
     }
-    }
+                                }
