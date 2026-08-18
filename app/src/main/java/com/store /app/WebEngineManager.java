@@ -1,11 +1,13 @@
 package com.store.app;
 
+import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.graphics.Color;
 import android.net.Uri;
 import android.os.Build;
 import android.os.CancellationSignal;
+import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
@@ -14,7 +16,11 @@ import android.view.ViewGroup;
 import android.webkit.*;
 
 import androidx.annotation.NonNull;
+import androidx.browser.customtabs.CustomTabsCallback;
+import androidx.browser.customtabs.CustomTabsClient;
 import androidx.browser.customtabs.CustomTabsIntent;
+import androidx.browser.customtabs.CustomTabsServiceConnection;
+import androidx.browser.customtabs.CustomTabsSession;
 import androidx.webkit.Navigation;
 import androidx.webkit.NavigationListener;
 import androidx.webkit.Page;
@@ -155,6 +161,13 @@ public class WebEngineManager {
 
     private long lastPredictionTime = 0L;
 
+    // =========================================================
+    // 🔐 Smart Custom Tabs Session Fields
+    // =========================================================
+    private CustomTabsClient customTabsClient = null;
+    private CustomTabsSession customTabsSession = null;
+    private boolean isCustomTabOpen = false;
+
     private static final long PREDICTION_COOLDOWN_MS = 350L;
 
     public interface SplashStateChecker {
@@ -180,6 +193,59 @@ public class WebEngineManager {
                 : null;
 
         this.capabilitiesEngine = new RoyalCapabilitiesEngine(this.activity);
+    }
+
+    // =========================================================
+    // 🔐 Smart Custom Tabs Session Setup
+    // =========================================================
+    private void setupCustomTabsSession() {
+        if (activity == null) return;
+
+        try {
+            String packageName = CustomTabsClient.getPackageName(context, null);
+            if (packageName == null) return;
+
+            CustomTabsClient.bindCustomTabsService(context, packageName, new CustomTabsServiceConnection() {
+                @Override
+                public void onCustomTabsServiceConnected(@NonNull ComponentName name, @NonNull CustomTabsClient client) {
+                    customTabsClient = client;
+                    customTabsClient.warmup(0L);
+
+                    customTabsSession = customTabsClient.newSession(new CustomTabsCallback() {
+                        @Override
+                        public void onNavigationEvent(int navigationEvent, Bundle extras) {
+                            super.onNavigationEvent(navigationEvent, extras);
+
+                            // TAB_HIDDEN = 6 (عندما يُغلق المتصفح أو يعود التطبيق للواجهة)
+                            if (navigationEvent == CustomTabsCallback.TAB_HIDDEN && isCustomTabOpen) {
+                                isCustomTabOpen = false;
+                                Log.i(TAG, "🔄 Custom Tab hidden -> Triggering WebView Session Refresh");
+
+                                if (activity != null && webView != null) {
+                                    activity.runOnUiThread(() -> {
+                                        webView.postDelayed(() -> {
+                                            if (trustedHost != null) {
+                                                webView.loadUrl(trustedScheme + "://" + trustedHost);
+                                            } else {
+                                                webView.reload();
+                                            }
+                                        }, 300);
+                                    });
+                                }
+                            }
+                        }
+                    });
+                }
+
+                @Override
+                public void onServiceDisconnected(ComponentName name) {
+                    customTabsClient = null;
+                    customTabsSession = null;
+                }
+            });
+        } catch (Throwable t) {
+            Log.w(TAG, "⚠️ CustomTabsService binding failed.", t);
+        }
     }
 
     // =========================================================
@@ -697,6 +763,8 @@ public class WebEngineManager {
 
         configureSettings();
 
+        setupCustomTabsSession();
+
         attachClients();
 
         initializeSpeculativeLoading();
@@ -1213,7 +1281,7 @@ public class WebEngineManager {
     }
 
     /**
-     * إطلاق مسار المصادقة الحساس في Custom Tab.
+     * إطلاق مسار المصادقة الحساس في Custom Tab مربوطاً بالجلسة التفاعلية.
      */
     public boolean launchSensitiveFlow(Uri uri) {
 
@@ -1222,35 +1290,50 @@ public class WebEngineManager {
         }
 
         try {
+            isCustomTabOpen = true;
 
-            CustomTabsIntent customTabsIntent =
-                    new CustomTabsIntent.Builder()
-                            .setShowTitle(false)
-                            .build();
+            CustomTabsIntent.Builder builder = (customTabsSession != null)
+                    ? new CustomTabsIntent.Builder(customTabsSession)
+                    : new CustomTabsIntent.Builder();
 
-            customTabsIntent.launchUrl(
-                    activity,
-                    uri
-            );
+            CustomTabsIntent customTabsIntent = builder
+                    .setShowTitle(true)
+                    .setShareState(CustomTabsIntent.SHARE_STATE_OFF)
+                    .build();
 
-            Log.i(
-                    TAG,
-                    "🔐 Sensitive navigation launched in Custom Tab: "
-                            + uri
-            );
+            customTabsIntent.intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+
+            customTabsIntent.launchUrl(activity, uri);
+
+            Log.i(TAG, "🔐 Sensitive navigation launched in Custom Tab with session: " + uri);
 
             return true;
 
         } catch (Throwable e) {
-
-            Log.e(
-                    TAG,
-                    "❌ Failed to launch sensitive navigation.",
-                    e
-            );
-
+            isCustomTabOpen = false;
+            Log.e(TAG, "❌ Failed to launch sensitive navigation.", e);
             return false;
         }
+    }
+
+    /**
+     * دالة معالجة العودة الفورية وحقن الكوكي
+     */
+    public void handleAuthReturn(String redirectUrl) {
+        if (activity == null || webView == null) return;
+
+        isCustomTabOpen = false;
+
+        activity.runOnUiThread(() -> {
+            Log.i(TAG, "👑 Auth Return Executing in WebView -> " + redirectUrl);
+            if (redirectUrl != null && !redirectUrl.isEmpty()) {
+                webView.loadUrl(redirectUrl);
+            } else if (trustedHost != null) {
+                webView.loadUrl(trustedScheme + "://" + trustedHost);
+            } else {
+                webView.reload();
+            }
+        });
     }
 
     private boolean handleUriLogic(Uri uri, boolean isMainFrame) {
@@ -1461,66 +1544,13 @@ public class WebEngineManager {
                             Log.w(TAG, "safeGoBack: goBackOrForward failed", e);
                         }
                     });
-                } else {
-                    // fallback: call on UI thread via webView
-                    webView.post(() -> {
-                        try {
-                            webView.goBackOrForward(steps);
-                        } catch (Exception e) {
-                            Log.w(TAG, "safeGoBack: goBackOrForward failed (post)", e);
-                        }
-                    });
                 }
                 return true;
             }
+            return false;
         } catch (Exception e) {
-            Log.w(TAG, "safeGoBack: unexpected error", e);
-        }
-        return false;
-    }
-
-    /**
-     * Returns true if the current WebView URL is the app's home/root URL.
-     */
-    public boolean isAtHomeUrl() {
-        try {
-            if (webView == null) return true;
-            String url = webView.getUrl();
-            if (url == null) return true;
-            String home = com.store.app.BuildConfig.CLIENT_URL;
-            return url.equalsIgnoreCase(home) || url.equalsIgnoreCase(home + "/") ;
-        } catch (Exception e) {
-            return true;
+            Log.w(TAG, "safeGoBack error", e);
+            return false;
         }
     }
-
-    // ==========================================
-    // 🔥 دوال حالة الصفحة (تستخدم OfflineStateManager)
-    // ==========================================
-    public boolean isOnErrorPage() {
-        return OfflineStateManager.getInstance().isOnErrorPage();
-    }
-
-    public boolean isPageValid() {
-        return OfflineStateManager.getInstance().isPageValid();
-    }
-
-    // ==========================================
-    // 🧹 دورة الحياة (destroy)
-    // ==========================================
-    public void destroy() {
-
-        cancelActivePrerender();
-
-        speculativeUrls.clear();
-
-        webProfile = null;
-
-        speculativeLoadingReady = false;
-
-        Log.i(
-                TAG,
-                "🧹 WebEngineManager destroyed."
-        );
-    }
-            }
+                        }
