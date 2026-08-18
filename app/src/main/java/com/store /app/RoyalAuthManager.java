@@ -52,10 +52,8 @@ public final class RoyalAuthManager {
                 || uriString.contains("/oauth")
                 || uriString.contains("/login");
 
-        // 2. فحص الـ Schemes المسموحة (HTTPS, HTTP, Custom Schemes)
-        boolean isValidScheme = "https".equals(scheme) 
-                || "http".equals(scheme) 
-                || "com.store.app.auth".equals(scheme);
+        // 2. فحص الـ Schemes المسموحة (فقط المخطط المخصص)
+        boolean isValidScheme = "com.store.app.auth".equals(scheme);
 
         return isValidScheme && containsAuthKeywords;
     }
