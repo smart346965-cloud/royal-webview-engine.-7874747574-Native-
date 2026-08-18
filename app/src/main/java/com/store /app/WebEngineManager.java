@@ -6,8 +6,8 @@ import android.content.Intent;
 import android.graphics.Color;
 import android.net.Uri;
 import android.os.Build;
-import android.os.CancellationSignal;
 import android.os.Bundle;
+import android.os.CancellationSignal;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
@@ -1549,8 +1549,19 @@ public class WebEngineManager {
             }
             return false;
         } catch (Exception e) {
-            Log.w(TAG, "safeGoBack error", e);
+            Log.w(TAG, "safeGoBack: error", e);
             return false;
         }
     }
-                        }
+
+    // =====================================================================
+    // 🔥 دوال الحالة العامة المطلوبة من الخارج
+    // =====================================================================
+    public boolean isPageValid() {
+        return OfflineStateManager.getInstance().isPageValid();
+    }
+
+    public boolean isOnErrorPage() {
+        return OfflineStateManager.getInstance().isOnErrorPage();
+    }
+    }
