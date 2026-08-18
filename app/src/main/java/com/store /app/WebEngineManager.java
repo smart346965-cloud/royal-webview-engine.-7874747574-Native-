@@ -7,7 +7,6 @@ import android.graphics.Color;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
-import android.os.CancellationSignal;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
@@ -24,20 +23,15 @@ import androidx.browser.customtabs.CustomTabsSession;
 import androidx.webkit.Navigation;
 import androidx.webkit.NavigationListener;
 import androidx.webkit.Page;
-import androidx.webkit.Profile;
-import androidx.webkit.ProfileStore;
-import androidx.webkit.PrerenderException;
-import androidx.webkit.PrerenderOperationCallback;
 import androidx.webkit.WebSettingsCompat;
 import androidx.webkit.WebViewCompat;
 import androidx.webkit.WebViewFeature;
 
 import com.store.app.offline.OfflineStateManager;
+import com.store.app.webview.SpeculativeEngine;
 
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
-import java.util.HashSet;
-import java.util.Set;
 
 public class WebEngineManager {
 
@@ -140,22 +134,7 @@ public class WebEngineManager {
     private long splashStartTime = 0;
 
     private final RoyalCapabilitiesEngine capabilitiesEngine;
-
-    // =========================================================
-    // ⚡ Speculative Loading Fields
-    // =========================================================
-    private Profile webProfile = null;
-    private boolean speculativeLoadingReady = false;
-
-    private static final int MAX_SPECULATIVE_URLS = 8;
-
-    private final Set<String> speculativeUrls =
-            new HashSet<>();
-
-    private CancellationSignal activePrerenderCancellationSignal = null;
-    private String activePrerenderUrl = null;
-
-    private long lastPredictionTime = 0L;
+    private final SpeculativeEngine speculativeEngine;
 
     // =========================================================
     // 🔐 Smart Custom Tabs Session Fields
@@ -163,8 +142,6 @@ public class WebEngineManager {
     private CustomTabsClient customTabsClient = null;
     private CustomTabsSession customTabsSession = null;
     private boolean isCustomTabOpen = false;
-
-    private static final long PREDICTION_COOLDOWN_MS = 350L;
 
     public interface SplashStateChecker {
         boolean isRemoved();
@@ -189,6 +166,7 @@ public class WebEngineManager {
                 : null;
 
         this.capabilitiesEngine = new RoyalCapabilitiesEngine(this.activity);
+        this.speculativeEngine = new SpeculativeEngine(this.activity, this.webView);
     }
 
     // =========================================================
@@ -245,493 +223,40 @@ public class WebEngineManager {
     }
 
     // =========================================================
-    // ⚡ Initialize Native Speculative Loading
+    // 🔒 Safe navigation back helper
     // =========================================================
-    private void initializeSpeculativeLoading() {
-
-        if (activity == null) {
-            return;
-        }
-
-        activity.runOnUiThread(() -> {
-
-            try {
-
-                if (!WebViewFeature.isFeatureSupported(
-                        WebViewFeature.MULTI_PROFILE)) {
-
-                    Log.w(
-                            TAG,
-                            "⚠️ MULTI_PROFILE not supported."
-                    );
-
-                    speculativeLoadingReady = false;
-                    return;
-                }
-
-                webProfile =
-                        ProfileStore
-                                .getInstance()
-                                .getOrCreateProfile(
-                                        Profile.DEFAULT_PROFILE_NAME
-                                );
-
-                speculativeLoadingReady =
-                        webProfile != null;
-
-                if (speculativeLoadingReady) {
-
-                    /*
-                     * تسخين Renderer نفسه إن كان مدعوماً.
-                     * لا علاقة له بالسكرول ولا يتدخل في مسار اللمس.
-                     */
-                    if (WebViewFeature.isFeatureSupported(
-                            WebViewFeature.WARM_UP_RENDERER_PROCESS)) {
-
-                        try {
-                            webProfile.warmUpRendererProcess();
-                        } catch (Throwable warmupError) {
-                            Log.w(
-                                    TAG,
-                                    "⚠️ Renderer warm-up unavailable.",
-                                    warmupError
-                            );
-                        }
-                    }
-
-                    Log.i(
-                            TAG,
-                            "⚡ Native Chromium speculative engine ready."
-                    );
-                }
-
-            } catch (Throwable e) {
-
-                speculativeLoadingReady = false;
-
-                Log.e(
-                        TAG,
-                        "❌ Failed to initialize Chromium Profile.",
-                        e
-                );
-            }
-        });
-    }
-
-    // =========================================================
-    // ⚡ Native Preconnect
-    // =========================================================
-    private void preconnectOrigin(String url) {
-
-        if (activity == null || url == null) return;
-
-        activity.runOnUiThread(() -> {
-
-            try {
-
-                if (!WebViewFeature.isFeatureSupported(
-                        WebViewFeature.PRECONNECT)) {
-
-                    Log.w(TAG,
-                            "⚠️ PRECONNECT not supported.");
-
-                    return;
-                }
-
-                if (webProfile == null) {
-
-                    if (!WebViewFeature.isFeatureSupported(
-                            WebViewFeature.MULTI_PROFILE)) {
-
-                        Log.w(TAG,
-                                "⚠️ MULTI_PROFILE not supported; cannot obtain default profile.");
-
-                        return;
-                    }
-
-                    webProfile = ProfileStore
-                            .getInstance()
-                            .getOrCreateProfile(Profile.DEFAULT_PROFILE_NAME);
-                }
-
-                if (webProfile == null) return;
-
-                Uri uri = Uri.parse(url);
-
-                String origin = buildOrigin(uri);
-
-                if (origin == null) return;
-
-                webProfile.preconnect(origin);
-
-                Log.d(TAG,
-                        "⚡ Preconnected: " + origin);
-
-            } catch (Throwable e) {
-
-                Log.w(TAG,
-                        "⚠️ Preconnect failed: " + url,
-                        e);
-            }
-        });
-    }
-
-    private String buildOrigin(Uri uri) {
-
-        if (uri == null) return null;
-
-        String scheme = uri.getScheme();
-        String host = uri.getHost();
-
-        if (scheme == null || host == null) {
-            return null;
-        }
-
-        scheme = scheme.toLowerCase();
-        host = host.toLowerCase();
-
-        if (!"https".equals(scheme)) {
-            return null;
-        }
-
-        int port = uri.getPort();
-
-        if (port == -1 || port == 443) {
-            return scheme + "://" + host;
-        }
-
-        return scheme + "://" + host + ":" + port;
-    }
-
-    // =========================================================
-    // 🔒 Speculative Origin Policy
-    // =========================================================
-    private boolean isSafePredictionUrl(Uri uri) {
-
-        if (uri == null) {
-            return false;
-        }
-
-        String scheme = uri.getScheme();
-        String host = uri.getHost();
-
-        if (scheme == null || host == null) {
-            return false;
-        }
-
-        scheme = scheme.toLowerCase();
-        host = host.toLowerCase();
-
-        // HTTPS فقط
-        if (!"https".equals(scheme)) {
-            return false;
-        }
-
-        if (trustedHost == null ||
-                trustedScheme == null) {
-            return false;
-        }
-
-        // نفس الـ scheme
-        if (!trustedScheme.equalsIgnoreCase(scheme)) {
-            return false;
-        }
-
-        // نفس الـ origin policy
-        int port = uri.getPort();
-
-        if (port == -1) {
-            port = 443;
-        }
-
-        if (port != trustedPort) {
-            return false;
-        }
-
-        String trusted =
-                trustedHost.toLowerCase();
-
-        // Root + subdomains الموثوقة
-        boolean hostMatches =
-                trusted.equals(host)
-                        || host.endsWith("." + trusted);
-
-        if (!hostMatches) {
-            Log.w(TAG,
-                    "🛡️ Prediction rejected: foreign origin -> "
-                            + uri);
-
-            return false;
-        }
-
-        return true;
-    }
-
-    // =========================================================
-    // 🧠 ROYAL PREDICTION ENTRY POINT
-    // =========================================================
-    public void predict(String url) {
-
-        if (
-                activity == null ||
-                webView == null ||
-                url == null ||
-                url.isEmpty()
-        ) {
-            return;
-        }
-
-        activity.runOnUiThread(() -> {
-
-            try {
-
-                Uri uri = Uri.parse(url);
-
-                /*
-                 * طبقة الأمان النهائية Native.
-                 * لا نعتمد على فلتر JavaScript وحده.
-                 */
-                if (!isSafePredictionUrl(uri)) {
-                    return;
-                }
-
-                String normalizedUrl =
-                        uri.toString();
-
-                /*
-                 * منع إعادة تسخين الرابط نفسه.
-                 */
-                if (speculativeUrls.contains(
-                        normalizedUrl)) {
-                    return;
-                }
-
-                /*
-                 * حماية Chromium من استقبال bursts
-                 * كبيرة من طلبات prerender.
-                 */
-                long now =
-                        android.os.SystemClock
-                                .uptimeMillis();
-
-                if (
-                        now - lastPredictionTime <
-                        PREDICTION_COOLDOWN_MS
-                ) {
-                    return;
-                }
-
-                lastPredictionTime = now;
-
-                /*
-                 * Budget صغير ومقصود.
-                 */
-                if (
-                        speculativeUrls.size() >=
-                        MAX_SPECULATIVE_URLS
-                ) {
-
-                    speculativeUrls.clear();
-                }
-
-                speculativeUrls.add(
-                        normalizedUrl
-                );
-
-                Log.d(
-                        TAG,
-                        "🧠 Native prediction accepted: "
-                                + normalizedUrl
-                );
-
-                /*
-                 * المرحلة الأولى:
-                 * DNS + TCP + TLS.
-                 */
-                preconnectOrigin(
-                        normalizedUrl
-                );
-
-                /*
-                 * المرحلة الثانية:
-                 * Chromium prerender.
-                 */
-                startPrerender(
-                        normalizedUrl
-                );
-
-            } catch (Throwable e) {
-
-                Log.w(
-                        TAG,
-                        "⚠️ Native prediction failed: "
-                                + url,
-                        e
-                );
-            }
-        });
-    }
-
-    // =========================================================
-    // 🚀 Chromium Native Prerender
-    // =========================================================
-    private void cancelActivePrerender() {
-
-        if (activePrerenderCancellationSignal != null) {
-
-            try {
-
-                activePrerenderCancellationSignal.cancel();
-
-                Log.d(
-                        TAG,
-                        "🛑 Active prerender cancelled: "
-                                + activePrerenderUrl
-                );
-
-            } catch (Throwable e) {
-
-                Log.w(
-                        TAG,
-                        "⚠️ Failed to cancel active prerender.",
-                        e
-                );
-            }
-        }
-
-        activePrerenderCancellationSignal = null;
-        activePrerenderUrl = null;
-    }
-
-    private void startPrerender(String url) {
-
-        if (
-                activity == null ||
-                webView == null ||
-                url == null
-        ) {
-            return;
-        }
-
-        if (
-                !WebViewFeature.isFeatureSupported(
-                        WebViewFeature.PRERENDER_WITH_URL
-                )
-        ) {
-
-            Log.d(
-                    TAG,
-                    "ℹ️ Chromium prerender unavailable."
-            );
-
-            return;
-        }
-
+    public boolean safeGoBack() {
         try {
+            if (webView == null) return false;
 
-            /*
-             * لا نسمح بأكثر من prerender نشط
-             * حتى لا يتحول التنبؤ إلى استنزاف للذاكرة.
-             */
-            cancelActivePrerender();
+            WebBackForwardList list = webView.copyBackForwardList();
+            if (list == null) return false;
 
-            CancellationSignal
-                    cancellationSignal =
-                    new CancellationSignal();
-
-            activePrerenderCancellationSignal =
-                    cancellationSignal;
-
-            activePrerenderUrl =
-                    url;
-
-            WebViewCompat.prerenderUrlAsync(
-                    webView,
-                    url,
-                    cancellationSignal,
-                    activity.getMainExecutor(),
-
-                    new PrerenderOperationCallback() {
-
-                        @Override
-                        public void onPrerenderActivated() {
-
-                            Log.d(
-                                    TAG,
-                                    "🚀 Chromium prerender activated: "
-                                            + url
-                            );
-
-                            if (
-                                    url.equals(
-                                            activePrerenderUrl
-                                    )
-                            ) {
-
-                                activePrerenderCancellationSignal =
-                                        null;
-
-                                activePrerenderUrl =
-                                        null;
-                            }
+            int currentIndex = list.getCurrentIndex();
+            // scan backwards for the first valid URL
+            for (int i = currentIndex - 1; i >= 0; i--) {
+                String candidate = list.getItemAtIndex(i).getUrl();
+                if (candidate == null) continue;
+                String lower = candidate.toLowerCase();
+                if (lower.startsWith("about:") || lower.startsWith("data:") || lower.contains("chromewebdata")) {
+                    continue; // skip invalid entries
+                }
+                final int steps = i - currentIndex; // negative value
+                if (activity != null) {
+                    activity.runOnUiThread(() -> {
+                        try {
+                            webView.goBackOrForward(steps);
+                        } catch (Exception e) {
+                            Log.w(TAG, "safeGoBack: goBackOrForward failed", e);
                         }
-
-                        @Override
-                        public void onError(
-                                @NonNull
-                                PrerenderException exception) {
-
-                            Log.d(
-                                    TAG,
-                                    "ℹ️ Chromium prerender unavailable/rejected: "
-                                            + url
-                                            + " error="
-                                            + exception.getMessage()
-                            );
-
-                            if (
-                                    url.equals(
-                                            activePrerenderUrl
-                                    )
-                            ) {
-
-                                activePrerenderCancellationSignal =
-                                        null;
-
-                                activePrerenderUrl =
-                                        null;
-                            }
-                        }
-                    }
-            );
-
-            Log.d(
-                    TAG,
-                    "🚀 Chromium prerender requested: "
-                            + url
-            );
-
-        } catch (Throwable e) {
-
-            Log.w(
-                    TAG,
-                    "⚠️ Chromium prerender failed: "
-                            + url,
-                    e
-            );
-
-            if (
-                    url.equals(
-                            activePrerenderUrl
-                    )
-            ) {
-
-                activePrerenderCancellationSignal =
-                        null;
-
-                activePrerenderUrl =
-                        null;
+                    });
+                }
+                return true;
             }
+            return false;
+        } catch (Exception e) {
+            Log.w(TAG, "safeGoBack: error", e);
+            return false;
         }
     }
 
@@ -763,13 +288,13 @@ public class WebEngineManager {
 
         attachClients();
 
-        initializeSpeculativeLoading();
+        speculativeEngine.initializeSpeculativeLoading();
 
         // ⚡ Preconnect للـ origin الأساسي مبكراً
         String clientUrl = BuildConfig.CLIENT_URL;
 
         if (clientUrl != null) {
-            preconnectOrigin(clientUrl);
+            speculativeEngine.preconnectOrigin(clientUrl);
         }
 
         if (WebViewFeature.isFeatureSupported(WebViewFeature.NAVIGATION_LISTENER)) {
@@ -792,15 +317,8 @@ public class WebEngineManager {
 
                 @Override
                 public void onNavigationStarted(@NonNull Navigation navigation) {
-
-                    speculativeUrls.clear();
-
-                    cancelActivePrerender();
-
-                    Log.i(
-                            "Performance",
-                            "🚀 Navigation started"
-                    );
+                    speculativeEngine.onNavigationStarted();
+                    Log.i("Performance", "🚀 Navigation started");
                 }
 
                 @Override
@@ -936,6 +454,14 @@ public class WebEngineManager {
 
                     if (trustedHost == null) {
                         setTrustedOrigin(url);
+                    }
+
+                    if (trustedHost != null && trustedScheme != null) {
+                        speculativeEngine.setTrustedOrigin(
+                                trustedScheme,
+                                trustedHost,
+                                trustedPort
+                        );
                     }
 
                     if (activity != null) {
@@ -1321,49 +847,6 @@ public class WebEngineManager {
         }
     }
 
-    // ==============================
-    // 🔒 Safe back navigation helper
-    // ==============================
-    /**
-     * Attempts to navigate back to the nearest previous history entry that is a valid page.
-     * Skips entries like about:blank, data: URIs, chromewebdata, or null URLs.
-     * Returns true if navigation was performed, false if no safe entry found.
-     */
-    public boolean safeGoBack() {
-        try {
-            if (webView == null) return false;
-
-            WebBackForwardList list = webView.copyBackForwardList();
-            if (list == null) return false;
-
-            int currentIndex = list.getCurrentIndex();
-            // scan backwards for the first valid URL
-            for (int i = currentIndex - 1; i >= 0; i--) {
-                String candidate = list.getItemAtIndex(i).getUrl();
-                if (candidate == null) continue;
-                String lower = candidate.toLowerCase();
-                if (lower.startsWith("about:") || lower.startsWith("data:") || lower.contains("chromewebdata")) {
-                    continue; // skip invalid entries
-                }
-                final int steps = i - currentIndex; // negative value
-                if (activity != null) {
-                    activity.runOnUiThread(() -> {
-                        try {
-                            webView.goBackOrForward(steps);
-                        } catch (Exception e) {
-                            Log.w(TAG, "safeGoBack: goBackOrForward failed", e);
-                        }
-                    });
-                }
-                return true;
-            }
-            return false;
-        } catch (Exception e) {
-            Log.w(TAG, "safeGoBack: error", e);
-            return false;
-        }
-    }
-
     // =====================================================================
     // 🔥 دوال الحالة العامة المطلوبة من الخارج
     // =====================================================================
@@ -1374,4 +857,100 @@ public class WebEngineManager {
     public boolean isOnErrorPage() {
         return OfflineStateManager.getInstance().isOnErrorPage();
     }
-                                }
+
+    // =====================================================================
+    // 🛡️ دوال الثقة الأساسية (الـ origin الموثوق)
+    // =====================================================================
+
+    private String trustedScheme = null;
+    private String trustedHost = null;
+    private int trustedPort = -1;
+
+    private void setTrustedOrigin(String url) {
+        Uri uri = Uri.parse(url);
+        trustedScheme = uri.getScheme();
+        trustedHost = uri.getHost();
+        trustedPort = uri.getPort() == -1 ? ("https".equals(trustedScheme) ? 443 : 80) : uri.getPort();
+    }
+
+    private boolean isSameOrigin(Uri uri) {
+        if (trustedHost == null) return false;
+        String scheme = uri.getScheme();
+        String host = uri.getHost();
+        if (scheme == null || host == null) return false;
+
+        int port = uri.getPort() == -1 ? ("https".equals(scheme) ? 443 : 80) : uri.getPort();
+        return scheme.equals(trustedScheme) && host.equalsIgnoreCase(trustedHost) && port == trustedPort;
+    }
+
+    // ==========================================
+    // 🔧 الإعدادات والتزامن
+    // ==========================================
+
+    private void configureSettings() {
+        webView.setBackgroundColor(Color.parseColor("#F3F4F6"));
+        webView.setAlpha(1f);
+        webView.setLayerType(View.LAYER_TYPE_HARDWARE, null);
+        webView.setWillNotDraw(false);
+        webView.setOverScrollMode(WebView.OVER_SCROLL_IF_CONTENT_SCROLLS);
+        webView.setHorizontalScrollBarEnabled(false);
+        webView.setVerticalScrollBarEnabled(false);
+
+        WebSettings settings = webView.getSettings();
+        settings.setJavaScriptEnabled(true);
+        settings.setDomStorageEnabled(true);
+        settings.setDatabaseEnabled(true);
+        settings.setCacheMode(WebSettings.LOAD_DEFAULT);
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            settings.setSafeBrowsingEnabled(false);
+        }
+
+        settings.setAllowFileAccess(true);
+        settings.setAllowContentAccess(true);
+        settings.setAllowFileAccessFromFileURLs(true);
+        settings.setAllowUniversalAccessFromFileURLs(true);
+
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.ALGORITHMIC_DARKENING)) {
+            WebSettingsCompat.setAlgorithmicDarkeningAllowed(settings, true);
+        }
+
+        settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
+        settings.setSupportMultipleWindows(false);
+        settings.setSupportZoom(false);
+    }
+
+    private void syncStatusBarColor(WebView view) {
+        if (activity == null || activity.isFinishing()) return;
+        if (!NetworkMonitor.isInternetAvailable(context)) return;
+
+        String currentUrl = view.getUrl();
+        if (currentUrl != null && currentUrl.startsWith("file:///android_asset/")) {
+            activity.getWindow().setStatusBarColor(Color.TRANSPARENT);
+            activity.getWindow().setNavigationBarColor(Color.TRANSPARENT);
+            SystemUI.setDynamicIcons(activity.getWindow(), true);
+            return;
+        }
+
+        if (!view.isAttachedToWindow()) return;
+
+        view.evaluateJavascript(
+                "(function(){return window.getComputedStyle(document.body).backgroundColor;})();",
+                value -> {
+                    try {
+                        if (value != null && value.contains("rgb")) {
+                            String clean = value.replaceAll("[^0-9,]", "");
+                            String[] parts = clean.split(",");
+                            int r = Integer.parseInt(parts[0].trim());
+                            int g = Integer.parseInt(parts[1].trim());
+                            int b = Integer.parseInt(parts[2].trim());
+                            int color = Color.rgb(r, g, b);
+                            activity.getWindow().setStatusBarColor(color);
+                            boolean isLight = SystemUI.isColorLight(color);
+                            SystemUI.setDynamicIcons(activity.getWindow(), isLight);
+                        }
+                    } catch (Exception ignored) {}
+                }
+        );
+    }
+                            }
