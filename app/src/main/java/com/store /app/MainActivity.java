@@ -569,6 +569,10 @@ public class MainActivity extends AppCompatActivity {
      */
     public void dispatchAuthUrlToWebView(@NonNull String url) {
         runOnUiThread(() -> {
+            if (url.startsWith("com.store.app.auth")) {
+                Log.i(TAG, "✅ Custom scheme detected, skipping internal load.");
+                return;
+            }
             // 1. إعادة تقديم MainActivity فوق الـ Custom Tab لإغلاق الشاشة المؤقتة
             Intent intent = new Intent(this, MainActivity.class);
             intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
@@ -585,4 +589,4 @@ public class MainActivity extends AppCompatActivity {
             }
         });
     }
-            }
+        }
