@@ -1327,6 +1327,10 @@ public class WebEngineManager {
         activity.runOnUiThread(() -> {
             Log.i(TAG, "👑 Auth Return Executing in WebView -> " + redirectUrl);
             if (redirectUrl != null && !redirectUrl.isEmpty()) {
+                if (redirectUrl.startsWith("com.store.app.auth")) {
+                    Log.i(TAG, "✅ Skipping internal load for custom auth scheme: " + redirectUrl);
+                    return; // لا نحمل الرابط داخل WebView
+                }
                 webView.loadUrl(redirectUrl);
             } else if (trustedHost != null) {
                 webView.loadUrl(trustedScheme + "://" + trustedHost);
@@ -1371,6 +1375,12 @@ public class WebEngineManager {
 
         if ("http".equals(scheme) || "https".equals(scheme)) {
             return false;
+        }
+
+        // ✅ منع فتح روابط المصادقة المخصصة داخليًا أو خارجيًا
+        if ("com.store.app.auth".equals(scheme)) {
+            Log.i(TAG, "✅ Custom auth scheme detected, handled by RoyalAuthManager.");
+            return true; // لا تفتح الرابط، دعه يمر عبر onNewIntent
         }
 
         return launchExternal(uri);
