@@ -3,12 +3,9 @@ package com.store.app;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
-import android.graphics.Color;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
-import android.os.Handler;
-import android.os.Looper;
 import android.util.Log;
 import android.view.View;
 import android.view.ViewGroup;
@@ -23,12 +20,12 @@ import androidx.browser.customtabs.CustomTabsSession;
 import androidx.webkit.Navigation;
 import androidx.webkit.NavigationListener;
 import androidx.webkit.Page;
-import androidx.webkit.WebSettingsCompat;
 import androidx.webkit.WebViewCompat;
 import androidx.webkit.WebViewFeature;
 
 import com.store.app.offline.OfflineStateManager;
 import com.store.app.webview.SpeculativeEngine;
+import com.store.app.webview.WebEngineConfig;
 
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
@@ -135,6 +132,7 @@ public class WebEngineManager {
 
     private final RoyalCapabilitiesEngine capabilitiesEngine;
     private final SpeculativeEngine speculativeEngine;
+    private final WebEngineConfig webEngineConfig;
 
     // =========================================================
     // 🔐 Smart Custom Tabs Session Fields
@@ -167,6 +165,15 @@ public class WebEngineManager {
 
         this.capabilitiesEngine = new RoyalCapabilitiesEngine(this.activity);
         this.speculativeEngine = new SpeculativeEngine(this.activity, this.webView);
+
+        /**
+         * ⚙️ Bind WebEngineConfig to the exact same WebView instance.
+         */
+        this.webEngineConfig = new WebEngineConfig(
+                this.context,
+                this.webView,
+                this.activity
+        );
     }
 
     // =========================================================
@@ -198,8 +205,12 @@ public class WebEngineManager {
                                 if (activity != null && webView != null) {
                                     activity.runOnUiThread(() -> {
                                         webView.postDelayed(() -> {
-                                            if (trustedHost != null) {
-                                                webView.loadUrl(trustedScheme + "://" + trustedHost);
+                                            if (webEngineConfig.getTrustedHost() != null) {
+                                                webView.loadUrl(
+                                                        webEngineConfig.getTrustedScheme()
+                                                                + "://"
+                                                                + webEngineConfig.getTrustedHost()
+                                                );
                                             } else {
                                                 webView.reload();
                                             }
@@ -282,7 +293,7 @@ public class WebEngineManager {
             Log.i("RoyalEngine", "🔥 Warm Resume Detected, enforcing fixed splash time.");
         }
 
-        configureSettings();
+        webEngineConfig.configureSettings();
 
         setupCustomTabsSession();
 
@@ -452,15 +463,17 @@ public class WebEngineManager {
 
                     Log.i(TAG, "✅ Page committed successfully: " + url);
 
-                    if (trustedHost == null) {
-                        setTrustedOrigin(url);
+                    if (webEngineConfig.getTrustedHost() == null) {
+                        webEngineConfig.setTrustedOrigin(url);
                     }
 
-                    if (trustedHost != null && trustedScheme != null) {
+                    if (webEngineConfig.getTrustedHost() != null
+                            && webEngineConfig.getTrustedScheme() != null) {
+
                         speculativeEngine.setTrustedOrigin(
-                                trustedScheme,
-                                trustedHost,
-                                trustedPort
+                                webEngineConfig.getTrustedScheme(),
+                                webEngineConfig.getTrustedHost(),
+                                webEngineConfig.getTrustedPort()
                         );
                     }
 
@@ -502,7 +515,7 @@ public class WebEngineManager {
                         );
                     }
 
-                    syncStatusBarColor(view);
+                    webEngineConfig.syncStatusBarColor(view);
 
                     if (NetworkMonitor.isInternetAvailable(context)
                             && !OfflineStateManager.getInstance().isOnErrorPage()
@@ -629,7 +642,7 @@ public class WebEngineManager {
                 Uri uri = request.getUrl();
 
                 if (!NetworkMonitor.isInternetAvailable(context)) {
-                    if (isSameOrigin(uri)) {
+                    if (webEngineConfig.isSameOrigin(uri)) {
                         // ❌ لا تحفظ الرابط ولا توقف التحميل
                         // ✅ فقط اهتز الشريط وأهمل النقر
                         OfflineStateManager.getInstance().notifyOfflineClickAttempt();
@@ -648,7 +661,8 @@ public class WebEngineManager {
                 if (url == null) return false;
                 Uri uri = Uri.parse(url);
 
-                if (!NetworkMonitor.isInternetAvailable(context) && isSameOrigin(uri)) {
+                if (!NetworkMonitor.isInternetAvailable(context)
+                        && webEngineConfig.isSameOrigin(uri)) {
                     // ❌ لا تحفظ الرابط ولا توقف التحميل
                     // ✅ فقط اهتز الشريط وأهمل النقر
                     OfflineStateManager.getInstance().notifyOfflineClickAttempt();
@@ -767,8 +781,12 @@ public class WebEngineManager {
                     return; // لا نحمل الرابط داخل WebView
                 }
                 webView.loadUrl(redirectUrl);
-            } else if (trustedHost != null) {
-                webView.loadUrl(trustedScheme + "://" + trustedHost);
+            } else if (webEngineConfig.getTrustedHost() != null) {
+                webView.loadUrl(
+                        webEngineConfig.getTrustedScheme()
+                                + "://"
+                                + webEngineConfig.getTrustedHost()
+                );
             } else {
                 webView.reload();
             }
@@ -788,7 +806,7 @@ public class WebEngineManager {
         if (scheme == null) return false;
         scheme = scheme.toLowerCase();
 
-        if (isSameOrigin(uri)) {
+        if (webEngineConfig.isSameOrigin(uri)) {
             return false;
         }
 
@@ -857,100 +875,4 @@ public class WebEngineManager {
     public boolean isOnErrorPage() {
         return OfflineStateManager.getInstance().isOnErrorPage();
     }
-
-    // =====================================================================
-    // 🛡️ دوال الثقة الأساسية (الـ origin الموثوق)
-    // =====================================================================
-
-    private String trustedScheme = null;
-    private String trustedHost = null;
-    private int trustedPort = -1;
-
-    private void setTrustedOrigin(String url) {
-        Uri uri = Uri.parse(url);
-        trustedScheme = uri.getScheme();
-        trustedHost = uri.getHost();
-        trustedPort = uri.getPort() == -1 ? ("https".equals(trustedScheme) ? 443 : 80) : uri.getPort();
-    }
-
-    private boolean isSameOrigin(Uri uri) {
-        if (trustedHost == null) return false;
-        String scheme = uri.getScheme();
-        String host = uri.getHost();
-        if (scheme == null || host == null) return false;
-
-        int port = uri.getPort() == -1 ? ("https".equals(scheme) ? 443 : 80) : uri.getPort();
-        return scheme.equals(trustedScheme) && host.equalsIgnoreCase(trustedHost) && port == trustedPort;
-    }
-
-    // ==========================================
-    // 🔧 الإعدادات والتزامن
-    // ==========================================
-
-    private void configureSettings() {
-        webView.setBackgroundColor(Color.parseColor("#F3F4F6"));
-        webView.setAlpha(1f);
-        webView.setLayerType(View.LAYER_TYPE_HARDWARE, null);
-        webView.setWillNotDraw(false);
-        webView.setOverScrollMode(WebView.OVER_SCROLL_IF_CONTENT_SCROLLS);
-        webView.setHorizontalScrollBarEnabled(false);
-        webView.setVerticalScrollBarEnabled(false);
-
-        WebSettings settings = webView.getSettings();
-        settings.setJavaScriptEnabled(true);
-        settings.setDomStorageEnabled(true);
-        settings.setDatabaseEnabled(true);
-        settings.setCacheMode(WebSettings.LOAD_DEFAULT);
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            settings.setSafeBrowsingEnabled(false);
-        }
-
-        settings.setAllowFileAccess(true);
-        settings.setAllowContentAccess(true);
-        settings.setAllowFileAccessFromFileURLs(true);
-        settings.setAllowUniversalAccessFromFileURLs(true);
-
-        if (WebViewFeature.isFeatureSupported(WebViewFeature.ALGORITHMIC_DARKENING)) {
-            WebSettingsCompat.setAlgorithmicDarkeningAllowed(settings, true);
-        }
-
-        settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
-        settings.setSupportMultipleWindows(false);
-        settings.setSupportZoom(false);
-    }
-
-    private void syncStatusBarColor(WebView view) {
-        if (activity == null || activity.isFinishing()) return;
-        if (!NetworkMonitor.isInternetAvailable(context)) return;
-
-        String currentUrl = view.getUrl();
-        if (currentUrl != null && currentUrl.startsWith("file:///android_asset/")) {
-            activity.getWindow().setStatusBarColor(Color.TRANSPARENT);
-            activity.getWindow().setNavigationBarColor(Color.TRANSPARENT);
-            SystemUI.setDynamicIcons(activity.getWindow(), true);
-            return;
-        }
-
-        if (!view.isAttachedToWindow()) return;
-
-        view.evaluateJavascript(
-                "(function(){return window.getComputedStyle(document.body).backgroundColor;})();",
-                value -> {
-                    try {
-                        if (value != null && value.contains("rgb")) {
-                            String clean = value.replaceAll("[^0-9,]", "");
-                            String[] parts = clean.split(",");
-                            int r = Integer.parseInt(parts[0].trim());
-                            int g = Integer.parseInt(parts[1].trim());
-                            int b = Integer.parseInt(parts[2].trim());
-                            int color = Color.rgb(r, g, b);
-                            activity.getWindow().setStatusBarColor(color);
-                            boolean isLight = SystemUI.isColorLight(color);
-                            SystemUI.setDynamicIcons(activity.getWindow(), isLight);
                         }
-                    } catch (Exception ignored) {}
-                }
-        );
-    }
-                            }
