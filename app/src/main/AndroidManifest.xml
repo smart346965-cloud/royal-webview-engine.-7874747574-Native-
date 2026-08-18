@@ -70,7 +70,22 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
-            <!-- Nexus Auth Callback -->
+            <!-- 👑 [Nexus App Link & OAuth Interceptor]: استقبال كافة روابط المصادقة العائدة تلقائياً -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+
+                <data android:scheme="https" />
+                <data android:scheme="http" />
+                <data android:host="*" />
+                <data android:pathPrefix="/auth" />
+                <data android:pathPrefix="/oauth" />
+                <data android:pathPrefix="/callback" />
+                <data android:pathPrefix="/login" />
+            </intent-filter>
+
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
 
