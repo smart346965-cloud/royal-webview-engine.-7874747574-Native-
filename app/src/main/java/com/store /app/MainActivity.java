@@ -18,6 +18,7 @@ import android.webkit.WebViewClient;
 import android.widget.FrameLayout;
 import android.widget.ProgressBar;
 
+import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.splashscreen.SplashScreen;
 import androidx.core.view.WindowCompat;
@@ -482,7 +483,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
     // =========================================================
-    // 🔗 معالجة الروابط العميقة (Deep Links)
+    // 🔗 معالجة الروابط العميقة (Deep Links / OAuth Callbacks)
     // =========================================================
 
     @Override
@@ -501,28 +502,20 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
 
-        Log.i(
-                TAG,
-                "🔗 Deep link received: " + data.toString()
-        );
-
-        // 👑 تسليم رابط العودة للـ WebView لتوليد الـ Session Cookie فوراً
-        if (activeWebView != null && data.toString().contains("/auth")) {
-            activeWebView.loadUrl(data.toString());
-        }
+        Log.i(TAG, "🔗 Deep link received in onNewIntent: " + data.toString());
 
         if (royalAuthManager != null) {
-            royalAuthManager.handleRedirectIntent(intent);
-        } else {
-            Log.w(
-                    TAG,
-                    "⚠️ Auth callback received before RoyalAuthManager initialization."
-            );
+            boolean handled = royalAuthManager.handleRedirectIntent(intent);
+            if (!handled && activeWebView != null && RoyalAuthManager.isAuthCallback(data)) {
+                dispatchAuthUrlToWebView(data.toString());
+            }
+        } else if (activeWebView != null && RoyalAuthManager.isAuthCallback(data)) {
+            dispatchAuthUrlToWebView(data.toString());
         }
     }
 
     /**
-     * معالجة Intent الأولي للـ Auth (عند بدء النشاط)
+     * معالجة Intent الأولي للـ Auth عند بدء التطبيق
      */
     private void handleInitialAuthIntent(Intent intent) {
 
@@ -536,8 +529,12 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
 
+        Log.i(TAG, "🔗 Initial Auth Intent received: " + data.toString());
+
         if (royalAuthManager != null) {
             royalAuthManager.handleRedirectIntent(intent);
+        } else if (activeWebView != null && RoyalAuthManager.isAuthCallback(data)) {
+            dispatchAuthUrlToWebView(data.toString());
         }
     }
 
@@ -562,4 +559,22 @@ public class MainActivity extends AppCompatActivity {
             capabilitiesEngine.handlePermissionResult(requestCode, permissions, grantResults);
         }
     }
+
+    // =========================================================
+    // 👑 دالة التوزيع المباشر لرابط العودة واستلام الـ Session Cookie فوراً
+    // =========================================================
+
+    /**
+     * 👑 دالة التوزيع المباشر لرابط العودة واستلام الـ Session Cookie فوراً
+     */
+    public void dispatchAuthUrlToWebView(@NonNull String url) {
+        runOnUiThread(() -> {
+            if (activeWebView != null) {
+                Log.i(TAG, "🚀 Dispatching OAuth Callback URL to WebView: " + url);
+                activeWebView.loadUrl(url);
+            } else {
+                Log.w(TAG, "⚠️ activeWebView is null. Cannot dispatch OAuth URL.");
+            }
+        });
     }
+            }
