@@ -565,15 +565,23 @@ public class MainActivity extends AppCompatActivity {
     // =========================================================
 
     /**
-     * 👑 دالة التوزيع المباشر لرابط العودة واستلام الـ Session Cookie فوراً
+     * 👑 دالة التوزيع المباشر لرابط العودة، جلب النشاط للواجهة وتأكيد الـ Session Cookie
      */
     public void dispatchAuthUrlToWebView(@NonNull String url) {
         runOnUiThread(() -> {
-            if (activeWebView != null) {
-                Log.i(TAG, "🚀 Dispatching OAuth Callback URL to WebView: " + url);
+            // 1. إعادة تقديم MainActivity فوق الـ Custom Tab لإغلاق الشاشة المؤقتة
+            Intent intent = new Intent(this, MainActivity.class);
+            intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+            startActivity(intent);
+
+            // 2. إبلاغ محرك المحرك بتحميل رابط العودة وتحديث الـ Cookie
+            if (engineManager != null) {
+                engineManager.handleAuthReturn(url);
+            } else if (activeWebView != null) {
+                Log.i(TAG, "🚀 Dispatching OAuth Callback URL directly to WebView: " + url);
                 activeWebView.loadUrl(url);
             } else {
-                Log.w(TAG, "⚠️ activeWebView is null. Cannot dispatch OAuth URL.");
+                Log.w(TAG, "⚠️ activeWebView and engineManager are null.");
             }
         });
     }
