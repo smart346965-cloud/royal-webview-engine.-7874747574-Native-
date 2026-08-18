@@ -275,6 +275,25 @@ public class WebEngineManager {
         return this.capabilitiesEngine;
     }
 
+    // =========================================================
+    // 🧠 ROYAL PREDICTION DELEGATE
+    // =========================================================
+    /**
+     * توجيه طلب التنبؤ والتسخين المسبق مباشرة إلى SpeculativeEngine
+     */
+    public void predict(String url) {
+        if (speculativeEngine != null) {
+            speculativeEngine.predict(url);
+        }
+    }
+
+    /**
+     * (اختياري) للوصول المباشر لكائن المحرك إذا احتجته مستقبلاً
+     */
+    public SpeculativeEngine getSpeculativeEngine() {
+        return this.speculativeEngine;
+    }
+
     public void setSplashStartTime(long startTime) {
         this.splashStartTime = startTime;
     }
@@ -875,4 +894,4 @@ public class WebEngineManager {
     public boolean isOnErrorPage() {
         return OfflineStateManager.getInstance().isOnErrorPage();
     }
-                        }
+                          }
