@@ -80,14 +80,24 @@ public final class RoyalAuthManager {
             
             String finalUrl = data.toString();
 
-            // إذا كان الرابط يتبع المخطط المخصص وبداخله رابط HTTPS أصلي للتحويل
+            // إذا كان الرابط يتبع المخطط المخصص، نعيد بناء رابط الـ HTTPS مع الحفاظ على التوكن والمعاملات
             if (data.getScheme() != null && "com.store.app.auth".equalsIgnoreCase(data.getScheme())) {
                 String targetParam = data.getQueryParameter("target");
                 String redirectParam = data.getQueryParameter("redirect_uri");
-                if (targetParam != null && targetParam.startsWith("http")) {
-                    finalUrl = targetParam;
-                } else if (redirectParam != null && redirectParam.startsWith("http")) {
-                    finalUrl = redirectParam;
+                String baseTarget = (targetParam != null && targetParam.startsWith("http")) ? targetParam 
+                                  : (redirectParam != null && redirectParam.startsWith("http")) ? redirectParam : null;
+
+                if (baseTarget != null) {
+                    Uri.Builder builder = Uri.parse(baseTarget).buildUpon();
+                    for (String key : data.getQueryParameterNames()) {
+                        if (!"target".equalsIgnoreCase(key) && !"redirect_uri".equalsIgnoreCase(key)) {
+                            for (String val : data.getQueryParameters(key)) {
+                                builder.appendQueryParameter(key, val);
+                            }
+                        }
+                    }
+                    finalUrl = builder.build().toString();
+                    Log.i(TAG, "👑 Preserved Parameters in Final Auth URL -> " + finalUrl);
                 }
             }
 
@@ -118,4 +128,4 @@ public final class RoyalAuthManager {
             Log.i(TAG, "🧹 RoyalAuthManager destroyed");
         }
     }
-                    }
+}
