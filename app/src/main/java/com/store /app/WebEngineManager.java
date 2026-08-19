@@ -758,6 +758,42 @@ public class WebEngineManager {
     }
 
     /**
+     * 👑 الكشف التلقائي عن مسارات وتسجيل الخروج (Logout Classifier)
+     */
+    private boolean isLogoutUrl(Uri uri) {
+        if (uri == null) return false;
+        String urlStr = uri.toString().toLowerCase();
+        return urlStr.contains("/logout")
+                || urlStr.contains("/signout")
+                || urlStr.contains("/sign-out")
+                || urlStr.contains("/log-out")
+                || urlStr.contains("action=logout");
+    }
+
+    /**
+     * 🧹 تطهير الجلسة نيتيفياً ومسح الكوكيز بالكامل من الـ RAM والقرص الصلب
+     */
+    public void clearNativeSession(Runnable onComplete) {
+        if (activity == null) return;
+        activity.runOnUiThread(() -> {
+            try {
+                CookieManager cookieManager = CookieManager.getInstance();
+                cookieManager.removeSessionCookies(null);
+                cookieManager.removeAllCookies(success -> {
+                    cookieManager.flush();
+                    Log.i(TAG, "🧹 Native Session & Cookies Completely Purged from Disk Storage.");
+                    if (onComplete != null) {
+                        onComplete.run();
+                    }
+                });
+            } catch (Exception e) {
+                Log.w(TAG, "⚠️ Failed to clear native session", e);
+                if (onComplete != null) onComplete.run();
+            }
+        });
+    }
+
+    /**
      * إطلاق مسار المصادقة الحساس في Custom Tab مربوطاً بالجلسة التفاعلية.
      */
     public boolean launchSensitiveFlow(Uri uri) {
@@ -852,6 +888,13 @@ public class WebEngineManager {
         String scheme = uri.getScheme();
         if (scheme == null) return false;
         scheme = scheme.toLowerCase();
+
+        // 🧹 1. الاعتراض النيتيف لمسار تسجيل الخروج وتطهير الكوكيز نيتيفياً من القرص
+        if (isLogoutUrl(uri)) {
+            Log.i(TAG, "🧹 Logout URL detected -> Triggering Native Session Purge for: " + uri);
+            clearNativeSession(null);
+            return false; // نترك الـ WebView ينفذ الرابط أيضاً ليلغي السيرفر الجلسة لديه
+        }
 
         if (webEngineConfig.isSameOrigin(uri)) {
             return false;
