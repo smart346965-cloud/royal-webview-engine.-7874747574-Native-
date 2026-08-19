@@ -52,8 +52,10 @@ public final class RoyalAuthManager {
                 || uriString.contains("/oauth")
                 || uriString.contains("/login");
 
-        // 2. فحص الـ Schemes المسموحة (فقط المخطط المخصص)
-        boolean isValidScheme = "com.store.app.auth".equals(scheme);
+        // 2. فحص الـ Schemes المسموحة (HTTPS, HTTP, Custom Scheme)
+        boolean isValidScheme = "https".equals(scheme) 
+                || "http".equals(scheme) 
+                || "com.store.app.auth".equals(scheme);
 
         return isValidScheme && containsAuthKeywords;
     }
@@ -76,9 +78,22 @@ public final class RoyalAuthManager {
         if (isAuthCallback(data)) {
             Log.i(TAG, "🎯 Valid OAuth Callback detected -> Dispatching to WebView");
             
+            String finalUrl = data.toString();
+
+            // إذا كان الرابط يتبع المخطط المخصص وبداخله رابط HTTPS أصلي للتحويل
+            if (data.getScheme() != null && "com.store.app.auth".equalsIgnoreCase(data.getScheme())) {
+                String targetParam = data.getQueryParameter("target");
+                String redirectParam = data.getQueryParameter("redirect_uri");
+                if (targetParam != null && targetParam.startsWith("http")) {
+                    finalUrl = targetParam;
+                } else if (redirectParam != null && redirectParam.startsWith("http")) {
+                    finalUrl = redirectParam;
+                }
+            }
+
             if (activity instanceof MainActivity) {
                 MainActivity mainActivity = (MainActivity) activity;
-                mainActivity.dispatchAuthUrlToWebView(data.toString());
+                mainActivity.dispatchAuthUrlToWebView(finalUrl);
                 return true;
             }
         } else {
@@ -103,4 +118,4 @@ public final class RoyalAuthManager {
             Log.i(TAG, "🧹 RoyalAuthManager destroyed");
         }
     }
-}
+                    }
