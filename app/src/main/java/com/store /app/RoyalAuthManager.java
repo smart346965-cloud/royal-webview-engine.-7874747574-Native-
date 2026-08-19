@@ -5,6 +5,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.net.Uri;
 import android.util.Log;
+import android.webkit.CookieManager;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -61,7 +62,7 @@ public final class RoyalAuthManager {
     }
 
     /**
-     * استقبال Intent العودة وتمريره إلى الـ WebView
+     * استقبال Intent العودة وتمريره إلى الـ WebView مع التثبيت النيتيف الدائم للجلسة
      */
     public boolean handleRedirectIntent(@Nullable Intent intent) {
         if (destroyed.get() || intent == null) {
@@ -80,10 +81,13 @@ public final class RoyalAuthManager {
             
             String finalUrl = data.toString();
 
-            // إذا كان الرابط يتبع المخطط المخصص، نعيد بناء رابط الـ HTTPS مع الحفاظ على التوكن والمعاملات
+            // إذا كان الرابط يتبع المخطط المخصص، نعيد بناء رابط الـ HTTPS مع الحفاظ على التوكن ونقل الكوكي للقرص الصلب
             if (data.getScheme() != null && "com.store.app.auth".equalsIgnoreCase(data.getScheme())) {
                 String targetParam = data.getQueryParameter("target");
                 String redirectParam = data.getQueryParameter("redirect_uri");
+                String tokenParam = data.getQueryParameter("code");
+                if (tokenParam == null) tokenParam = data.getQueryParameter("id_token");
+
                 String baseTarget = (targetParam != null && targetParam.startsWith("http")) ? targetParam 
                                   : (redirectParam != null && redirectParam.startsWith("http")) ? redirectParam : null;
 
@@ -97,6 +101,20 @@ public final class RoyalAuthManager {
                         }
                     }
                     finalUrl = builder.build().toString();
+
+                    // 🚀 زرع وتثبيت الكوكي نيتيفياً فوراً على القرص الصلب لجميع البيئات
+                    if (tokenParam != null) {
+                        try {
+                            CookieManager cookieManager = CookieManager.getInstance();
+                            cookieManager.setAcceptCookie(true);
+                            cookieManager.setCookie(baseTarget, "nexus_session=" + tokenParam + "; Path=/; Max-Age=86400; Secure; SameSite=Lax");
+                            cookieManager.flush();
+                            Log.i(TAG, "💾 Native Session Cookie Injected & Flushed for: " + baseTarget);
+                        } catch (Exception e) {
+                            Log.w(TAG, "Failed to inject native cookie", e);
+                        }
+                    }
+
                     Log.i(TAG, "👑 Preserved Parameters in Final Auth URL -> " + finalUrl);
                 }
             }
@@ -128,4 +146,4 @@ public final class RoyalAuthManager {
             Log.i(TAG, "🧹 RoyalAuthManager destroyed");
         }
     }
-}
+                            }
