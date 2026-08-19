@@ -433,7 +433,7 @@ public class WebEngineManager {
             }
 
             // =========================================================
-            // 🔥 [تعديل 1] onPageFinished المحسّن
+            // 🔥 [تعديل 1] onPageFinished المحسّن مع التثبيت الدائم للجلسة
             // =========================================================
             @Override
             public void onPageFinished(WebView view, String url) {
@@ -441,6 +441,15 @@ public class WebEngineManager {
                 // 🛡️ حقن سكربت الاعتراض الآلي خفياً عند اكتمال الصفحة
                 if (view != null) {
                     view.evaluateJavascript(OAUTH_AUTO_INJECTOR_JS, null);
+                }
+
+                // 💾 تثبيت الكوكيز نيتيفياً فوراً على القرص الصلب (Disk Storage) لمنع ضياع الجلسة عند الخروج
+                try {
+                    CookieManager cookieManager = CookieManager.getInstance();
+                    cookieManager.flush();
+                    Log.i(TAG, "💾 Session Permanent Disk Flush Completed for: " + url);
+                } catch (Exception e) {
+                    Log.w(TAG, "⚠️ Cookie flush failed", e);
                 }
 
                 RoyalPanopticon.recordNavigationComplete();
@@ -913,4 +922,4 @@ public class WebEngineManager {
     public boolean isOnErrorPage() {
         return OfflineStateManager.getInstance().isOnErrorPage();
     }
-    }
+                    }
