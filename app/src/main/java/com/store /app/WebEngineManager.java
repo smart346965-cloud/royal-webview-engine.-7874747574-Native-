@@ -795,19 +795,38 @@ public class WebEngineManager {
         activity.runOnUiThread(() -> {
             Log.i(TAG, "👑 Auth Return Executing in WebView -> " + redirectUrl);
             if (redirectUrl != null && !redirectUrl.isEmpty()) {
+                // إذا كان الرابط لا يزال يحمل مخطط مخصص ولم يتفكك، ننظفه
                 if (redirectUrl.startsWith("com.store.app.auth")) {
-                    Log.i(TAG, "✅ Skipping internal load for custom auth scheme: " + redirectUrl);
-                    return; // لا نحمل الرابط داخل WebView
+                    Log.i(TAG, "ℹ️ Custom scheme unhandled, reloading home origin instead.");
+                    if (webEngineConfig.getTrustedHost() != null) {
+                        webView.loadUrl(webEngineConfig.getTrustedScheme() + "://" + webEngineConfig.getTrustedHost());
+                    } else {
+                        webView.reload();
+                    }
+                    return;
                 }
+                
+                // 🚀 تحميل رابط الـ Callback المكتمل ليصدر السيرفر Set-Cookie
                 webView.loadUrl(redirectUrl);
+                
+                // 💾 تثبيت الكوكيز نيتيفياً فوراً على القرص الصلب
+                try {
+                    CookieManager.getInstance().flush();
+                    Log.i(TAG, "💾 CookieManager flushed successfully.");
+                } catch (Exception e) {
+                    Log.w(TAG, "Failed to flush CookieManager", e);
+                }
+
             } else if (webEngineConfig.getTrustedHost() != null) {
                 webView.loadUrl(
                         webEngineConfig.getTrustedScheme()
                                 + "://"
                                 + webEngineConfig.getTrustedHost()
                 );
+                CookieManager.getInstance().flush();
             } else {
                 webView.reload();
+                CookieManager.getInstance().flush();
             }
         });
     }
@@ -894,4 +913,4 @@ public class WebEngineManager {
     public boolean isOnErrorPage() {
         return OfflineStateManager.getInstance().isOnErrorPage();
     }
-                          }
+    }
