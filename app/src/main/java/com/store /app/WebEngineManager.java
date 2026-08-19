@@ -12,6 +12,7 @@ import android.view.ViewGroup;
 import android.webkit.*;
 
 import androidx.annotation.NonNull;
+import androidx.browser.customtabs.CustomTabColorSchemeParams;
 import androidx.browser.customtabs.CustomTabsCallback;
 import androidx.browser.customtabs.CustomTabsClient;
 import androidx.browser.customtabs.CustomTabsIntent;
@@ -794,7 +795,7 @@ public class WebEngineManager {
     }
 
     /**
-     * إطلاق مسار المصادقة الحساس في Custom Tab مربوطاً بالجلسة التفاعلية.
+     * إطلاق مسار المصادقة الحساس في Custom Tab بمظهر In-App Bottom Sheet ناعم وفاخر داخل التطبيق.
      */
     public boolean launchSensitiveFlow(Uri uri) {
 
@@ -809,16 +810,37 @@ public class WebEngineManager {
                     ? new CustomTabsIntent.Builder(customTabsSession)
                     : new CustomTabsIntent.Builder();
 
-            CustomTabsIntent customTabsIntent = builder
-                    .setShowTitle(true)
-                    .setShareState(CustomTabsIntent.SHARE_STATE_OFF)
+            // 🎨 1. تخصيص لون الشريط العلوي والسفلي ليطابق الهوية البصرية الداكنة الفاخرة لتطبيقك (#090D16)
+            CustomTabColorSchemeParams darkParams = new CustomTabColorSchemeParams.Builder()
+                    .setToolbarColor(android.graphics.Color.parseColor("#090D16"))
+                    .setNavigationBarColor(android.graphics.Color.parseColor("#090D16"))
                     .build();
 
-            customTabsIntent.intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            builder.setDefaultColorSchemeParams(darkParams);
+
+            // 👑 2. تحويل النافذة إلى Bottom Sheet انزلاقي ناعم (تغطي 88% من الشاشة داخل التطبيق بدون خروج)
+            try {
+                int screenHeight = activity.getResources().getDisplayMetrics().heightPixels;
+                int initialHeight = (int) (screenHeight * 0.88);
+                builder.setInitialActivityHeightPx(initialHeight, CustomTabsIntent.ACTIVITY_HEIGHT_DEFAULT);
+            } catch (Throwable ignored) {}
+
+            // 🚀 3. إضافة أنميشن ظهور وإغلاق ناعم جداً من الأسفل
+            builder.setStartAnimations(activity, android.R.anim.fade_in, android.R.anim.fade_out);
+            builder.setExitAnimations(activity, android.R.anim.fade_in, android.R.anim.fade_out);
+
+            // 🛡️ 4. تبسيط الشريط العلوي لمنحه مظهراً نيتيفياً مستقلاً وإلغاء خيارات المتصفح
+            builder.setShowTitle(true);
+            builder.setShareState(CustomTabsIntent.SHARE_STATE_OFF);
+
+            CustomTabsIntent customTabsIntent = builder.build();
+
+            // ❌ إزالة FLAG_ACTIVITY_NEW_TASK لإبقاء الشاشة داخل نطاق مهمة التطبيق الحالية
+            // customTabsIntent.intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
 
             customTabsIntent.launchUrl(activity, uri);
 
-            Log.i(TAG, "🔐 Sensitive navigation launched in Custom Tab with session: " + uri);
+            Log.i(TAG, "🔐 Sensitive navigation launched as In-App Bottom Sheet: " + uri);
 
             return true;
 
