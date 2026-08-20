@@ -324,6 +324,9 @@ public class MainActivity extends AppCompatActivity {
             );
         }
 
+        // 👑 حقن طبقة الخلفية الممتدة
+        installBackgroundMirrorLayer();
+
         /*
          * Offline
          */
@@ -363,6 +366,33 @@ public class MainActivity extends AppCompatActivity {
                     true
             );
         }
+    }
+
+    // =========================================================
+    // 👑 Background Mirror Layer Injection
+    // =========================================================
+    private void installBackgroundMirrorLayer() {
+        if (activeWebView == null) return;
+
+        String js =
+            "(function() {" +
+            "  var existing = document.getElementById('royal-bg-mirror');" +
+            "  if (existing) return;" +
+            "  var bg = window.getComputedStyle(document.body).background;" +
+            "  var layer = document.createElement('div');" +
+            "  layer.id = 'royal-bg-mirror';" +
+            "  layer.style.position = 'fixed';" +
+            "  layer.style.top = '0';" +
+            "  layer.style.left = '0';" +
+            "  layer.style.width = '100%';" +
+            "  layer.style.height = 'var(--safe-area-inset-top, env(safe-area-inset-top, 48px))';" +
+            "  layer.style.zIndex = '-1';" +
+            "  layer.style.pointerEvents = 'none';" +
+            "  layer.style.background = bg;" +
+            "  document.body.appendChild(layer);" +
+            "})();";
+
+        activeWebView.evaluateJavascript(js, null);
     }
 
     // =========================================================
