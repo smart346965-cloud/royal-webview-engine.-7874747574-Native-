@@ -185,42 +185,6 @@ public class MainActivity extends AppCompatActivity {
                 )
         );
 
-        // =========================================================
-        // 👑 NEXUS TRUE EDGE-TO-EDGE WEBVIEW
-        // =========================================================
-
-        activeWebView.setSystemUiVisibility(
-                View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-                        | View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-        );
-
-        activeWebView.setClipToPadding(false);
-
-        ViewCompat.setOnApplyWindowInsetsListener(
-                activeWebView,
-                (view, insets) -> {
-
-                    int topInset = insets.getInsets(
-                            WindowInsetsCompat.Type.statusBars()
-                                    | WindowInsetsCompat.Type.displayCutout()
-                    ).top;
-
-                    // تطبيق الإزاحة الكاملة (100%) لحماية المحتوى بالكامل من قطع الكاميرا
-                    view.setPadding(
-                            0,
-                            topInset,
-                            0,
-                            0
-                    );
-
-                    return insets;
-                }
-        );
-
-        ViewCompat.requestApplyInsets(
-                activeWebView
-        );
-
         /*
          * System UI بعد وجود WebView.
          */
@@ -233,6 +197,9 @@ public class MainActivity extends AppCompatActivity {
                 getWindow(),
                 true
         );
+
+        // 👑 Royal Content Offset Injection
+        installRoyalContentOffsetInjection();
 
         /*
          * WebEngineManager الآن فقط.
@@ -385,6 +352,113 @@ public class MainActivity extends AppCompatActivity {
                     true
             );
         }
+    }
+
+    // =========================================================
+    // 👑 ROYAL CONTENT OFFSET INJECTION
+    //    WebView remains fully edge-to-edge.
+    //    Only the website document content is shifted.
+    // =========================================================
+    private void installRoyalContentOffsetInjection() {
+
+        if (activeWebView == null) {
+            return;
+        }
+
+        activeWebView.setClipToPadding(false);
+
+        ViewCompat.setOnApplyWindowInsetsListener(
+                activeWebView,
+                (view, insets) -> {
+
+                    int topInset = insets.getInsets(
+                            WindowInsetsCompat.Type.statusBars()
+                                    | WindowInsetsCompat.Type.displayCutout()
+                    ).top;
+
+                    // لا نستخدم نصفًا حرفيًا.
+                    // 0.58 يعطي إزاحة بسيطة فوق النصف.
+                    int contentOffset = Math.round(topInset * 0.58f);
+
+                    if (contentOffset < 0) {
+                        contentOffset = 0;
+                    }
+
+                    final int finalOffset = contentOffset;
+
+                    view.post(() ->
+                            injectRoyalContentOffset(finalOffset)
+                    );
+
+                    return insets;
+                }
+        );
+
+        // تطبيق أولي في حال كانت الصفحة موجودة بالفعل.
+        activeWebView.post(() ->
+                injectRoyalContentOffset(0)
+        );
+    }
+
+    // =========================================================
+    // 👑 Inject safe content offset into the website
+    // =========================================================
+    private void injectRoyalContentOffset(int offsetPx) {
+
+        if (activeWebView == null) {
+            return;
+        }
+
+        final int safeOffset = Math.max(0, offsetPx);
+
+        String javascript =
+                "(function() {" +
+
+                "if (!document.documentElement) return;" +
+
+                "var offset = " + safeOffset + ";" +
+
+                "document.documentElement.style.setProperty(" +
+                "'--royal-content-offset'," +
+                "offset + 'px'" +
+                ");" +
+
+                "var style = document.getElementById(" +
+                "'royal-edge-content-style'" +
+                ");" +
+
+                "if (!style) {" +
+
+                "style = document.createElement('style');" +
+                "style.id = 'royal-edge-content-style';" +
+
+                "style.textContent = `" +
+
+                "html, body {" +
+                "box-sizing:border-box !important;" +
+                "}" +
+
+                "body {" +
+                "padding-top:var(--royal-content-offset,0px) !important;" +
+                "}" +
+
+                "body > * {" +
+                "box-sizing:border-box;" +
+                "}" +
+
+                "`;" +
+
+                "(document.head || document.documentElement)" +
+                ".appendChild(style);" +
+
+                "}" +
+
+                "})();";
+
+        activeWebView.evaluateJavascript(
+                javascript,
+                null
+        );
     }
 
     // =========================================================
