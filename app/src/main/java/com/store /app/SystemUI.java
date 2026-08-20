@@ -47,14 +47,11 @@ public class SystemUI {
         ViewCompat.setOnApplyWindowInsetsListener(
                 content,
                 (view, insets) -> {
-
                     // لا نضيف أي Padding.
-                    // الـ Window و WebView يعملان Edge-to-Edge.
                     view.setPadding(0, 0, 0, 0);
 
                     // لا نستهلك الـ Insets.
-                    // نتركها تمر حتى يستطيع WebView حساب
-                    // المسافة الآمنة الخاصة بالمحتوى.
+                    // نتركها تمر حتى يستطيع WebView حساب المسافة الآمنة.
                     return insets;
                 }
         );
@@ -99,4 +96,4 @@ public class SystemUI {
                 + 0.114 * Color.blue(color)) / 255;
         return darkness < 0.5;
     }
-    }
+                               }
