@@ -138,7 +138,7 @@ public class MainActivity extends AppCompatActivity {
         rootContainer = new FrameLayout(this);
 
         // 👑 خلفية سوداء للحاوية
-        rootContainer.setBackgroundColor(Color.BLACK);
+        rootContainer.setBackgroundColor(Color.TRANSPARENT);
 
         setContentView(rootContainer);
 
