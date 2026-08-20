@@ -185,23 +185,52 @@ public class MainActivity extends AppCompatActivity {
                 )
         );
 
-        // 👑 Edge-to-Edge مع إزاحة نصف شريط الحالة فقط
+        // =========================================================
+        // 👑 NEXUS TRUE EDGE-TO-EDGE WEBVIEW
+        // =========================================================
+
         activeWebView.setSystemUiVisibility(
-                View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN | View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                        | View.SYSTEM_UI_FLAG_LAYOUT_STABLE
         );
+
         activeWebView.setClipToPadding(false);
 
-        ViewCompat.setOnApplyWindowInsetsListener(activeWebView, (v, insets) -> {
-            int insetTop = insets.getInsets(WindowInsetsCompat.Type.statusBars()
-                    | WindowInsetsCompat.Type.displayCutout()).top;
+        ViewCompat.setOnApplyWindowInsetsListener(
+                activeWebView,
+                (view, insets) -> {
 
-            // نصف ارتفاع شريط الحالة فقط
-            int appliedTopPadding = Math.max(0, insetTop / 2);
+                    WindowInsetsCompat.Type.InsetsTypeMask bars =
+                            WindowInsetsCompat.Type.statusBars()
+                                    | WindowInsetsCompat.Type.displayCutout();
 
-            v.setPadding(0, appliedTopPadding, 0, 0);
+                    int topInset =
+                            insets.getInsets(bars).top;
 
-            return insets;
-        });
+                    int safeTopInset =
+                            Math.max(
+                                    0,
+                                    topInset
+                            );
+
+                    // حماية بنسبة 50% من الارتفاع الحقيقي
+                    int contentOffset =
+                            safeTopInset / 2;
+
+                    view.setPadding(
+                            0,
+                            contentOffset,
+                            0,
+                            0
+                    );
+
+                    return insets;
+                }
+        );
+
+        ViewCompat.requestApplyInsets(
+                activeWebView
+        );
 
         /*
          * System UI بعد وجود WebView.
@@ -606,4 +635,4 @@ public class MainActivity extends AppCompatActivity {
             }
         });
     }
-    }
+            }
