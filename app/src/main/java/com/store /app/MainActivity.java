@@ -200,9 +200,8 @@ public class MainActivity extends AppCompatActivity {
                 activeWebView,
                 (view, insets) -> {
 
-                    WindowInsetsCompat.Type.InsetsTypeMask bars =
-                            WindowInsetsCompat.Type.statusBars()
-                                    | WindowInsetsCompat.Type.displayCutout();
+                    int bars = WindowInsetsCompat.Type.statusBars()
+                            | WindowInsetsCompat.Type.displayCutout();
 
                     int topInset =
                             insets.getInsets(bars).top;
@@ -635,4 +634,4 @@ public class MainActivity extends AppCompatActivity {
             }
         });
     }
-            }
+    }
