@@ -200,25 +200,15 @@ public class MainActivity extends AppCompatActivity {
                 activeWebView,
                 (view, insets) -> {
 
-                    int bars = WindowInsetsCompat.Type.statusBars()
-                            | WindowInsetsCompat.Type.displayCutout();
+                    int topInset = insets.getInsets(
+                            WindowInsetsCompat.Type.statusBars()
+                                    | WindowInsetsCompat.Type.displayCutout()
+                    ).top;
 
-                    int topInset =
-                            insets.getInsets(bars).top;
-
-                    int safeTopInset =
-                            Math.max(
-                                    0,
-                                    topInset
-                            );
-
-                    // حماية بنسبة 50% من الارتفاع الحقيقي
-                    int contentOffset =
-                            safeTopInset / 2;
-
+                    // تطبيق الإزاحة الكاملة (100%) لحماية المحتوى بالكامل من قطع الكاميرا
                     view.setPadding(
                             0,
-                            contentOffset,
+                            topInset,
                             0,
                             0
                     );
@@ -634,4 +624,4 @@ public class MainActivity extends AppCompatActivity {
             }
         });
     }
-    }
+            }
