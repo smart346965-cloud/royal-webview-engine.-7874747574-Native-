@@ -126,4 +126,4 @@ public class SystemUI {
                 + 0.114 * Color.blue(color)) / 255;
         return darkness < 0.5;
     }
-            }
+                }
