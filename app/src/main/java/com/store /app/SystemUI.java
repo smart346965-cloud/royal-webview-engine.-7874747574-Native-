@@ -44,9 +44,11 @@ public class SystemUI {
 
         View content = activity.findViewById(android.R.id.content);
         ViewCompat.setOnApplyWindowInsetsListener(content, (view, insets) -> {
-            // تصفير الحواف لضمان تمدد الويب فيو 100%
-            view.setPadding(0, 0, 0, 0); 
-            return WindowInsetsCompat.CONSUMED;
+            // لا نضيف أي Padding هنا
+            view.setPadding(0, 0, 0, 0);
+
+            // لا نستهلك الـ Insets، نتركها تمر للحاوية
+            return insets;
         });
 
         // تشغيل محرك الاختفاء الذكي لشريط الحالة فقط لضمان حرية الرجوع
@@ -89,4 +91,4 @@ public class SystemUI {
                 + 0.114 * Color.blue(color)) / 255;
         return darkness < 0.5;
     }
-                                             }
+        }
