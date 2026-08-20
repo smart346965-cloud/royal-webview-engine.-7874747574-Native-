@@ -21,7 +21,7 @@ public class SystemUI {
         Window window = activity.getWindow();
 
         // Google AndroidX Edge-to-Edge
-        WindowCompat.enableEdgeToEdge(window);
+        WindowCompat.setDecorFitsSystemWindows(window, false);
 
         // Transparent system bars
         window.setStatusBarColor(Color.TRANSPARENT);
