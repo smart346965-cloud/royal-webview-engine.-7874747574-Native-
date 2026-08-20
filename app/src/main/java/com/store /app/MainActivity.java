@@ -137,9 +137,8 @@ public class MainActivity extends AppCompatActivity {
 
         rootContainer = new FrameLayout(this);
 
-        rootContainer.setBackgroundColor(
-                Color.parseColor("#F3F4F6")
-        );
+        // 👑 خلفية سوداء للحاوية
+        rootContainer.setBackgroundColor(Color.BLACK);
 
         setContentView(rootContainer);
 
@@ -185,17 +184,14 @@ public class MainActivity extends AppCompatActivity {
                 )
         );
 
-        // 👑 Edge-to-Edge مع إزاحة نصف شريط الحالة فقط
-        activeWebView.setSystemUiVisibility(
-                View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN | View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-        );
-        activeWebView.setClipToPadding(false);
+        // 👑 إزاحة نصف شريط الحالة على الحاوية فقط
+        ViewCompat.setOnApplyWindowInsetsListener(rootContainer, (v, insets) -> {
+            int insetTop = insets.getInsets(
+                    WindowInsetsCompat.Type.statusBars()
+                            | WindowInsetsCompat.Type.displayCutout()
+            ).top;
 
-        ViewCompat.setOnApplyWindowInsetsListener(activeWebView, (v, insets) -> {
-            int insetTop = insets.getInsets(WindowInsetsCompat.Type.statusBars()
-                    | WindowInsetsCompat.Type.displayCutout()).top;
-
-            // نصف ارتفاع شريط الحالة فقط
+            // نصف ارتفاع شريط الحالة
             int appliedTopPadding = Math.max(0, insetTop / 2);
 
             v.setPadding(0, appliedTopPadding, 0, 0);
@@ -606,4 +602,4 @@ public class MainActivity extends AppCompatActivity {
             }
         });
     }
-            }
+    }
