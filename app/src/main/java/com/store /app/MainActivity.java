@@ -413,46 +413,18 @@ public class MainActivity extends AppCompatActivity {
 
         String javascript =
                 "(function() {" +
-
                 "if (!document.documentElement) return;" +
-
                 "var offset = " + safeOffset + ";" +
-
-                "document.documentElement.style.setProperty(" +
-                "'--royal-content-offset'," +
-                "offset + 'px'" +
-                ");" +
-
-                "var style = document.getElementById(" +
-                "'royal-edge-content-style'" +
-                ");" +
-
+                "document.documentElement.style.setProperty('--royal-content-offset', offset + 'px');" +
+                "var style = document.getElementById('royal-edge-content-style');" +
                 "if (!style) {" +
-
                 "style = document.createElement('style');" +
                 "style.id = 'royal-edge-content-style';" +
-
                 "style.textContent = `" +
-
-                "html, body {" +
-                "box-sizing:border-box !important;" +
-                "}" +
-
-                "body {" +
-                "padding-top:var(--royal-content-offset,0px) !important;" +
-                "}" +
-
-                "body > * {" +
-                "box-sizing:border-box;" +
-                "}" +
-
+                "body { padding-top: var(--royal-content-offset,0px) !important; }" +
                 "`;" +
-
-                "(document.head || document.documentElement)" +
-                ".appendChild(style);" +
-
+                "(document.head || document.documentElement).appendChild(style);" +
                 "}" +
-
                 "})();";
 
         activeWebView.evaluateJavascript(
