@@ -795,11 +795,18 @@ public class WebEngineManager {
     }
 
     /**
-     * إطلاق مسار المصادقة الحساس في Custom Tab بمظهر In-App Bottom Sheet ناعم وفاخر داخل التطبيق.
+     * إطلاق مسار المصادقة الحساس في Custom Tab بمظهر In-App Bottom Sheet ناعم وفاخر داخل التطبيق (مع حماية الأوفلاين).
      */
     public boolean launchSensitiveFlow(Uri uri) {
 
         if (activity == null || uri == null) {
+            return false;
+        }
+
+        // 📴 1. فحص حماية الأوفلاين: إذا لا يوجد إنترنت، حظر فتح المتصفح واهتزاز شريط الأوفلاين فوراً
+        if (!NetworkMonitor.isInternetAvailable(context)) {
+            OfflineStateManager.getInstance().notifyOfflineClickAttempt();
+            Log.w(TAG, "📴 Offline Mode Active -> Blocked OAuth Custom Tab launch for: " + uri);
             return false;
         }
 
@@ -810,7 +817,7 @@ public class WebEngineManager {
                     ? new CustomTabsIntent.Builder(customTabsSession)
                     : new CustomTabsIntent.Builder();
 
-            // 🎨 1. تخصيص لون الشريط العلوي والسفلي ليطابق الهوية البصرية الداكنة الفاخرة لتطبيقك (#090D16)
+            // 🎨 2. تخصيص لون الشريط العلوي والسفلي ليطابق الهوية البصرية الداكنة الفاخرة لتطبيقك (#090D16)
             CustomTabColorSchemeParams darkParams = new CustomTabColorSchemeParams.Builder()
                     .setToolbarColor(android.graphics.Color.parseColor("#090D16"))
                     .setNavigationBarColor(android.graphics.Color.parseColor("#090D16"))
@@ -818,18 +825,18 @@ public class WebEngineManager {
 
             builder.setDefaultColorSchemeParams(darkParams);
 
-            // 👑 2. تحويل النافذة إلى Bottom Sheet انزلاقي ناعم (تغطي 88% من الشاشة داخل التطبيق بدون خروج)
+            // 👑 3. تحويل النافذة إلى Bottom Sheet انزلاقي ناعم (تغطي 88% من الشاشة داخل التطبيق بدون خروج)
             try {
                 int screenHeight = activity.getResources().getDisplayMetrics().heightPixels;
                 int initialHeight = (int) (screenHeight * 0.88);
                 builder.setInitialActivityHeightPx(initialHeight, CustomTabsIntent.ACTIVITY_HEIGHT_DEFAULT);
             } catch (Throwable ignored) {}
 
-            // 🚀 3. إضافة أنميشن ظهور وإغلاق ناعم جداً من الأسفل
+            // 🚀 4. إضافة أنميشن ظهور وإغلاق ناعم جداً من الأسفل
             builder.setStartAnimations(activity, android.R.anim.fade_in, android.R.anim.fade_out);
             builder.setExitAnimations(activity, android.R.anim.fade_in, android.R.anim.fade_out);
 
-            // 🛡️ 4. تبسيط الشريط العلوي لمنحه مظهراً نيتيفياً مستقلاً وإلغاء خيارات المتصفح
+            // 🛡️ 5. تبسيط الشريط العلوي لمنحه مظهراً نيتيفياً مستقلاً وإلغاء خيارات المتصفح
             builder.setShowTitle(true);
             builder.setShareState(CustomTabsIntent.SHARE_STATE_OFF);
 
@@ -987,4 +994,4 @@ public class WebEngineManager {
     public boolean isOnErrorPage() {
         return OfflineStateManager.getInstance().isOnErrorPage();
     }
-                    }
+    }
