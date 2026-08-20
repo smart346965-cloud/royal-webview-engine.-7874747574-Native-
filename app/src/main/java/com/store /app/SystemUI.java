@@ -43,18 +43,11 @@ public class SystemUI {
         window.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS);
 
         View content = activity.findViewById(android.R.id.content);
-
-        ViewCompat.setOnApplyWindowInsetsListener(
-                content,
-                (view, insets) -> {
-                    // لا نضيف أي Padding.
-                    view.setPadding(0, 0, 0, 0);
-
-                    // لا نستهلك الـ Insets.
-                    // نتركها تمر حتى يستطيع WebView حساب المسافة الآمنة.
-                    return insets;
-                }
-        );
+        ViewCompat.setOnApplyWindowInsetsListener(content, (view, insets) -> {
+            // تصفير الحواف لضمان تمدد الويب فيو 100%
+            view.setPadding(0, 0, 0, 0); 
+            return WindowInsetsCompat.CONSUMED;
+        });
 
         // تشغيل محرك الاختفاء الذكي لشريط الحالة فقط لضمان حرية الرجوع
         enablePureImmersiveExperience(window);
@@ -96,4 +89,4 @@ public class SystemUI {
                 + 0.114 * Color.blue(color)) / 255;
         return darkness < 0.5;
     }
-                               }
+                                             }
