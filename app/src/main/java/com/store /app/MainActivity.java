@@ -110,7 +110,7 @@ public class MainActivity extends AppCompatActivity {
 
         super.onCreate(savedInstanceState);
 
-        WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
+        WindowCompat.enableEdgeToEdge(getWindow());
 
         getWindow().setBackgroundDrawable(
                 new ColorDrawable(
@@ -183,12 +183,6 @@ public class MainActivity extends AppCompatActivity {
                         ViewGroup.LayoutParams.MATCH_PARENT
                 )
         );
-
-        // 👑 تمرير الـ insets كما هي بدون تعديل
-        ViewCompat.setOnApplyWindowInsetsListener(rootContainer, (v, insets) -> {
-            v.setPadding(0, 0, 0, 0);
-            return insets;
-        });
 
         /*
          * System UI بعد وجود WebView.
@@ -313,13 +307,7 @@ public class MainActivity extends AppCompatActivity {
                     TAG,
                     "🌐 Initial CLIENT_URL navigation started."
             );
-
-            // حقن دعم الـ safe-area بعد تحميل الصفحة
-            injectSafeAreaSupport();
         }
-
-        // 👑 حقن طبقة الخلفية الممتدة
-        installBackgroundMirrorLayer();
 
         /*
          * Offline
@@ -360,53 +348,6 @@ public class MainActivity extends AppCompatActivity {
                     true
             );
         }
-    }
-
-    // =========================================================
-    // 👑 دعم الـ safe-area الرسمي
-    // =========================================================
-    private void injectSafeAreaSupport() {
-        if (activeWebView == null) return;
-        String js =
-            "(function() {" +
-            "  var style = document.getElementById('royal-safe-area-style');" +
-            "  if (!style) {" +
-            "    style = document.createElement('style');" +
-            "    style.id = 'royal-safe-area-style';" +
-            "    style.textContent = `" +
-            "      body { padding-top: env(safe-area-inset-top); }" +
-            "    `;" +
-            "    document.head.appendChild(style);" +
-            "  }" +
-            "})();";
-        activeWebView.evaluateJavascript(js, null);
-    }
-
-    // =========================================================
-    // 👑 Background Mirror Layer Injection
-    // =========================================================
-    private void installBackgroundMirrorLayer() {
-        if (activeWebView == null) return;
-
-        String js =
-            "(function() {" +
-            "  var existing = document.getElementById('royal-bg-mirror');" +
-            "  if (existing) return;" +
-            "  var bg = window.getComputedStyle(document.body).background;" +
-            "  var layer = document.createElement('div');" +
-            "  layer.id = 'royal-bg-mirror';" +
-            "  layer.style.position = 'fixed';" +
-            "  layer.style.top = '0';" +
-            "  layer.style.left = '0';" +
-            "  layer.style.width = '100%';" +
-            "  layer.style.height = 'var(--safe-area-inset-top, env(safe-area-inset-top, 48px))';" +
-            "  layer.style.zIndex = '-1';" +
-            "  layer.style.pointerEvents = 'none';" +
-            "  layer.style.background = bg;" +
-            "  document.body.appendChild(layer);" +
-            "})();";
-
-        activeWebView.evaluateJavascript(js, null);
     }
 
     // =========================================================
@@ -646,4 +587,4 @@ public class MainActivity extends AppCompatActivity {
             }
         });
     }
-            }
+    }
