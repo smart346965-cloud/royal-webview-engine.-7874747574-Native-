@@ -137,7 +137,7 @@ public class MainActivity extends AppCompatActivity {
 
         rootContainer = new FrameLayout(this);
 
-        // 👑 خلفية سوداء للحاوية
+        // 👑 خلفية شفافة للحاوية
         rootContainer.setBackgroundColor(Color.TRANSPARENT);
 
         setContentView(rootContainer);
@@ -184,18 +184,9 @@ public class MainActivity extends AppCompatActivity {
                 )
         );
 
-        // 👑 إزاحة نصف شريط الحالة على الحاوية فقط
+        // 👑 تمرير الـ insets كما هي بدون تعديل
         ViewCompat.setOnApplyWindowInsetsListener(rootContainer, (v, insets) -> {
-            int insetTop = insets.getInsets(
-                    WindowInsetsCompat.Type.statusBars()
-                            | WindowInsetsCompat.Type.displayCutout()
-            ).top;
-
-            // نصف ارتفاع شريط الحالة
-            int appliedTopPadding = Math.max(0, insetTop / 2);
-
-            v.setPadding(0, appliedTopPadding, 0, 0);
-
+            v.setPadding(0, 0, 0, 0);
             return insets;
         });
 
@@ -322,6 +313,9 @@ public class MainActivity extends AppCompatActivity {
                     TAG,
                     "🌐 Initial CLIENT_URL navigation started."
             );
+
+            // حقن دعم الـ safe-area بعد تحميل الصفحة
+            injectSafeAreaSupport();
         }
 
         // 👑 حقن طبقة الخلفية الممتدة
@@ -366,6 +360,26 @@ public class MainActivity extends AppCompatActivity {
                     true
             );
         }
+    }
+
+    // =========================================================
+    // 👑 دعم الـ safe-area الرسمي
+    // =========================================================
+    private void injectSafeAreaSupport() {
+        if (activeWebView == null) return;
+        String js =
+            "(function() {" +
+            "  var style = document.getElementById('royal-safe-area-style');" +
+            "  if (!style) {" +
+            "    style = document.createElement('style');" +
+            "    style.id = 'royal-safe-area-style';" +
+            "    style.textContent = `" +
+            "      body { padding-top: env(safe-area-inset-top); }" +
+            "    `;" +
+            "    document.head.appendChild(style);" +
+            "  }" +
+            "})();";
+        activeWebView.evaluateJavascript(js, null);
     }
 
     // =========================================================
@@ -632,4 +646,4 @@ public class MainActivity extends AppCompatActivity {
             }
         });
     }
-    }
+            }
