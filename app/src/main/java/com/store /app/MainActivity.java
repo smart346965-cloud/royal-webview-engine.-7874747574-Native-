@@ -112,10 +112,11 @@ public class MainActivity extends AppCompatActivity {
 
         WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
 
+        // 👑 تحديد اللون الأولي للنافذة تلقائياً حسب وضع النظام (النهاري #FFFFFF / الليلي #121212)
+        int initialColor = SystemUI.getDefaultSystemColor(this);
+
         getWindow().setBackgroundDrawable(
-                new ColorDrawable(
-                        Color.parseColor("#F3F4F6")
-                )
+                new ColorDrawable(initialColor)
         );
 
         try {
@@ -137,9 +138,7 @@ public class MainActivity extends AppCompatActivity {
 
         rootContainer = new FrameLayout(this);
 
-        rootContainer.setBackgroundColor(
-                Color.parseColor("#F3F4F6")
-        );
+        rootContainer.setBackgroundColor(initialColor);
 
         setContentView(rootContainer);
 
@@ -210,7 +209,11 @@ public class MainActivity extends AppCompatActivity {
                 activeWebView
         );
 
-        // 👑 استدعاء مزامنة اللون الأولية
+        // 👑 ضبط أيقونات النظام فوراً حسب ثيم الجوال منعاً لأي وميض
+        boolean isDarkSystem = SystemUI.isDarkMode(this);
+        SystemUI.setDynamicIcons(getWindow(), !isDarkSystem);
+
+        // 👑 استدعاء مزامنة لون الموقع الحقيقي
         SystemUI.syncStatusBarWithWeb(this, activeWebView);
 
         /*
@@ -603,4 +606,4 @@ public class MainActivity extends AppCompatActivity {
             }
         });
     }
-    }
+            }
