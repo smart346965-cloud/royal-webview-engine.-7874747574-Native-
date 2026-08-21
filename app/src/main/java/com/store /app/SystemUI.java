@@ -128,7 +128,7 @@ public class SystemUI {
     }
 
     // =========================================================
-    // 👑 المحرك الذكي لتحديث لون شريط الحالة ولون الأيقونات ديناميكياً
+    // 👑 المحرك الذكي لتحديث شريط الحالة وحاوية RootContainer معاً
     // =========================================================
     public static void updateStatusBarColor(android.app.Activity activity, int color) {
         if (activity == null || activity.isFinishing()) return;
@@ -139,34 +139,40 @@ public class SystemUI {
             // 1. تغيير لون خلفية شريط الحالة
             window.setStatusBarColor(color);
 
-            // 2. فحص درجة سطوع اللون واختيار لون الأيقونات المناسب (أبيض أو أسود)
+            // 2. تلوين خلفية الحاوية الرئيسية لتغطية الفراغ العلوي (Margin Area) بنفس اللون
+            View contentView = activity.findViewById(android.R.id.content);
+            if (contentView != null) {
+                contentView.setBackgroundColor(color);
+            }
+
+            // 3. ضبط لون الأيقونات (أبيض / أسود) حسب سطوع اللون المستخرج
             boolean isLight = isColorLight(color);
             setDynamicIcons(window, isLight);
         });
     }
 
     // =========================================================
-    // 👑 استخراج لون الموقع عبر الجافاسكريبت وتمريره للنظام (JS Bridge Injection)
+    // 👑 استخراج لون الموقع المتوافق مع برمجيات SPA والتنقل الديناميكي
     // =========================================================
     public static void syncStatusBarWithWeb(android.app.Activity activity, WebView webView) {
         if (activity == null || webView == null) return;
 
         String jsScript = 
             "(function() {" +
-            "  var color = null;" +
-            "  var meta = document.querySelector('meta[name=\"theme-color\"]');" +
-            "  if (meta && meta.content) { color = meta.content; }" +
-            "  else {" +
-            "    var el = document.elementFromPoint(window.innerWidth / 2, 10);" +
+            "  function extractColor() {" +
+            "    var meta = document.querySelector('meta[name=\"theme-color\"]');" +
+            "    if (meta && meta.content) return meta.content;" +
+            "    var el = document.elementFromPoint(window.innerWidth / 2, 20);" +
             "    if (!el) el = document.querySelector('header') || document.querySelector('nav') || document.body;" +
             "    while (el && el !== document.documentElement) {" +
             "      var st = window.getComputedStyle(el);" +
             "      var bg = st.backgroundColor;" +
-            "      if (bg && bg !== 'transparent' && bg !== 'rgba(0, 0, 0, 0)') { color = bg; break; }" +
+            "      if (bg && bg !== 'transparent' && bg !== 'rgba(0, 0, 0, 0)') return bg;" +
             "      el = el.parentElement;" +
             "    }" +
+            "    return window.getComputedStyle(document.body).backgroundColor || '#F3F4F6';" +
             "  }" +
-            "  return color || '#F3F4F6';" +
+            "  return extractColor();" +
             "})();";
 
         webView.evaluateJavascript(jsScript, value -> {
