@@ -137,8 +137,9 @@ public class MainActivity extends AppCompatActivity {
 
         rootContainer = new FrameLayout(this);
 
-        // 👑 خلفية شفافة للحاوية
-        rootContainer.setBackgroundColor(Color.TRANSPARENT);
+        rootContainer.setBackgroundColor(
+                Color.parseColor("#F3F4F6")
+        );
 
         setContentView(rootContainer);
 
@@ -183,6 +184,24 @@ public class MainActivity extends AppCompatActivity {
                         ViewGroup.LayoutParams.MATCH_PARENT
                 )
         );
+
+        // 👑 Edge-to-Edge مع إزاحة نصف شريط الحالة فقط
+        activeWebView.setSystemUiVisibility(
+                View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN | View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+        );
+        activeWebView.setClipToPadding(false);
+
+        ViewCompat.setOnApplyWindowInsetsListener(activeWebView, (v, insets) -> {
+            int insetTop = insets.getInsets(WindowInsetsCompat.Type.statusBars()
+                    | WindowInsetsCompat.Type.displayCutout()).top;
+
+            // نصف ارتفاع شريط الحالة فقط
+            int appliedTopPadding = Math.max(0, insetTop / 2);
+
+            v.setPadding(0, appliedTopPadding, 0, 0);
+
+            return insets;
+        });
 
         /*
          * System UI بعد وجود WebView.
@@ -587,4 +606,4 @@ public class MainActivity extends AppCompatActivity {
             }
         });
     }
-            }
+                    }
