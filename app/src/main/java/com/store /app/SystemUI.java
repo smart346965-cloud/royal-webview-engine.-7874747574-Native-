@@ -1,10 +1,15 @@
 package com.store.app;
 
 import android.graphics.Color;
+import android.os.Handler;
+import android.os.Looper;
+import android.view.View;
 import android.view.Window;
 import android.view.WindowManager;
 import android.webkit.WebView;
+import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowCompat;
+import androidx.core.view.WindowInsetsCompat;
 import androidx.core.view.WindowInsetsControllerCompat;
 import androidx.fragment.app.FragmentActivity;
 
@@ -20,22 +25,88 @@ public class SystemUI {
 
         Window window = activity.getWindow();
 
-        // Google AndroidX Edge-to-Edge
-        WindowCompat.setDecorFitsSystemWindows(window, false);
+        // =========================================================
+        // 👑 TRUE EDGE-TO-EDGE
+        // =========================================================
 
-        // Transparent system bars
-        window.setStatusBarColor(Color.TRANSPARENT);
-        window.setNavigationBarColor(Color.TRANSPARENT);
+        WindowCompat.setDecorFitsSystemWindows(
+                window,
+                false
+        );
 
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
-            window.setNavigationBarContrastEnforced(false);
-            window.setStatusBarContrastEnforced(false);
+        // =========================================================
+        // 👑 TRANSPARENT SYSTEM BARS
+        // =========================================================
+
+        window.setStatusBarColor(
+                Color.TRANSPARENT
+        );
+
+        window.setNavigationBarColor(
+                Color.TRANSPARENT
+        );
+
+        if (android.os.Build.VERSION.SDK_INT >=
+                android.os.Build.VERSION_CODES.Q) {
+
+            window.setNavigationBarContrastEnforced(
+                    false
+            );
+
+            window.setStatusBarContrastEnforced(
+                    false
+            );
         }
 
-        // Draw system bar backgrounds
         window.addFlags(
-                WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS
+                WindowManager.LayoutParams
+                        .FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS
         );
+
+        // =========================================================
+        // 👑 DO NOT CONSUME WINDOW INSETS HERE
+        // =========================================================
+
+        View content =
+                activity.findViewById(
+                        android.R.id.content
+                );
+
+        if (content != null) {
+
+            ViewCompat.setOnApplyWindowInsetsListener(
+                    content,
+                    null
+            );
+
+            content.setPadding(
+                    0,
+                    0,
+                    0,
+                    0
+            );
+        }
+
+        // =========================================================
+        // 👑 SYSTEM BAR BEHAVIOR
+        // =========================================================
+
+        WindowInsetsControllerCompat controller =
+                WindowCompat.getInsetsController(
+                        window,
+                        window.getDecorView()
+                );
+
+        if (controller != null) {
+
+            controller.setSystemBarsBehavior(
+                    WindowInsetsControllerCompat
+                            .BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            );
+
+            // لا نخفي Status Bar.
+            // الموقع يمتد خلفه بينما الأيقونات تبقى ظاهرة.
+        }
     }
 
     // 2. المحرك الذكي لتغيير لون الأيقونات (ساعة، بطارية) لتناسب الموقع
@@ -55,4 +126,4 @@ public class SystemUI {
                 + 0.114 * Color.blue(color)) / 255;
         return darkness < 0.5;
     }
-}
+                }
