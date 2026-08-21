@@ -185,20 +185,16 @@ public class MainActivity extends AppCompatActivity {
                 )
         );
 
-        // 👑 Edge-to-Edge مع إزاحة نصف شريط الحالة فقط
-        activeWebView.setSystemUiVisibility(
-                View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN | View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-        );
+        // 👑 إزالة احترافية كاملة للمنطقة الآمنة (100% Safe Area Insets)
         activeWebView.setClipToPadding(false);
 
         ViewCompat.setOnApplyWindowInsetsListener(activeWebView, (v, insets) -> {
+            // حساب الارتفاع الحقيقي الكامل لشريط الحالة والنوتش/الكاميرا
             int insetTop = insets.getInsets(WindowInsetsCompat.Type.statusBars()
                     | WindowInsetsCompat.Type.displayCutout()).top;
 
-            // نصف ارتفاع شريط الحالة فقط
-            int appliedTopPadding = Math.max(0, insetTop / 2);
-
-            v.setPadding(0, appliedTopPadding, 0, 0);
+            // تطبيق الإزاحة الكاملة ليجلس المحتوى تحت الكاميرا والساعة تماماً بدون تداخل
+            v.setPadding(0, insetTop, 0, 0);
 
             return insets;
         });
@@ -211,10 +207,8 @@ public class MainActivity extends AppCompatActivity {
                 activeWebView
         );
 
-        SystemUI.setDynamicIcons(
-                getWindow(),
-                true
-        );
+        // 👑 استدعاء مزامنة اللون الأولية
+        SystemUI.syncStatusBarWithWeb(this, activeWebView);
 
         /*
          * WebEngineManager الآن فقط.
@@ -326,6 +320,16 @@ public class MainActivity extends AppCompatActivity {
                     TAG,
                     "🌐 Initial CLIENT_URL navigation started."
             );
+        }
+
+        // 👑 مزامنة لون شريط الحالة فور اكتمال تحويل أي صفحة
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            activeWebView.postDelayed(new Runnable() {
+                @Override
+                public void run() {
+                    SystemUI.syncStatusBarWithWeb(MainActivity.this, activeWebView);
+                }
+            }, 1000); // إعطاء المهلة الكافية لبناء الهيدر والـ DOM
         }
 
         /*
@@ -606,4 +610,4 @@ public class MainActivity extends AppCompatActivity {
             }
         });
     }
-                    }
+    }
