@@ -152,10 +152,12 @@ public class SystemUI {
     }
 
     // =========================================================
-    // 👑 استخراج لون الموقع المتوافق مع برمجيات SPA والتنقل الديناميكي
+    // 👑 استخراج لون الموقع المتوافق مع برمجيات SPA والوضع الليلي/النهاري
     // =========================================================
     public static void syncStatusBarWithWeb(android.app.Activity activity, WebView webView) {
         if (activity == null || webView == null) return;
+
+        String defaultHex = isDarkMode(activity) ? "#121212" : "#FFFFFF";
 
         String jsScript = 
             "(function() {" +
@@ -170,14 +172,14 @@ public class SystemUI {
             "      if (bg && bg !== 'transparent' && bg !== 'rgba(0, 0, 0, 0)') return bg;" +
             "      el = el.parentElement;" +
             "    }" +
-            "    return window.getComputedStyle(document.body).backgroundColor || '#F3F4F6';" +
+            "    return window.getComputedStyle(document.body).backgroundColor || '" + defaultHex + "';" +
             "  }" +
             "  return extractColor();" +
             "})();";
 
         webView.evaluateJavascript(jsScript, value -> {
             if (value != null && !value.equals("null") && !value.equals("\"null\"")) {
-                int parsedColor = parseColorString(value);
+                int parsedColor = parseColorString(activity, value);
                 updateStatusBarColor(activity, parsedColor);
             }
         });
@@ -186,8 +188,9 @@ public class SystemUI {
     // =========================================================
     // 👑 محول ألوان الجافاسكريبت (HEX / RGB / RGBA) إلى Android Color
     // =========================================================
-    public static int parseColorString(String colorStr) {
-        if (colorStr == null) return Color.parseColor("#F3F4F6");
+    public static int parseColorString(android.content.Context context, String colorStr) {
+        int defaultColor = getDefaultSystemColor(context);
+        if (colorStr == null) return defaultColor;
         colorStr = colorStr.replace("\"", "").trim();
         try {
             if (colorStr.startsWith("#")) {
@@ -200,8 +203,22 @@ public class SystemUI {
                 return Color.rgb(r, g, b);
             }
         } catch (Exception e) {
-            // Fallback لون افتراضي مريح في حال الفشل
+            // Fallback متجاوب تلقائياً مع مظهر النظام عند الفشل
         }
-        return Color.parseColor("#F3F4F6");
+        return defaultColor;
+    }
+
+    // =========================================================
+    // 👑 استشعار الوضع الليلي/النهاري للنظام وتحديد اللون الافتراضي
+    // =========================================================
+    public static boolean isDarkMode(android.content.Context context) {
+        if (context == null) return false;
+        int nightModeFlags = context.getResources().getConfiguration().uiMode 
+                & android.content.res.Configuration.UI_MODE_NIGHT_MASK;
+        return nightModeFlags == android.content.res.Configuration.UI_MODE_NIGHT_YES;
+    }
+
+    public static int getDefaultSystemColor(android.content.Context context) {
+        return isDarkMode(context) ? Color.parseColor("#121212") : Color.WHITE;
     }
     }
