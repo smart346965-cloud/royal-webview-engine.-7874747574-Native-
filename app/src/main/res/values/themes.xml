@@ -1,11 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- 👑 ثيم الـ Splash النهاري الموحد -->
+    <style name="Theme.App.Starting" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@android:color/white</item>
+        <item name="windowSplashScreenAnimatedIcon">@mipmap/ic_launcher_round</item>
+        <item name="windowSplashScreenAnimationDuration">300</item>
+        <item name="postSplashScreenTheme">@style/AppTheme_NoSplash</item>
+    </style>
+
+    <!-- 👑 ثيم التطبيق النهاري الأساسي بعد انقضاء الـ Splash -->
     <style name="AppTheme_NoSplash" parent="Theme.AppCompat.Light.NoActionBar">
         <item name="android:windowBackground">@android:color/white</item>
         <item name="android:windowNoTitle">true</item>
         <item name="android:windowActionBar">false</item>
-        <item name="android:statusBarColor">@android:color/transparent</item>
-        <!-- السماح للتطبيق بالتمدد حول الكاميرا (الـ Notch) -->
+        <item name="android:statusBarColor">@android:color/white</item>
         <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
     </style>
