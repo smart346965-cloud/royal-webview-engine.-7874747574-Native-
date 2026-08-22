@@ -204,9 +204,11 @@ public class MainActivity extends AppCompatActivity {
         /*
          * System UI بعد وجود WebView.
          */
+        int initialColor = SystemUI.getDefaultSystemColor(this);
         SystemUI.applyKingMode(
                 this,
-                activeWebView
+                activeWebView,
+                initialColor
         );
 
         // 👑 ضبط أيقونات النظام فوراً حسب ثيم الجوال منعاً لأي وميض
@@ -606,4 +608,4 @@ public class MainActivity extends AppCompatActivity {
             }
         });
     }
-            }
+    }
