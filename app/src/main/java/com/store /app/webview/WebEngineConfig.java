@@ -2,7 +2,6 @@ package com.store.app.webview;
 
 import android.app.Activity;
 import android.content.Context;
-import android.graphics.Color;
 import android.net.Uri;
 import android.os.Build;
 import android.util.Log;
@@ -218,106 +217,30 @@ public class WebEngineConfig {
     }
 
     // =========================================================
-    // 🎨 Status Bar / Navigation Bar
+    // 👑 Status Bar Delegation
+    // SystemUI هو المالك الوحيد لشريط النظام
     // =========================================================
     public void syncStatusBarColor(WebView view) {
 
-        if (activity == null || activity.isFinishing()) {
+        if (activity == null ||
+                activity.isFinishing() ||
+                view == null) {
             return;
         }
 
-        if (!NetworkMonitor.isInternetAvailable(context)) {
-            return;
-        }
-
-        String currentUrl = view.getUrl();
-
-        if (
-                currentUrl != null
-                        && currentUrl.startsWith(
-                                "file:///android_asset/"
-                        )
-        ) {
-
-            activity.getWindow()
-                    .setStatusBarColor(
-                            Color.TRANSPARENT
-                    );
-
-            activity.getWindow()
-                    .setNavigationBarColor(
-                            Color.TRANSPARENT
-                    );
-
-            SystemUI.setDynamicIcons(
-                    activity.getWindow(),
-                    true
-            );
-
-            return;
-        }
-
-        if (!view.isAttachedToWindow()) {
-            return;
-        }
-
-        view.evaluateJavascript(
-                "(function(){return window.getComputedStyle(document.body).backgroundColor;})();",
-                value -> {
-
-                    try {
-
-                        if (
-                                value != null
-                                        && value.contains("rgb")
-                        ) {
-
-                            String clean =
-                                    value.replaceAll(
-                                            "[^0-9,]",
-                                            ""
-                                    );
-
-                            String[] parts =
-                                    clean.split(",");
-
-                            int r =
-                                    Integer.parseInt(
-                                            parts[0].trim()
-                                    );
-
-                            int g =
-                                    Integer.parseInt(
-                                            parts[1].trim()
-                                    );
-
-                            int b =
-                                    Integer.parseInt(
-                                            parts[2].trim()
-                                    );
-
-                            int color =
-                                    Color.rgb(r, g, b);
-
-                            activity.getWindow()
-                                    .setStatusBarColor(
-                                            color
-                                    );
-
-                            boolean isLight =
-                                    SystemUI.isColorLight(
-                                            color
-                                    );
-
-                            SystemUI.setDynamicIcons(
-                                    activity.getWindow(),
-                                    isLight
-                            );
-                        }
-
-                    } catch (Exception ignored) {
-                    }
-                }
+        /*
+         * لا نقوم هنا بأي:
+         *
+         * setStatusBarColor()
+         * setNavigationBarColor()
+         * setDynamicIcons()
+         * evaluateJavascript()
+         *
+         * SystemUI هو المسؤول الوحيد عن ذلك.
+         */
+        SystemUI.scheduleStatusBarSync(
+                activity,
+                view
         );
     }
 
@@ -335,4 +258,4 @@ public class WebEngineConfig {
     public int getTrustedPort() {
         return trustedPort;
     }
-  }
+            }
