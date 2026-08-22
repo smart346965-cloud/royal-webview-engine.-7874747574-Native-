@@ -21,6 +21,7 @@ import com.store.app.NetworkMonitor;
 import com.store.app.R;
 import com.store.app.RoyalNetworkEngine;
 import com.store.app.WebEngineManager;
+import com.store.app.SystemUI;
 import com.store.app.offline.OfflineStateManager;
 
 /**
@@ -52,6 +53,11 @@ public class OfflineUIController {
     // حالة الأوفلاين
     private boolean isOfflineUIVisible = false;
     private boolean isPageLoaded = false;
+
+    // 👑 اللون المرجعي الحالي لواجهة الأوفلاين.
+    // غيّره مستقبلاً هنا فقط إذا تغير تصميم الواجهة.
+    private int offlineSurfaceColor =
+            Color.parseColor("#F3F4F6");
 
     // مراجع للعناصر الأخرى (للوصول إليها من MainActivity)
     public interface OfflineUICallback {
@@ -274,7 +280,11 @@ public class OfflineUIController {
 
         // 1. الحاوية الرئيسية
         pureOfflineUI = new FrameLayout(activity);
-        pureOfflineUI.setBackgroundColor(Color.parseColor("#F3F4F6"));
+
+        pureOfflineUI.setBackgroundColor(
+                offlineSurfaceColor
+        );
+
         pureOfflineUI.setVisibility(View.GONE);
 
         // ☁️ أيقونة السحابة
@@ -401,6 +411,22 @@ public class OfflineUIController {
         return gd;
     }
 
+    // =========================================================
+    // 👑 Offline Surface → System UI Synchronization
+    // =========================================================
+    private void syncOfflineSystemUI() {
+
+        if (activity == null ||
+                activity.isFinishing()) {
+            return;
+        }
+
+        SystemUI.syncWithNativeUI(
+                activity,
+                offlineSurfaceColor
+        );
+    }
+
     // ==========================================
     // 🎯 التحكم بالواجهات (public لاستدعائها من WebEngineManager)
     // ==========================================
@@ -438,6 +464,9 @@ public class OfflineUIController {
 
         isOfflineUIVisible = true;
 
+        // 👑 مزامنة Status Bar مع سطح واجهة الأوفلاين
+        syncOfflineSystemUI();
+
         // إخفاء الشريط النحيف إذا كان ظاهراً
         if (offlineBar != null && offlineBar.getVisibility() == View.VISIBLE) {
             offlineBar.setVisibility(View.GONE);
@@ -466,8 +495,22 @@ public class OfflineUIController {
         isOfflineUIVisible = false;
 
         activity.runOnUiThread(() -> {
-            pureOfflineUI.animate().alpha(0f).setDuration(500)
-                    .withEndAction(() -> pureOfflineUI.setVisibility(View.GONE)).start();
+
+            pureOfflineUI.animate()
+                    .alpha(0f)
+                    .setDuration(500)
+                    .withEndAction(() -> {
+
+                        pureOfflineUI.setVisibility(View.GONE);
+
+                        // 👑 إعادة ملكية Status Bar إلى WebView
+                        SystemUI.scheduleStatusBarSync(
+                                activity,
+                                webView
+                        );
+
+                    })
+                    .start();
 
             if (webView != null) {
                 webView.setVisibility(View.VISIBLE);
