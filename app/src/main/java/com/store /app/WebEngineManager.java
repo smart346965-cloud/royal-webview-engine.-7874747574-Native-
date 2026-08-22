@@ -164,6 +164,11 @@ public class WebEngineManager {
                 ? (android.app.Activity) context
                 : null;
 
+        // 👑 القضاء على الومضة البيضاء: قفل خلفية الـ WebView فوراً على ثيم الـ Splash والنظام (#121212 ليلاً / #FFFFFF نهاراً)
+        if (this.webView != null) {
+            this.webView.setBackgroundColor(SystemUI.getDefaultSystemColor(this.context));
+        }
+
         this.capabilitiesEngine = new RoyalCapabilitiesEngine(this.activity);
         this.speculativeEngine = new SpeculativeEngine(this.activity, this.webView);
 
@@ -300,6 +305,11 @@ public class WebEngineManager {
     }
 
     public void init() {
+        // 👑 تأكيد مطابقة خلفية الـ WebView مع ثيم الـ Splash والنظام قبل البدء بأي عملية تحميل
+        if (this.webView != null) {
+            this.webView.setBackgroundColor(SystemUI.getDefaultSystemColor(this.context));
+        }
+
         // ✅ الكود الجديد: معالجة التعافي الذكي من about:blank
         String currentUrl = webView.getUrl();
         if (currentUrl == null || currentUrl.equalsIgnoreCase("about:blank") || currentUrl.contains("chromewebdata")) {
