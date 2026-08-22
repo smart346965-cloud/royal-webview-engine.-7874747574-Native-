@@ -99,16 +99,27 @@ public class SystemUI {
         }
     }
 
-    // 3. المعالج الرياضي للألوان
+    // =========================================================
+    // 👑 المعادلة المعيارية العالمية للسطوع التبايني (WCAG 2.1 Standard)
+    // =========================================================
     public static boolean isColorLight(int color) {
-        double darkness = 1 - (0.299 * Color.red(color)
-                + 0.587 * Color.green(color)
-                + 0.114 * Color.blue(color)) / 255;
-        return darkness < 0.5;
+        double red = Color.red(color) / 255.0;
+        double green = Color.green(color) / 255.0;
+        double blue = Color.blue(color) / 255.0;
+
+        // حساب السطوع النسبي المعياري وفق معايير W3C / WCAG 2.1
+        double r = (red <= 0.03928) ? red / 12.92 : Math.pow((red + 0.055) / 1.055, 2.4);
+        double g = (green <= 0.03928) ? green / 12.92 : Math.pow((green + 0.055) / 1.055, 2.4);
+        double b = (blue <= 0.03928) ? blue / 12.92 : Math.pow((blue + 0.055) / 1.055, 2.4);
+
+        double luminance = (0.2126 * r) + (0.7152 * g) + (0.0722 * b);
+        
+        // إذا كان السطوع أكبر من العتبة المعيارية 0.179، يعتبر اللون فاتحاً وتكون الأيقونات سوداء
+        return luminance > 0.179;
     }
 
     // =========================================================
-    // 👑 التحديث الحريري لشريط الحالة والحاوية عبر أنيميشن متدرج (ValueAnimator)
+    // 👑 التحديث الحريري لشريط الحالة مع الضبط الفوري الموحد للأيقونات
     // =========================================================
     public static void updateStatusBarColor(android.app.Activity activity, int targetColor) {
         if (activity == null || activity.isFinishing()) return;
@@ -119,30 +130,27 @@ public class SystemUI {
             
             int currentColor = window.getStatusBarColor();
             
-            // عدم تكرار الأنيميشن إذا كان اللون الحالي هو نفس اللون المطلوب
             if (currentColor == targetColor) return;
 
-            // إلغاء أي أنيميشن سابقة تعمل حالياً لمنع التداخل
             if (window.getDecorView().getTag() instanceof android.animation.ValueAnimator) {
                 ((android.animation.ValueAnimator) window.getDecorView().getTag()).cancel();
             }
 
-            // أنيميشن تدرج الألوان المترابط (Smooth 300ms Transition)
+            // 🛡️ 1. تحديد نمط الأيقونات (أسود/أبيض) مرة واحدة فقط للون الهدف منعاً لتعليق WindowInsetsController
+            boolean isTargetLight = isColorLight(targetColor);
+            setDynamicIcons(window, isTargetLight);
+
+            // 🛡️ 2. تشغيل أنيميشن التدرج اللوني لخلفية شريط الحالة والحاوية فقط (300ms)
             android.animation.ValueAnimator colorAnimation = 
                 android.animation.ValueAnimator.ofObject(new android.animation.ArgbEvaluator(), currentColor, targetColor);
             colorAnimation.setDuration(300);
 
             colorAnimation.addUpdateListener(animator -> {
                 int animatedColor = (int) animator.getAnimatedValue();
-                
-                // تحديث لون شريط الحالة ولون الحاوية تدريجياً في كل إطار
                 window.setStatusBarColor(animatedColor);
                 if (contentView != null) {
                     contentView.setBackgroundColor(animatedColor);
                 }
-                
-                // تحديث أيقونات النظام وفقاً للون الإطار الحالي
-                setDynamicIcons(window, isColorLight(animatedColor));
             });
 
             window.getDecorView().setTag(colorAnimation);
@@ -151,7 +159,7 @@ public class SystemUI {
     }
 
     // =========================================================
-    // 👑 استخراج لون الموقع المتوافق مع برمجيات SPA والوضع الليلي/النهاري
+    // 👑 محرك الويب المطور لاستخراج الألوان مع Canvas Color Normalizer
     // =========================================================
     public static void syncStatusBarWithWeb(android.app.Activity activity, WebView webView) {
         if (activity == null || webView == null) return;
@@ -160,18 +168,36 @@ public class SystemUI {
 
         String jsScript = 
             "(function() {" +
+            "  function normalizeColor(colorStr) {" +
+            "    if (!colorStr) return null;" +
+            "    try {" +
+            "      var canvas = document.createElement('canvas');" +
+            "      canvas.width = 1; canvas.height = 1;" +
+            "      var ctx = canvas.getContext('2d');" +
+            "      ctx.fillStyle = colorStr;" +
+            "      return ctx.fillStyle;" + // تحويل تلقائي لجميع الصيغ (HSL, OKLCH, CSS Vars) إلى #rrggbb عبر محرك Chromium
+            "    } catch(e) {" +
+            "      return colorStr;" +
+            "    }" +
+            "  }" +
             "  function extractColor() {" +
-            "    var meta = document.querySelector('meta[name=\"theme-color\"]');" +
-            "    if (meta && meta.content) return meta.content;" +
+            "    var metas = document.querySelectorAll('meta[name=\"theme-color\"]');" +
+            "    for (var i = 0; i < metas.length; i++) {" +
+            "      var m = metas[i];" +
+            "      if (!m.media || window.matchMedia(m.media).matches) {" +
+            "        if (m.content) return normalizeColor(m.content);" +
+            "      }" +
+            "    }" +
             "    var el = document.elementFromPoint(window.innerWidth / 2, 20);" +
             "    if (!el) el = document.querySelector('header') || document.querySelector('nav') || document.body;" +
             "    while (el && el !== document.documentElement) {" +
             "      var st = window.getComputedStyle(el);" +
             "      var bg = st.backgroundColor;" +
-            "      if (bg && bg !== 'transparent' && bg !== 'rgba(0, 0, 0, 0)') return bg;" +
+            "      if (bg && bg !== 'transparent' && bg !== 'rgba(0, 0, 0, 0)') return normalizeColor(bg);" +
             "      el = el.parentElement;" +
             "    }" +
-            "    return window.getComputedStyle(document.body).backgroundColor || '" + defaultHex + "';" +
+            "    var bodyBg = window.getComputedStyle(document.body).backgroundColor;" +
+            "    return normalizeColor(bodyBg) || '" + defaultHex + "';" +
             "  }" +
             "  return extractColor();" +
             "})();";
