@@ -467,6 +467,66 @@ public class SystemUI {
     }
 
     // =========================================================
+    // 👑 Offline UI → Status Bar Synchronization
+    // يسمح لأي واجهة Native بإخبار SystemUI بلونها الحالي.
+    // =========================================================
+    public static void syncWithNativeUI(
+            android.app.Activity activity,
+            int uiColor
+    ) {
+        if (activity == null || activity.isFinishing()) {
+            return;
+        }
+
+        // إلغاء أي مزامنة مؤجلة قادمة من WebView
+        cancelStatusBarSync();
+
+        // اللون المطلوب يصبح هو لون الواجهة الأصلية
+        updateStatusBarColor(
+                activity,
+                uiColor
+        );
+    }
+
+    // =========================================================
+    // 👑 Offline UI → Transparent Status Bar
+    // يستخدم عندما تكون واجهة الأوفلاين مصممة Edge-to-Edge
+    // وتريد أن يظهر محتوى الواجهة خلف Status Bar.
+    // =========================================================
+    public static void makeStatusBarTransparent(
+            android.app.Activity activity,
+            int underlyingColor
+    ) {
+        if (activity == null || activity.isFinishing()) {
+            return;
+        }
+
+        activity.runOnUiThread(() -> {
+
+            Window window = activity.getWindow();
+
+            if (window == null) {
+                return;
+            }
+
+            window.setStatusBarColor(
+                    Color.TRANSPARENT
+            );
+
+            if (android.os.Build.VERSION.SDK_INT >=
+                    android.os.Build.VERSION_CODES.Q) {
+
+                window.setStatusBarContrastEnforced(false);
+            }
+
+            setStatusBarIcons(
+                    window,
+                    isColorLight(underlyingColor)
+            );
+        });
+    }
+
+    // =========================================================
     // 👑 محول ألوان الجافاسكريبت مع فحص قناة الشفافية (Alpha Channel)
     // =========================================================
     public static int parseColorString(android.content.Context context, String colorStr) {
@@ -511,4 +571,4 @@ public class SystemUI {
     public static int getDefaultSystemColor(android.content.Context context) {
         return isDarkMode(context) ? Color.parseColor("#121212") : Color.WHITE;
     }
-            }
+                }
