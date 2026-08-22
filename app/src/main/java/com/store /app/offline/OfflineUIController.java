@@ -460,68 +460,138 @@ public class OfflineUIController {
     // ==========================================
 
     private void showOfflineUI() {
-        if (pureOfflineUI == null) return;
+
+        if (pureOfflineUI == null) {
+            return;
+        }
 
         isOfflineUIVisible = true;
 
-        // 👑 مزامنة Status Bar مع سطح واجهة الأوفلاين
-        syncOfflineSystemUI();
-
-        // إخفاء الشريط النحيف إذا كان ظاهراً
-        if (offlineBar != null && offlineBar.getVisibility() == View.VISIBLE) {
-            offlineBar.setVisibility(View.GONE);
-        }
-
         activity.runOnUiThread(() -> {
-            pureOfflineUI.setVisibility(View.VISIBLE);
-            pureOfflineUI.setAlpha(0f);
-            pureOfflineUI.animate().alpha(1f).setDuration(500).start();
 
+            if (activity.isFinishing()) {
+                return;
+            }
+
+            /*
+             * 👑 IMPORTANT:
+             *
+             * يجب أن يصبح Offline UI مالك الـ Status Bar
+             * قبل أن نجعل الواجهة مرئية للمستخدم.
+             *
+             * لا يوجد هنا Handler
+             * لا يوجد postDelayed
+             * لا يوجد Animation قبل المزامنة.
+             */
+            SystemUI.syncWithNativeUI(
+                    activity,
+                    offlineSurfaceColor
+            );
+
+            /*
+             * إخفاء الشريط النحيف فورًا.
+             */
+            if (offlineBar != null) {
+
+                offlineBar.animate().cancel();
+
+                offlineBar.setVisibility(
+                        View.GONE
+                );
+            }
+
+            /*
+             * 👑 الآن فقط نُظهر Offline UI.
+             *
+             * في هذه اللحظة الـ Status Bar
+             * تم ضبطه بالفعل.
+             */
+            pureOfflineUI.setVisibility(
+                    View.VISIBLE
+            );
+
+            pureOfflineUI.setAlpha(1f);
+
+            /*
+             * WebView يختفي بعد أن أصبحت
+             * الواجهة الأصلية جاهزة.
+             */
             if (webView != null) {
-                webView.setVisibility(View.GONE);
+
+                webView.setVisibility(
+                        View.GONE
+                );
+            }
+
+            if (callback != null) {
+
+                callback.onOfflineUIVisibilityChanged(
+                        true
+                );
             }
         });
 
-        if (callback != null) {
-            callback.onOfflineUIVisibilityChanged(true);
-        }
-
-        Log.d(TAG, "🟠 Offline UI shown.");
+        Log.d(
+                TAG,
+                "🟠 Offline UI shown with synchronized System UI."
+        );
     }
 
     private void hideOfflineUI() {
-        if (pureOfflineUI == null) return;
+
+        if (pureOfflineUI == null) {
+            return;
+        }
 
         isOfflineUIVisible = false;
 
         activity.runOnUiThread(() -> {
 
+            if (activity.isFinishing()) {
+                return;
+            }
+
             pureOfflineUI.animate()
                     .alpha(0f)
-                    .setDuration(500)
+                    .setDuration(220)
                     .withEndAction(() -> {
 
-                        pureOfflineUI.setVisibility(View.GONE);
+                        pureOfflineUI.setVisibility(
+                                View.GONE
+                        );
 
-                        // 👑 إعادة ملكية Status Bar إلى WebView
+                        pureOfflineUI.setAlpha(1f);
+
+                        /*
+                         * 👑 WebView يستعيد ملكية
+                         * Status Bar بعد اختفاء Native UI.
+                         */
                         SystemUI.scheduleStatusBarSync(
                                 activity,
                                 webView
                         );
-
                     })
                     .start();
 
             if (webView != null) {
-                webView.setVisibility(View.VISIBLE);
+
+                webView.setVisibility(
+                        View.VISIBLE
+                );
             }
         });
 
         if (callback != null) {
-            callback.onOfflineUIVisibilityChanged(false);
+
+            callback.onOfflineUIVisibilityChanged(
+                    false
+            );
         }
 
-        Log.d(TAG, "🟢 Offline UI hidden.");
+        Log.d(
+                TAG,
+                "🟢 Offline UI hidden."
+        );
     }
 
     private void showOfflineBar() {
@@ -605,4 +675,4 @@ public class OfflineUIController {
     public void setCallback(OfflineUICallback callback) {
         this.callback = callback;
     }
-            }
+              }
