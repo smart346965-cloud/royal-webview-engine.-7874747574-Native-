@@ -319,8 +319,10 @@ public class MainActivity extends AppCompatActivity {
                     BuildConfig.CLIENT_URL
             );
 
-            // 👑 استدعاء المزامنة فور بدء تحميل الموقع بدلاً من الاستدعاء المبكر الفارغ
-            SystemUI.syncStatusBarWithWeb(MainActivity.this, activeWebView);
+            SystemUI.scheduleStatusBarSync(
+                    MainActivity.this,
+                    activeWebView
+            );
 
             isPageLoaded = true;
 
@@ -392,6 +394,11 @@ public class MainActivity extends AppCompatActivity {
 
         if (activeWebView != null) {
             activeWebView.onResume();
+
+            SystemUI.scheduleStatusBarSync(
+                    this,
+                    activeWebView
+            );
         }
 
         if (offlineController != null) {
@@ -412,6 +419,8 @@ public class MainActivity extends AppCompatActivity {
 
     @Override
     protected void onDestroy() {
+
+        SystemUI.cancelStatusBarSync();
 
         // ✅ إضافة التدمير للمحرك كأولوية
         if (capabilitiesEngine != null) {
