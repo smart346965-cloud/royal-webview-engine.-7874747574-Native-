@@ -15,10 +15,11 @@ import androidx.fragment.app.FragmentActivity;
 
 public class SystemUI {
 
-    // 1. تفعيل وضع "الملك" مع الاستجابة اللحظية لإيماءات الرجوع (Single Swipe Back)
+    // 1. تفعيل وضع "الملك" مع منع الوميض الأسود عبر تعيين اللون الأولي فوراً
     public static void applyKingMode(
             FragmentActivity activity,
-            WebView webView
+            WebView webView,
+            int initialColor
     ) {
 
         if (activity == null) return;
@@ -35,42 +36,29 @@ public class SystemUI {
         );
 
         // =========================================================
-        // 👑 TRANSPARENT SYSTEM BARS
+        // 👑 منع الوميض الأسود: تعيين لون المظهر المبدئي بدلاً من الشفافية المفاجئة
         // =========================================================
 
-        window.setStatusBarColor(
-                Color.TRANSPARENT
-        );
+        window.setStatusBarColor(initialColor);
 
-        window.setNavigationBarColor(
-                Color.TRANSPARENT
-        );
+        window.setNavigationBarColor(Color.TRANSPARENT);
 
         if (android.os.Build.VERSION.SDK_INT >=
                 android.os.Build.VERSION_CODES.Q) {
 
-            window.setNavigationBarContrastEnforced(
-                    false
-            );
-
-            window.setStatusBarContrastEnforced(
-                    false
-            );
+            window.setNavigationBarContrastEnforced(false);
+            window.setStatusBarContrastEnforced(false);
         }
 
         window.addFlags(
-                WindowManager.LayoutParams
-                        .FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS
+                WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS
         );
 
         // =========================================================
         // 👑 DO NOT CONSUME WINDOW INSETS HERE
         // =========================================================
 
-        View content =
-                activity.findViewById(
-                        android.R.id.content
-                );
+        View content = activity.findViewById(android.R.id.content);
 
         if (content != null) {
 
@@ -79,12 +67,7 @@ public class SystemUI {
                     null
             );
 
-            content.setPadding(
-                    0,
-                    0,
-                    0,
-                    0
-            );
+            content.setPadding(0, 0, 0, 0);
         }
 
         // =========================================================
@@ -103,9 +86,6 @@ public class SystemUI {
                     WindowInsetsControllerCompat
                             .BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
             );
-
-            // لا نخفي Status Bar.
-            // الموقع يمتد خلفه بينما الأيقونات تبقى ظاهرة.
         }
     }
 
@@ -221,4 +201,4 @@ public class SystemUI {
     public static int getDefaultSystemColor(android.content.Context context) {
         return isDarkMode(context) ? Color.parseColor("#121212") : Color.WHITE;
     }
-    }
+            }
