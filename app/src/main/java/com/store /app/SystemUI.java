@@ -18,6 +18,22 @@ public class SystemUI {
     private static int lastSyncedStatusBarColor =
             Integer.MIN_VALUE;
 
+    /**
+     * 👑 مصدر ملكية الـ Status Bar
+     *
+     * 0 = WebView
+     * 1 = Native / Offline UI
+     */
+    private static int statusBarOwner = 0;
+
+    /**
+     * 👑 رقم جيل المزامنة
+     *
+     * يمنع نتيجة JavaScript قديمة من WebView
+     * من الكتابة فوق Offline UI بعد ظهورها.
+     */
+    private static long syncGeneration = 0L;
+
     // 1. تفعيل وضع "الملك" مع منع الوميض الأسود عبر تعيين اللون الأولي فوراً
     public static void applyKingMode(
             FragmentActivity activity,
@@ -108,11 +124,37 @@ public class SystemUI {
                 );
 
         if (controller != null) {
-            // true  = خلفية فاتحة → أيقونات داكنة
-            // false = خلفية داكنة → أيقونات فاتحة
+
             controller.setAppearanceLightStatusBars(
                     isLightBackground
             );
+        }
+
+        /*
+         * 👑 Android Legacy / Compatibility Layer
+         *
+         * بعض إصدارات Android / بعض التركيبات مع Edge-to-Edge
+         * قد لا تطبق controller وحده بالشكل المتوقع.
+         *
+         * لذلك نطبق نفس القرار أيضًا عبر systemUiVisibility.
+         */
+        if (android.os.Build.VERSION.SDK_INT >=
+                android.os.Build.VERSION_CODES.M) {
+
+            View decorView = window.getDecorView();
+
+            int flags = decorView.getSystemUiVisibility();
+
+            if (isLightBackground) {
+
+                flags |= View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
+
+            } else {
+
+                flags &= ~View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
+            }
+
+            decorView.setSystemUiVisibility(flags);
         }
     }
 
@@ -126,19 +168,49 @@ public class SystemUI {
 
         if (window == null) return;
 
+        /*
+         * true  = خلفية فاتحة → أيقونات سوداء
+         * false = خلفية داكنة → أيقونات بيضاء
+         */
+
         WindowInsetsControllerCompat controller =
                 WindowCompat.getInsetsController(
                         window,
                         window.getDecorView()
                 );
 
-        if (controller == null) return;
+        if (controller != null) {
 
-        // true  = خلفية فاتحة → أيقونات داكنة
-        // false = خلفية داكنة → أيقونات بيضاء
-        controller.setAppearanceLightStatusBars(
-                lightBackground
-        );
+            controller.setAppearanceLightStatusBars(
+                    lightBackground
+            );
+        }
+
+        /*
+         * 👑 طبقة التوافق الإضافية
+         */
+        if (android.os.Build.VERSION.SDK_INT >=
+                android.os.Build.VERSION_CODES.M) {
+
+            View decorView =
+                    window.getDecorView();
+
+            int flags =
+                    decorView.getSystemUiVisibility();
+
+            if (lightBackground) {
+
+                flags |=
+                        View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
+
+            } else {
+
+                flags &=
+                        ~View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
+            }
+
+            decorView.setSystemUiVisibility(flags);
+        }
     }
 
     // =========================================================
@@ -232,22 +304,28 @@ public class SystemUI {
                 return;
             }
 
-            int currentColor =
-                    window.getStatusBarColor();
-
-            // -----------------------------------------------------
-            // 1. تحديد لون الأيقونات من اللون النهائي
-            // -----------------------------------------------------
-
+            /*
+             * 👑 اللون يحدد لون الأيقونات أولاً.
+             *
+             * لا ننتظر Animation.
+             * الأيقونات تتغير فورًا مع اللون المستهدف.
+             */
             boolean lightBackground =
                     isColorLight(targetColor);
 
-            if (lastSyncedStatusBarColor == targetColor) {
+            setStatusBarIcons(
+                    window,
+                    lightBackground
+            );
 
-                setStatusBarIcons(
-                        window,
-                        lightBackground
-                );
+            int currentColor =
+                    window.getStatusBarColor();
+
+            /*
+             * لا يوجد أي تغيير فعلي.
+             */
+            if (currentColor == targetColor &&
+                    lastSyncedStatusBarColor == targetColor) {
 
                 return;
             }
@@ -255,23 +333,9 @@ public class SystemUI {
             lastSyncedStatusBarColor =
                     targetColor;
 
-            setStatusBarIcons(
-                    window,
-                    lightBackground
-            );
-
-            // -----------------------------------------------------
-            // 2. لا يوجد أي تغيير فعلي
-            // -----------------------------------------------------
-
-            if (currentColor == targetColor) {
-                return;
-            }
-
-            // -----------------------------------------------------
-            // 3. إلغاء أي Animation سابق
-            // -----------------------------------------------------
-
+            /*
+             * إلغاء Animation السابق.
+             */
             Object oldAnimator =
                     window.getDecorView().getTag();
 
@@ -282,10 +346,21 @@ public class SystemUI {
                         oldAnimator).cancel();
             }
 
-            // -----------------------------------------------------
-            // 4. Animation ناعم فقط عند تغير اللون
-            // -----------------------------------------------------
+            /*
+             * إذا كان اللون الحالي نفسه الهدف:
+             * لا نحتاج Animation.
+             */
+            if (currentColor == targetColor) {
+                return;
+            }
 
+            /*
+             * 👑 Animation قصيرة جدًا.
+             *
+             * الأيقونات تم ضبطها مسبقًا،
+             * لذلك لا يوجد وقت تظهر فيه أيقونات
+             * غير مناسبة للون الجديد.
+             */
             android.animation.ValueAnimator
                     colorAnimation =
                     android.animation.ValueAnimator.ofObject(
@@ -294,10 +369,14 @@ public class SystemUI {
                             targetColor
                     );
 
-            colorAnimation.setDuration(180L);
+            colorAnimation.setDuration(120L);
 
             colorAnimation.addUpdateListener(
                     animator -> {
+
+                        if (activity.isFinishing()) {
+                            return;
+                        }
 
                         int animatedColor =
                                 (int) animator.getAnimatedValue();
@@ -316,8 +395,20 @@ public class SystemUI {
                                 android.animation.Animator animation
                         ) {
 
+                            if (activity.isFinishing()) {
+                                return;
+                            }
+
                             window.setStatusBarColor(
                                     targetColor
+                            );
+
+                            /*
+                             * تأكيد نهائي للأيقونات
+                             */
+                            setStatusBarIcons(
+                                    window,
+                                    lightBackground
                             );
 
                             window.getDecorView()
@@ -328,6 +419,18 @@ public class SystemUI {
                         public void onAnimationCancel(
                                 android.animation.Animator animation
                         ) {
+
+                            if (!activity.isFinishing()) {
+
+                                window.setStatusBarColor(
+                                        targetColor
+                                );
+
+                                setStatusBarIcons(
+                                        window,
+                                        lightBackground
+                                );
+                            }
 
                             window.getDecorView()
                                     .setTag(null);
@@ -345,50 +448,120 @@ public class SystemUI {
     // =========================================================
     // 👑 محرك الويب المطور لاستخراج الألوان مع Canvas Color Normalizer
     // =========================================================
-    public static void syncStatusBarWithWeb(android.app.Activity activity, WebView webView) {
-        if (activity == null || webView == null) return;
+    public static void syncStatusBarWithWeb(
+            android.app.Activity activity,
+            WebView webView
+    ) {
 
-        String defaultHex = isDarkMode(activity) ? "#121212" : "#FFFFFF";
+        if (activity == null ||
+                webView == null) {
+            return;
+        }
 
-        String jsScript = 
-            "(function() {" +
-            "  function normalizeColor(colorStr) {" +
-            "    if (!colorStr) return null;" +
-            "    try {" +
-            "      var canvas = document.createElement('canvas');" +
-            "      canvas.width = 1; canvas.height = 1;" +
-            "      var ctx = canvas.getContext('2d');" +
-            "      ctx.fillStyle = colorStr;" +
-            "      return ctx.fillStyle;" + // تحويل تلقائي لجميع الصيغ (HSL, OKLCH, CSS Vars) إلى #rrggbb عبر محرك Chromium
-            "    } catch(e) {" +
-            "      return colorStr;" +
-            "    }" +
-            "  }" +
-            "  function extractColor() {" +
-            "    var metas = document.querySelectorAll('meta[name=\"theme-color\"]');" +
-            "    for (var i = 0; i < metas.length; i++) {" +
-            "      var m = metas[i];" +
-            "      if (!m.media || window.matchMedia(m.media).matches) {" +
-            "        if (m.content) return normalizeColor(m.content);" +
-            "      }" +
-            "    }" +
-            "    var el = document.elementFromPoint(window.innerWidth / 2, 20);" +
-            "    if (!el) el = document.querySelector('header') || document.querySelector('nav') || document.body;" +
-            "    while (el && el !== document.documentElement) {" +
-            "      var st = window.getComputedStyle(el);" +
-            "      var bg = st.backgroundColor;" +
-            "      if (bg && bg !== 'transparent' && bg !== 'rgba(0, 0, 0, 0)') return normalizeColor(bg);" +
-            "      el = el.parentElement;" +
-            "    }" +
-            "    var bodyBg = window.getComputedStyle(document.body).backgroundColor;" +
-            "    return normalizeColor(bodyBg) || '" + defaultHex + "';" +
-            "  }" +
-            "  return extractColor();" +
-            "})();";
+        /*
+         * 👑 WebView يأخذ ملكية Status Bar
+         * فقط إذا لم تكن Native UI مسيطرة عليها.
+         */
+        if (statusBarOwner != 0) {
+            return;
+        }
+
+        final long requestGeneration =
+                syncGeneration;
+
+        String defaultHex =
+                isDarkMode(activity)
+                        ? "#121212"
+                        : "#FFFFFF";
+
+        String jsScript =
+                "(function() {" +
+
+                "function normalizeColor(colorStr) {" +
+                "  if (!colorStr) return null;" +
+                "  try {" +
+                "    var canvas = document.createElement('canvas');" +
+                "    canvas.width = 1;" +
+                "    canvas.height = 1;" +
+                "    var ctx = canvas.getContext('2d');" +
+                "    ctx.fillStyle = colorStr;" +
+                "    return ctx.fillStyle;" +
+                "  } catch(e) {" +
+                "    return colorStr;" +
+                "  }" +
+                "}" +
+
+                "function extractColor() {" +
+
+                "  var metas = document.querySelectorAll(" +
+                "'meta[name=\"theme-color\"]');" +
+
+                "  for (var i = 0; i < metas.length; i++) {" +
+
+                "    var m = metas[i];" +
+
+                "    if (!m.media || window.matchMedia(m.media).matches) {" +
+
+                "      if (m.content) {" +
+                "        var normalized = normalizeColor(m.content);" +
+                "        if (normalized) return normalized;" +
+                "      }" +
+                "    }" +
+                "  }" +
+
+                "  var el = document.elementFromPoint(" +
+                "window.innerWidth / 2, 20);" +
+
+                "  if (!el) {" +
+                "    el = document.querySelector('header')" +
+                "      || document.querySelector('nav')" +
+                "      || document.body;" +
+                "  }" +
+
+                "  while (el && el !== document.documentElement) {" +
+
+                "    var st = window.getComputedStyle(el);" +
+                "    var bg = st.backgroundColor;" +
+
+                "    if (bg &&" +
+                "        bg !== 'transparent' &&" +
+                "        bg !== 'rgba(0, 0, 0, 0)') {" +
+
+                "      return normalizeColor(bg);" +
+                "    }" +
+
+                "    el = el.parentElement;" +
+                "  }" +
+
+                "  var bodyBg =" +
+                "window.getComputedStyle(document.body).backgroundColor;" +
+
+                "  return normalizeColor(bodyBg) ||" +
+                "'" + defaultHex + "';" +
+
+                "}" +
+
+                "return extractColor();" +
+
+                "})();";
 
         webView.evaluateJavascript(
                 jsScript,
                 value -> {
+
+                    /*
+                     * 👑 حماية من Race Condition
+                     *
+                     * قد ترجع نتيجة JavaScript بعد أن أصبح
+                     * Offline UI هو المالك.
+                     */
+                    if (statusBarOwner != 0) {
+                        return;
+                    }
+
+                    if (requestGeneration != syncGeneration) {
+                        return;
+                    }
 
                     if (value == null ||
                             value.equals("null") ||
@@ -431,6 +604,16 @@ public class SystemUI {
 
         cancelStatusBarSync();
 
+        /*
+         * 👑 WebView يستعيد الملكية.
+         */
+        statusBarOwner = 0;
+
+        syncGeneration++;
+
+        final long scheduledGeneration =
+                syncGeneration;
+
         syncTask = () -> {
 
             if (activity.isFinishing()) {
@@ -442,15 +625,27 @@ public class SystemUI {
                 return;
             }
 
+            if (statusBarOwner != 0) {
+                return;
+            }
+
+            if (scheduledGeneration != syncGeneration) {
+                return;
+            }
+
             syncStatusBarWithWeb(
                     activity,
                     webView
             );
         };
 
+        /*
+         * تأخير صغير جدًا للسماح للـ WebView
+         * بإكمال تثبيت الـ DOM / theme-color.
+         */
         SYNC_HANDLER.postDelayed(
                 syncTask,
-                250L
+                80L
         );
     }
 
@@ -474,18 +669,78 @@ public class SystemUI {
             android.app.Activity activity,
             int uiColor
     ) {
-        if (activity == null || activity.isFinishing()) {
+
+        if (activity == null ||
+                activity.isFinishing()) {
             return;
         }
 
-        // إلغاء أي مزامنة مؤجلة قادمة من WebView
+        /*
+         * 👑 Native UI أصبحت المالك الوحيد.
+         */
+        statusBarOwner = 1;
+
+        /*
+         * إلغاء أي WebView synchronization
+         * قادمة أو معلقة.
+         */
         cancelStatusBarSync();
 
-        // اللون المطلوب يصبح هو لون الواجهة الأصلية
-        updateStatusBarColor(
-                activity,
-                uiColor
-        );
+        /*
+         * إبطال جميع نتائج JavaScript القديمة.
+         */
+        syncGeneration++;
+
+        /*
+         * 👑 تطبيق اللون + الأيقونات فورًا
+         * على UI Thread.
+         */
+        Runnable sync = () -> {
+
+            if (activity.isFinishing()) {
+                return;
+            }
+
+            Window window =
+                    activity.getWindow();
+
+            if (window == null) {
+                return;
+            }
+
+            boolean lightBackground =
+                    isColorLight(uiColor);
+
+            /*
+             * أولاً الأيقونات.
+             */
+            setStatusBarIcons(
+                    window,
+                    lightBackground
+            );
+
+            /*
+             * ثم اللون.
+             *
+             * هنا لا نستخدم تأخير إضافي.
+             */
+            window.setStatusBarColor(
+                    uiColor
+            );
+
+            lastSyncedStatusBarColor =
+                    uiColor;
+        };
+
+        if (Looper.myLooper()
+                == Looper.getMainLooper()) {
+
+            sync.run();
+
+        } else {
+
+            activity.runOnUiThread(sync);
+        }
     }
 
     // =========================================================
@@ -497,18 +752,35 @@ public class SystemUI {
             android.app.Activity activity,
             int underlyingColor
     ) {
-        if (activity == null || activity.isFinishing()) {
+
+        if (activity == null ||
+                activity.isFinishing()) {
             return;
         }
 
         activity.runOnUiThread(() -> {
 
-            Window window = activity.getWindow();
+            Window window =
+                    activity.getWindow();
 
             if (window == null) {
                 return;
             }
 
+            boolean lightBackground =
+                    isColorLight(underlyingColor);
+
+            /*
+             * الأيقونات أولاً.
+             */
+            setStatusBarIcons(
+                    window,
+                    lightBackground
+            );
+
+            /*
+             * ثم الشفافية.
+             */
             window.setStatusBarColor(
                     Color.TRANSPARENT
             );
@@ -516,13 +788,10 @@ public class SystemUI {
             if (android.os.Build.VERSION.SDK_INT >=
                     android.os.Build.VERSION_CODES.Q) {
 
-                window.setStatusBarContrastEnforced(false);
+                window.setStatusBarContrastEnforced(
+                        false
+                );
             }
-
-            setStatusBarIcons(
-                    window,
-                    isColorLight(underlyingColor)
-            );
         });
     }
 
@@ -571,4 +840,4 @@ public class SystemUI {
     public static int getDefaultSystemColor(android.content.Context context) {
         return isDarkMode(context) ? Color.parseColor("#121212") : Color.WHITE;
     }
-                }
+            }
