@@ -108,26 +108,45 @@ public class SystemUI {
     }
 
     // =========================================================
-    // 👑 المحرك الذكي لتحديث شريط الحالة وحاوية RootContainer معاً
+    // 👑 التحديث الحريري لشريط الحالة والحاوية عبر أنيميشن متدرج (ValueAnimator)
     // =========================================================
-    public static void updateStatusBarColor(android.app.Activity activity, int color) {
+    public static void updateStatusBarColor(android.app.Activity activity, int targetColor) {
         if (activity == null || activity.isFinishing()) return;
 
         activity.runOnUiThread(() -> {
             Window window = activity.getWindow();
-            
-            // 1. تغيير لون خلفية شريط الحالة
-            window.setStatusBarColor(color);
-
-            // 2. تلوين خلفية الحاوية الرئيسية لتغطية الفراغ العلوي (Margin Area) بنفس اللون
             View contentView = activity.findViewById(android.R.id.content);
-            if (contentView != null) {
-                contentView.setBackgroundColor(color);
+            
+            int currentColor = window.getStatusBarColor();
+            
+            // عدم تكرار الأنيميشن إذا كان اللون الحالي هو نفس اللون المطلوب
+            if (currentColor == targetColor) return;
+
+            // إلغاء أي أنيميشن سابقة تعمل حالياً لمنع التداخل
+            if (window.getDecorView().getTag() instanceof android.animation.ValueAnimator) {
+                ((android.animation.ValueAnimator) window.getDecorView().getTag()).cancel();
             }
 
-            // 3. ضبط لون الأيقونات (أبيض / أسود) حسب سطوع اللون المستخرج
-            boolean isLight = isColorLight(color);
-            setDynamicIcons(window, isLight);
+            // أنيميشن تدرج الألوان المترابط (Smooth 300ms Transition)
+            android.animation.ValueAnimator colorAnimation = 
+                android.animation.ValueAnimator.ofObject(new android.animation.ArgbEvaluator(), currentColor, targetColor);
+            colorAnimation.setDuration(300);
+
+            colorAnimation.addUpdateListener(animator -> {
+                int animatedColor = (int) animator.getAnimatedValue();
+                
+                // تحديث لون شريط الحالة ولون الحاوية تدريجياً في كل إطار
+                window.setStatusBarColor(animatedColor);
+                if (contentView != null) {
+                    contentView.setBackgroundColor(animatedColor);
+                }
+                
+                // تحديث أيقونات النظام وفقاً للون الإطار الحالي
+                setDynamicIcons(window, isColorLight(animatedColor));
+            });
+
+            window.getDecorView().setTag(colorAnimation);
+            colorAnimation.start();
         });
     }
 
@@ -166,7 +185,7 @@ public class SystemUI {
     }
 
     // =========================================================
-    // 👑 محول ألوان الجافاسكريبت (HEX / RGB / RGBA) إلى Android Color
+    // 👑 محول ألوان الجافاسكريبت مع فحص قناة الشفافية (Alpha Channel)
     // =========================================================
     public static int parseColorString(android.content.Context context, String colorStr) {
         int defaultColor = getDefaultSystemColor(context);
@@ -180,6 +199,15 @@ public class SystemUI {
                 int r = Integer.parseInt(parts[0].trim());
                 int g = Integer.parseInt(parts[1].trim());
                 int b = Integer.parseInt(parts[2].trim());
+
+                // 🛡️ فحص قناة الشفافية Alpha لو كانت الصيغة rgba
+                if (parts.length >= 4) {
+                    float a = Float.parseFloat(parts[3].trim());
+                    // إذا كانت الشفافية أقل من 10% نعتبرها شفافة ونرجع لون النظام المبدئي بدلاً من الأسود #000000
+                    if (a < 0.1f) {
+                        return defaultColor;
+                    }
+                }
                 return Color.rgb(r, g, b);
             }
         } catch (Exception e) {
@@ -201,4 +229,4 @@ public class SystemUI {
     public static int getDefaultSystemColor(android.content.Context context) {
         return isDarkMode(context) ? Color.parseColor("#121212") : Color.WHITE;
     }
-            }
+                }
