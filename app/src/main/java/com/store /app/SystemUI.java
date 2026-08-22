@@ -34,6 +34,23 @@ public class SystemUI {
      */
     private static long syncGeneration = 0L;
 
+    // =========================================================
+    // 👑 إلغاء Animation قيد التشغيل
+    // =========================================================
+    private static void cancelStatusBarColorAnimation(Window window) {
+        if (window == null) return;
+
+        View decorView = window.getDecorView();
+
+        Object animator = decorView.getTag();
+
+        if (animator instanceof android.animation.ValueAnimator) {
+            ((android.animation.ValueAnimator) animator).cancel();
+        }
+
+        decorView.setTag(null);
+    }
+
     // 1. تفعيل وضع "الملك" مع منع الوميض الأسود عبر تعيين اللون الأولي فوراً
     public static void applyKingMode(
             FragmentActivity activity,
@@ -304,6 +321,8 @@ public class SystemUI {
                 return;
             }
 
+            cancelStatusBarColorAnimation(window);
+
             /*
              * 👑 اللون يحدد لون الأيقونات أولاً.
              *
@@ -332,19 +351,6 @@ public class SystemUI {
 
             lastSyncedStatusBarColor =
                     targetColor;
-
-            /*
-             * إلغاء Animation السابق.
-             */
-            Object oldAnimator =
-                    window.getDecorView().getTag();
-
-            if (oldAnimator
-                    instanceof android.animation.ValueAnimator) {
-
-                ((android.animation.ValueAnimator)
-                        oldAnimator).cancel();
-            }
 
             /*
              * إذا كان اللون الحالي نفسه الهدف:
@@ -419,21 +425,7 @@ public class SystemUI {
                         public void onAnimationCancel(
                                 android.animation.Animator animation
                         ) {
-
-                            if (!activity.isFinishing()) {
-
-                                window.setStatusBarColor(
-                                        targetColor
-                                );
-
-                                setStatusBarIcons(
-                                        window,
-                                        lightBackground
-                                );
-                            }
-
-                            window.getDecorView()
-                                    .setTag(null);
+                            window.getDecorView().setTag(null);
                         }
                     }
             );
@@ -604,11 +596,7 @@ public class SystemUI {
 
         cancelStatusBarSync();
 
-        /*
-         * 👑 WebView يستعيد الملكية.
-         */
         statusBarOwner = 0;
-
         syncGeneration++;
 
         final long scheduledGeneration =
@@ -708,6 +696,8 @@ public class SystemUI {
                 return;
             }
 
+            cancelStatusBarColorAnimation(window);
+
             boolean lightBackground =
                     isColorLight(uiColor);
 
@@ -766,6 +756,8 @@ public class SystemUI {
             if (window == null) {
                 return;
             }
+
+            cancelStatusBarColorAnimation(window);
 
             boolean lightBackground =
                     isColorLight(underlyingColor);
@@ -840,4 +832,4 @@ public class SystemUI {
     public static int getDefaultSystemColor(android.content.Context context) {
         return isDarkMode(context) ? Color.parseColor("#121212") : Color.WHITE;
     }
-            }
+    }
