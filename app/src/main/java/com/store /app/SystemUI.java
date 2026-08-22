@@ -185,11 +185,6 @@ public class SystemUI {
 
         if (window == null) return;
 
-        /*
-         * true  = خلفية فاتحة → أيقونات سوداء
-         * false = خلفية داكنة → أيقونات بيضاء
-         */
-
         WindowInsetsControllerCompat controller =
                 WindowCompat.getInsetsController(
                         window,
@@ -197,36 +192,126 @@ public class SystemUI {
                 );
 
         if (controller != null) {
-
             controller.setAppearanceLightStatusBars(
                     lightBackground
             );
         }
 
-        /*
-         * 👑 طبقة التوافق الإضافية
-         */
         if (android.os.Build.VERSION.SDK_INT >=
                 android.os.Build.VERSION_CODES.M) {
 
-            View decorView =
-                    window.getDecorView();
+            View decorView = window.getDecorView();
 
-            int flags =
-                    decorView.getSystemUiVisibility();
+            int flags = decorView.getSystemUiVisibility();
 
             if (lightBackground) {
-
-                flags |=
-                        View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
-
+                flags |= View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
             } else {
-
-                flags &=
-                        ~View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
+                flags &= ~View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
             }
 
             decorView.setSystemUiVisibility(flags);
+        }
+    }
+
+    // =========================================================
+    // 👑 Force Native Status Bar (Offline UI / Native Screens)
+    // =========================================================
+    public static void forceNativeStatusBar(
+            android.app.Activity activity,
+            int color
+    ) {
+
+        if (activity == null ||
+                activity.isFinishing()) {
+            return;
+        }
+
+        Runnable apply = () -> {
+
+            if (activity.isFinishing()) {
+                return;
+            }
+
+            Window window = activity.getWindow();
+
+            if (window == null) {
+                return;
+            }
+
+            cancelStatusBarColorAnimation(window);
+
+            statusBarOwner = 1;
+
+            cancelStatusBarSync();
+
+            syncGeneration++;
+
+            boolean lightBackground =
+                    isColorLight(color);
+
+            window.setStatusBarColor(color);
+
+            setStatusBarIcons(
+                    window,
+                    lightBackground
+            );
+
+            /*
+             * تأكيد أخير بعد اكتمال تحديث الـ DecorView.
+             */
+            window.getDecorView().post(() -> {
+
+                if (activity.isFinishing()) {
+                    return;
+                }
+
+                WindowInsetsControllerCompat controller =
+                        WindowCompat.getInsetsController(
+                                window,
+                                window.getDecorView()
+                        );
+
+                if (controller != null) {
+                    controller.setAppearanceLightStatusBars(
+                            lightBackground
+                    );
+                }
+
+                if (android.os.Build.VERSION.SDK_INT >=
+                        android.os.Build.VERSION_CODES.M) {
+
+                    View decorView =
+                            window.getDecorView();
+
+                    int flags =
+                            decorView.getSystemUiVisibility();
+
+                    if (lightBackground) {
+                        flags |=
+                                View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
+                    } else {
+                        flags &=
+                                ~View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
+                    }
+
+                    decorView.setSystemUiVisibility(flags);
+                }
+
+                window.setStatusBarColor(color);
+
+                lastSyncedStatusBarColor = color;
+            });
+        };
+
+        if (Looper.myLooper() ==
+                Looper.getMainLooper()) {
+
+            apply.run();
+
+        } else {
+
+            activity.runOnUiThread(apply);
         }
     }
 
@@ -658,79 +743,10 @@ public class SystemUI {
             int uiColor
     ) {
 
-        if (activity == null ||
-                activity.isFinishing()) {
-            return;
-        }
-
-        /*
-         * 👑 Native UI أصبحت المالك الوحيد.
-         */
-        statusBarOwner = 1;
-
-        /*
-         * إلغاء أي WebView synchronization
-         * قادمة أو معلقة.
-         */
-        cancelStatusBarSync();
-
-        /*
-         * إبطال جميع نتائج JavaScript القديمة.
-         */
-        syncGeneration++;
-
-        /*
-         * 👑 تطبيق اللون + الأيقونات فورًا
-         * على UI Thread.
-         */
-        Runnable sync = () -> {
-
-            if (activity.isFinishing()) {
-                return;
-            }
-
-            Window window =
-                    activity.getWindow();
-
-            if (window == null) {
-                return;
-            }
-
-            cancelStatusBarColorAnimation(window);
-
-            boolean lightBackground =
-                    isColorLight(uiColor);
-
-            /*
-             * أولاً الأيقونات.
-             */
-            setStatusBarIcons(
-                    window,
-                    lightBackground
-            );
-
-            /*
-             * ثم اللون.
-             *
-             * هنا لا نستخدم تأخير إضافي.
-             */
-            window.setStatusBarColor(
-                    uiColor
-            );
-
-            lastSyncedStatusBarColor =
-                    uiColor;
-        };
-
-        if (Looper.myLooper()
-                == Looper.getMainLooper()) {
-
-            sync.run();
-
-        } else {
-
-            activity.runOnUiThread(sync);
-        }
+        forceNativeStatusBar(
+                activity,
+                uiColor
+        );
     }
 
     // =========================================================
@@ -832,4 +848,4 @@ public class SystemUI {
     public static int getDefaultSystemColor(android.content.Context context) {
         return isDarkMode(context) ? Color.parseColor("#121212") : Color.WHITE;
     }
-    }
+            }
