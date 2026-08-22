@@ -211,12 +211,9 @@ public class MainActivity extends AppCompatActivity {
                 initialColor
         );
 
-        // 👑 ضبط أيقونات النظام فوراً حسب ثيم الجوال منعاً لأي وميض
+        // 👑 ضبط أيقونات النظام فوراً حسب ثيم الجوال لمنع أي وميض مبكر
         boolean isDarkSystem = SystemUI.isDarkMode(this);
         SystemUI.setDynamicIcons(getWindow(), !isDarkSystem);
-
-        // 👑 استدعاء مزامنة لون الموقع الحقيقي
-        SystemUI.syncStatusBarWithWeb(this, activeWebView);
 
         /*
          * WebEngineManager الآن فقط.
@@ -321,6 +318,9 @@ public class MainActivity extends AppCompatActivity {
             activeWebView.loadUrl(
                     BuildConfig.CLIENT_URL
             );
+
+            // 👑 استدعاء المزامنة فور بدء تحميل الموقع بدلاً من الاستدعاء المبكر الفارغ
+            SystemUI.syncStatusBarWithWeb(MainActivity.this, activeWebView);
 
             isPageLoaded = true;
 
@@ -608,4 +608,4 @@ public class MainActivity extends AppCompatActivity {
             }
         });
     }
-    }
+            }
