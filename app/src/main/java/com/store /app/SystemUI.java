@@ -15,6 +15,9 @@ import androidx.fragment.app.FragmentActivity;
 
 public class SystemUI {
 
+    private static int lastSyncedStatusBarColor =
+            Integer.MIN_VALUE;
+
     // 1. تفعيل وضع "الملك" مع منع الوميض الأسود عبر تعيين اللون الأولي فوراً
     public static void applyKingMode(
             FragmentActivity activity,
@@ -89,71 +92,228 @@ public class SystemUI {
         }
     }
 
-    // 2. المحرك الذكي لتغيير لون الأيقونات (ساعة، بطارية) لتناسب الموقع
-    public static void setDynamicIcons(android.view.Window window, boolean isLightBackground) {
+    // =========================================================
+    // 👑 STATUS BAR ONLY — إدارة أيقونات شريط الحالة فقط
+    // =========================================================
+    public static void setStatusBarIcons(
+            android.view.Window window,
+            boolean lightBackground
+    ) {
+
         if (window == null) return;
-        WindowInsetsControllerCompat controller = WindowCompat.getInsetsController(window, window.getDecorView());
-        if (controller != null) {
-            controller.setAppearanceLightStatusBars(isLightBackground);
-            controller.setAppearanceLightNavigationBars(isLightBackground);
-        }
+
+        WindowInsetsControllerCompat controller =
+                WindowCompat.getInsetsController(
+                        window,
+                        window.getDecorView()
+                );
+
+        if (controller == null) return;
+
+        // true  = خلفية فاتحة → أيقونات داكنة
+        // false = خلفية داكنة → أيقونات بيضاء
+        controller.setAppearanceLightStatusBars(
+                lightBackground
+        );
     }
 
     // =========================================================
-    // 👑 المعادلة المعيارية العالمية للسطوع التبايني (WCAG 2.1 Standard)
+    // 👑 تحديد أفضل لون لأيقونات Status Bar
+    // بناءً على أعلى Contrast Ratio
     // =========================================================
     public static boolean isColorLight(int color) {
-        double red = Color.red(color) / 255.0;
-        double green = Color.green(color) / 255.0;
-        double blue = Color.blue(color) / 255.0;
 
-        // حساب السطوع النسبي المعياري وفق معايير W3C / WCAG 2.1
-        double r = (red <= 0.03928) ? red / 12.92 : Math.pow((red + 0.055) / 1.055, 2.4);
-        double g = (green <= 0.03928) ? green / 12.92 : Math.pow((green + 0.055) / 1.055, 2.4);
-        double b = (blue <= 0.03928) ? blue / 12.92 : Math.pow((blue + 0.055) / 1.055, 2.4);
+        double red =
+                Color.red(color) / 255.0;
 
-        double luminance = (0.2126 * r) + (0.7152 * g) + (0.0722 * b);
-        
-        // إذا كان السطوع أكبر من العتبة المعيارية 0.179، يعتبر اللون فاتحاً وتكون الأيقونات سوداء
-        return luminance > 0.179;
+        double green =
+                Color.green(color) / 255.0;
+
+        double blue =
+                Color.blue(color) / 255.0;
+
+        double r =
+                (red <= 0.04045)
+                        ? red / 12.92
+                        : Math.pow(
+                                (red + 0.055) / 1.055,
+                                2.4
+                        );
+
+        double g =
+                (green <= 0.04045)
+                        ? green / 12.92
+                        : Math.pow(
+                                (green + 0.055) / 1.055,
+                                2.4
+                        );
+
+        double b =
+                (blue <= 0.04045)
+                        ? blue / 12.92
+                        : Math.pow(
+                                (blue + 0.055) / 1.055,
+                                2.4
+                        );
+
+        double luminance =
+                (0.2126 * r)
+                        + (0.7152 * g)
+                        + (0.0722 * b);
+
+        // Contrast مع الأسود
+        double blackContrast =
+                (luminance + 0.05) / 0.05;
+
+        // Contrast مع الأبيض
+        double whiteContrast =
+                1.05 / (luminance + 0.05);
+
+        /*
+         * إذا كان الأسود يعطي Contrast أفضل:
+         *
+         * return true
+         *
+         * لأن true تعني:
+         * Light Background → Dark Icons
+         */
+        return blackContrast >= whiteContrast;
     }
 
     // =========================================================
-    // 👑 التحديث الحريري لشريط الحالة مع الضبط الفوري الموحد للأيقونات
+    // 👑 Royal Status Bar Synchronization
+    //
+    // مسؤول عن:
+    // 1. تغيير لون Status Bar
+    // 2. تغيير أيقوناته
+    // 3. منع تكرار التحديثات
+    // 4. منع تضارب Animations
     // =========================================================
-    public static void updateStatusBarColor(android.app.Activity activity, int targetColor) {
-        if (activity == null || activity.isFinishing()) return;
+    public static void updateStatusBarColor(
+            android.app.Activity activity,
+            int targetColor
+    ) {
+
+        if (activity == null ||
+                activity.isFinishing()) {
+            return;
+        }
 
         activity.runOnUiThread(() -> {
-            Window window = activity.getWindow();
-            View contentView = activity.findViewById(android.R.id.content);
-            
-            int currentColor = window.getStatusBarColor();
-            
-            if (currentColor == targetColor) return;
 
-            if (window.getDecorView().getTag() instanceof android.animation.ValueAnimator) {
-                ((android.animation.ValueAnimator) window.getDecorView().getTag()).cancel();
+            Window window =
+                    activity.getWindow();
+
+            if (window == null) {
+                return;
             }
 
-            // 🛡️ 1. تحديد نمط الأيقونات (أسود/أبيض) مرة واحدة فقط للون الهدف منعاً لتعليق WindowInsetsController
-            boolean isTargetLight = isColorLight(targetColor);
-            setDynamicIcons(window, isTargetLight);
+            int currentColor =
+                    window.getStatusBarColor();
 
-            // 🛡️ 2. تشغيل أنيميشن التدرج اللوني لخلفية شريط الحالة والحاوية فقط (300ms)
-            android.animation.ValueAnimator colorAnimation = 
-                android.animation.ValueAnimator.ofObject(new android.animation.ArgbEvaluator(), currentColor, targetColor);
-            colorAnimation.setDuration(300);
+            // -----------------------------------------------------
+            // 1. تحديد لون الأيقونات من اللون النهائي
+            // -----------------------------------------------------
 
-            colorAnimation.addUpdateListener(animator -> {
-                int animatedColor = (int) animator.getAnimatedValue();
-                window.setStatusBarColor(animatedColor);
-                if (contentView != null) {
-                    contentView.setBackgroundColor(animatedColor);
-                }
-            });
+            boolean lightBackground =
+                    isColorLight(targetColor);
 
-            window.getDecorView().setTag(colorAnimation);
+            if (lastSyncedStatusBarColor == targetColor) {
+
+                setStatusBarIcons(
+                        window,
+                        lightBackground
+                );
+
+                return;
+            }
+
+            lastSyncedStatusBarColor =
+                    targetColor;
+
+            setStatusBarIcons(
+                    window,
+                    lightBackground
+            );
+
+            // -----------------------------------------------------
+            // 2. لا يوجد أي تغيير فعلي
+            // -----------------------------------------------------
+
+            if (currentColor == targetColor) {
+                return;
+            }
+
+            // -----------------------------------------------------
+            // 3. إلغاء أي Animation سابق
+            // -----------------------------------------------------
+
+            Object oldAnimator =
+                    window.getDecorView().getTag();
+
+            if (oldAnimator
+                    instanceof android.animation.ValueAnimator) {
+
+                ((android.animation.ValueAnimator)
+                        oldAnimator).cancel();
+            }
+
+            // -----------------------------------------------------
+            // 4. Animation ناعم فقط عند تغير اللون
+            // -----------------------------------------------------
+
+            android.animation.ValueAnimator
+                    colorAnimation =
+                    android.animation.ValueAnimator.ofObject(
+                            new android.animation.ArgbEvaluator(),
+                            currentColor,
+                            targetColor
+                    );
+
+            colorAnimation.setDuration(180L);
+
+            colorAnimation.addUpdateListener(
+                    animator -> {
+
+                        int animatedColor =
+                                (int) animator.getAnimatedValue();
+
+                        window.setStatusBarColor(
+                                animatedColor
+                        );
+                    }
+            );
+
+            colorAnimation.addListener(
+                    new android.animation.AnimatorListenerAdapter() {
+
+                        @Override
+                        public void onAnimationEnd(
+                                android.animation.Animator animation
+                        ) {
+
+                            window.setStatusBarColor(
+                                    targetColor
+                            );
+
+                            window.getDecorView()
+                                    .setTag(null);
+                        }
+
+                        @Override
+                        public void onAnimationCancel(
+                                android.animation.Animator animation
+                        ) {
+
+                            window.getDecorView()
+                                    .setTag(null);
+                        }
+                    }
+            );
+
+            window.getDecorView()
+                    .setTag(colorAnimation);
+
             colorAnimation.start();
         });
     }
@@ -202,12 +362,84 @@ public class SystemUI {
             "  return extractColor();" +
             "})();";
 
-        webView.evaluateJavascript(jsScript, value -> {
-            if (value != null && !value.equals("null") && !value.equals("\"null\"")) {
-                int parsedColor = parseColorString(activity, value);
-                updateStatusBarColor(activity, parsedColor);
+        webView.evaluateJavascript(
+                jsScript,
+                value -> {
+
+                    if (value == null ||
+                            value.equals("null") ||
+                            value.equals("\"null\"")) {
+                        return;
+                    }
+
+                    int parsedColor =
+                            parseColorString(
+                                    activity,
+                                    value
+                            );
+
+                    updateStatusBarColor(
+                            activity,
+                            parsedColor
+                    );
+                }
+        );
+    }
+
+    // =========================================================
+    // 👑 Royal Visual Synchronization
+    // =========================================================
+
+    private static final Handler SYNC_HANDLER =
+            new Handler(Looper.getMainLooper());
+
+    private static Runnable syncTask;
+
+    public static void scheduleStatusBarSync(
+            android.app.Activity activity,
+            WebView webView
+    ) {
+
+        if (activity == null ||
+                webView == null) {
+            return;
+        }
+
+        cancelStatusBarSync();
+
+        syncTask = () -> {
+
+            if (activity.isFinishing()) {
+                return;
             }
-        });
+
+            if (webView.getVisibility()
+                    != View.VISIBLE) {
+                return;
+            }
+
+            syncStatusBarWithWeb(
+                    activity,
+                    webView
+            );
+        };
+
+        SYNC_HANDLER.postDelayed(
+                syncTask,
+                250L
+        );
+    }
+
+    public static void cancelStatusBarSync() {
+
+        if (syncTask != null) {
+
+            SYNC_HANDLER.removeCallbacks(
+                    syncTask
+            );
+
+            syncTask = null;
+        }
     }
 
     // =========================================================
@@ -255,4 +487,4 @@ public class SystemUI {
     public static int getDefaultSystemColor(android.content.Context context) {
         return isDarkMode(context) ? Color.parseColor("#121212") : Color.WHITE;
     }
-                }
+            }
