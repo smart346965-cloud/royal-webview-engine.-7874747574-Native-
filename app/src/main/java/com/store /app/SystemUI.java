@@ -93,6 +93,30 @@ public class SystemUI {
     }
 
     // =========================================================
+    // 👑 التحكم الاحترافي بأيقونات شريط الحالة
+    // =========================================================
+    public static void setDynamicIcons(
+            android.view.Window window,
+            boolean isLightBackground
+    ) {
+        if (window == null) return;
+
+        WindowInsetsControllerCompat controller =
+                WindowCompat.getInsetsController(
+                        window,
+                        window.getDecorView()
+                );
+
+        if (controller != null) {
+            // true  = خلفية فاتحة → أيقونات داكنة
+            // false = خلفية داكنة → أيقونات فاتحة
+            controller.setAppearanceLightStatusBars(
+                    isLightBackground
+            );
+        }
+    }
+
+    // =========================================================
     // 👑 STATUS BAR ONLY — إدارة أيقونات شريط الحالة فقط
     // =========================================================
     public static void setStatusBarIcons(
