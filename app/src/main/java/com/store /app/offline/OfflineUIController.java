@@ -118,6 +118,12 @@ public class OfflineUIController {
 
         // تحقق من حالة الشبكة عند العودة للتطبيق
         if (!NetworkMonitor.isInternetAvailable(activity)) {
+
+            SystemUI.forceNativeStatusBar(
+                    activity,
+                    offlineSurfaceColor
+            );
+
             // الإنترنت مقطوع
             handleOfflineState();
         }
@@ -483,7 +489,7 @@ public class OfflineUIController {
              * لا يوجد postDelayed
              * لا يوجد Animation قبل المزامنة.
              */
-            SystemUI.syncWithNativeUI(
+            SystemUI.forceNativeStatusBar(
                     activity,
                     offlineSurfaceColor
             );
@@ -508,6 +514,11 @@ public class OfflineUIController {
              */
             pureOfflineUI.setVisibility(
                     View.VISIBLE
+            );
+
+            SystemUI.forceNativeStatusBar(
+                    activity,
+                    offlineSurfaceColor
             );
 
             pureOfflineUI.setAlpha(1f);
@@ -675,4 +686,4 @@ public class OfflineUIController {
     public void setCallback(OfflineUICallback callback) {
         this.callback = callback;
     }
-              }
+    }
