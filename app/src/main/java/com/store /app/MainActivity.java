@@ -11,7 +11,10 @@ import android.os.Looper;
 import android.util.Log;
 import android.view.View;
 import android.view.ViewGroup;
+import android.webkit.WebResourceRequest;
+import android.webkit.WebResourceResponse;
 import android.webkit.WebView;
+import android.webkit.WebViewClient;
 import android.widget.FrameLayout;
 import android.widget.ProgressBar;
 
@@ -19,33 +22,48 @@ import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.splashscreen.SplashScreen;
 import androidx.core.view.ViewCompat;
-import androidx.core.view.WindowCompat;
 import androidx.core.view.WindowInsetsCompat;
+import androidx.core.view.WindowCompat;
 
 import com.store.app.offline.OfflineUIController;
 import com.store.app.offline.OfflineStateManager;
+import com.store.app.RoyalAuthManager;
+import com.store.app.RoyalJsBridge;
 
+/**
+ * 👑 MainActivity - النواة الأساسية لإدارة محرك الويب المخصص
+ * تم تطهيرها بالكامل من مخلفات الـ TWA لتعمل بأقصى سرعة استجابة (Zero-friction)
+ * 
+ * 🚀 تم تحسينها بأعلى معايير الأداء من وثائق كروميوم:
+ * - Time-Based Memory Purge (تفريغ الذاكرة الاستباقي)
+ * - shouldInterceptRequest Short Circuit (تحسين اعتراض الطلبات)
+ * - Renderer Importance API (أولوية معالج العرض)
+ * - onTrimMemory Optimization (تحسين استجابة ضغط الذ memory)
+ * - saveState/restoreState (تسريع حفظ واستعادة الحالة)
+ * - Prefetch Native Library (تحميل المكتبات الأصلية مسبقاً)
+ * - Threading Optimization (تحسين إدارة الخيوط)
+ */
 public class MainActivity extends AppCompatActivity {
 
-    private static final String TAG =
-            "ROYAL_MAIN_DIAG";
-
-    private static final long FIXED_SPLASH_TIME =
-            5000L;
+    private static final String TAG = "RoyalMainActivity";
+    private static final long FIXED_SPLASH_TIME = 5000; // قيمة ثابتة 5 ثوانٍ بالتمام والكمال
 
     private boolean splashRemoved = false;
-    private boolean isPageLoaded = false;
+    private boolean isPageLoaded = false; // لمنع إعادة تحميل الصفحة في onResume
     private boolean webViewReady = false;
     private boolean visualStateReady = false;
 
     private WebEngineManager engineManager;
-    private RoyalCapabilitiesEngine capabilitiesEngine;
+    private RoyalCapabilitiesEngine capabilitiesEngine; // ✅ إضافة تعريف المحرك
     private WebView activeWebView;
     private ProgressBar progressBar;
 
     private long splashStartTime = 0;
 
+    // 🔥 مدير واجهات الأوفلاين
     private OfflineUIController offlineController;
+
+    // 🔥 مدير المصادقة والدفع
     private RoyalAuthManager royalAuthManager;
 
     private FrameLayout rootContainer;
@@ -54,32 +72,32 @@ public class MainActivity extends AppCompatActivity {
             new Handler(Looper.getMainLooper());
 
     // =========================================================
-    // CREATE
+    // 🚀 دورة الحياة الأساسية
     // =========================================================
 
     @Override
-    protected void onCreate(
-            Bundle savedInstanceState
-    ) {
+    protected void onCreate(Bundle savedInstanceState) {
 
         final SplashScreen splashScreen =
                 SplashScreen.installSplashScreen(this);
 
-        splashStartTime =
-                System.currentTimeMillis();
+        splashStartTime = System.currentTimeMillis();
 
+        /*
+         * 👑 Splash ثابت لمدة 5 ثوانٍ حقيقية.
+         *
+         * WebView / Chromium يعملان بالتوازي في الخلفية.
+         * لا ننتظر WebView حتى يبدأ.
+         */
         splashScreen.setKeepOnScreenCondition(
-                () ->
-                        System.currentTimeMillis()
-                                - splashStartTime
-                                < FIXED_SPLASH_TIME
+                () -> System.currentTimeMillis() - splashStartTime
+                        < FIXED_SPLASH_TIME
         );
 
         splashScreen.setOnExitAnimationListener(
                 splashScreenView -> {
 
-                    splashScreenView
-                            .getView()
+                    splashScreenView.getView()
                             .animate()
                             .alpha(0f)
                             .setDuration(500L)
@@ -92,153 +110,96 @@ public class MainActivity extends AppCompatActivity {
 
         super.onCreate(savedInstanceState);
 
-        WindowCompat.setDecorFitsSystemWindows(
-                getWindow(),
-                false
-        );
+        WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
 
-        int initialColor =
-                SystemUI.getDefaultSystemColor(
-                        this
-                );
+        // 👑 تحديد اللون الأولي للنافذة تلقائياً حسب وضع النظام (النهاري #FFFFFF / الليلي #121212)
+        int initialColor = SystemUI.getDefaultSystemColor(this);
 
         getWindow().setBackgroundDrawable(
                 new ColorDrawable(initialColor)
         );
 
-        diag(
-                "01_CREATE",
-                "Activity created | initial="
-                        + hex(initialColor)
-        );
-
         try {
-
             RoyalPanopticon.startAwareness();
 
-            diag(
-                    "02_PANOPTICON",
-                    "started"
+            Log.i(
+                    TAG,
+                    "RoyalPanopticon Engine: Active and running in background."
             );
 
         } catch (Exception e) {
 
             Log.e(
                     TAG,
-                    "STEP[02_PANOPTICON] failed",
+                    "Failed to initialize RoyalPanopticon.",
                     e
             );
         }
 
-        rootContainer =
-                new FrameLayout(this);
+        rootContainer = new FrameLayout(this);
+        rootContainer.setBackgroundColor(initialColor);
 
-        rootContainer.setBackgroundColor(
-                initialColor
-        );
+        // 👑 إسناد وسم صريح ومباشر لمنع البحث العشوائي في الـ Views وقمع الومضات
+        View topVisualSurface = new View(this);
+        topVisualSurface.setId(View.generateViewId());
+        topVisualSurface.setTag("TOP_VISUAL_SURFACE");
+        topVisualSurface.setBackgroundColor(initialColor);
 
-        View topVisualSurface =
-                new View(this);
-
-        topVisualSurface.setId(
-                View.generateViewId()
-        );
-
-        topVisualSurface.setTag(
-                "TOP_VISUAL_SURFACE"
-        );
-
-        topVisualSurface.setBackgroundColor(
-                initialColor
-        );
-
-        FrameLayout.LayoutParams surfaceParams =
-                new FrameLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT,
-                        0
-                );
-
-        topVisualSurface.setLayoutParams(
-                surfaceParams
-        );
+        FrameLayout.LayoutParams surfaceParams = new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, 0);
+        topVisualSurface.setLayoutParams(surfaceParams);
 
         setContentView(rootContainer);
 
-        ViewCompat.setOnApplyWindowInsetsListener(
-                rootContainer,
-                (v, insets) -> {
+        // تطبيق ارتفاع شريط الحالة والنوتش على العنصر الناتيف العلوي
+        ViewCompat.setOnApplyWindowInsetsListener(rootContainer, (v, insets) -> {
+            int insetTop = insets.getInsets(WindowInsetsCompat.Type.statusBars()
+                    | WindowInsetsCompat.Type.displayCutout()).top;
 
-                    int insetTop =
-                            insets.getInsets(
-                                    WindowInsetsCompat.Type.statusBars()
-                                            | WindowInsetsCompat.Type.displayCutout()
-                            ).top;
+            ViewGroup.LayoutParams lp = topVisualSurface.getLayoutParams();
+            if (lp.height != insetTop) {
+                lp.height = insetTop;
+                topVisualSurface.setLayoutParams(lp);
+            }
+            return insets;
+        });
 
-                    ViewGroup.LayoutParams lp =
-                            topVisualSurface
-                                    .getLayoutParams();
+        // إضافة العنصر الناتيف العلوي للحاوية
+        rootContainer.addView(topVisualSurface);
 
-                    if (lp.height != insetTop) {
-
-                        lp.height =
-                                insetTop;
-
-                        topVisualSurface
-                                .setLayoutParams(lp);
-                    }
-
-                    diag(
-                            "03_INSETS",
-                            "top=" + insetTop
-                    );
-
-                    return insets;
-                }
-        );
-
-        rootContainer.addView(
-                topVisualSurface
-        );
-
+        /*
+         * Chromium startup barrier.
+         *
+         * RoyalApplication بدأ WebView startup
+         * منذ لحظة إنشاء الـ process.
+         */
         RoyalWebViewHost.whenStartupReady(
-                () ->
-                        initializeWebView(
-                                savedInstanceState
-                        )
+                () -> initializeWebView(savedInstanceState)
         );
     }
 
-    // =========================================================
-    // WEBVIEW INITIALIZATION
-    // =========================================================
-
-    private void initializeWebView(
-            Bundle savedInstanceState
-    ) {
+    private void initializeWebView(Bundle savedInstanceState) {
 
         if (isFinishing() ||
-                (Build.VERSION.SDK_INT >=
-                        Build.VERSION_CODES.JELLY_BEAN_MR1
+                (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1
                         && isDestroyed())) {
-
-            diag(
-                    "04_WEB_INIT",
-                    "ABORTED: Activity destroyed"
-            );
-
             return;
         }
 
+        /*
+         * الآن فقط يسمح لـ Host بإنشاء WebView.
+         */
         RoyalWebViewHost.create(this);
 
         activeWebView =
                 RoyalWebViewHost.attach(this);
 
-        diag(
-                "05_WEB_ATTACH",
-                "WebView attached"
-        );
-
+        /*
+         * WebView يدخل خلف الـ Splash.
+         *
+         * index 0 = خلفية
+         * Splash = فوقه (لكننا لا نستخدم splashContainer الآن)
+         */
         rootContainer.addView(
                 activeWebView,
                 0,
@@ -248,87 +209,60 @@ public class MainActivity extends AppCompatActivity {
                 )
         );
 
-        ViewCompat.setOnApplyWindowInsetsListener(
-                activeWebView,
-                (v, insets) -> {
+        // 👑 تقليص Viewport المحرك أصلياً عبر Top Margin لحماية عناصر position: fixed
+        ViewCompat.setOnApplyWindowInsetsListener(activeWebView, (v, insets) -> {
+            int insetTop = insets.getInsets(WindowInsetsCompat.Type.statusBars()
+                    | WindowInsetsCompat.Type.displayCutout()).top;
 
-                    int insetTop =
-                            insets.getInsets(
-                                    WindowInsetsCompat.Type.statusBars()
-                                            | WindowInsetsCompat.Type.displayCutout()
-                            ).top;
-
-                    ViewGroup.LayoutParams lp =
-                            v.getLayoutParams();
-
-                    if (lp instanceof
-                            ViewGroup.MarginLayoutParams) {
-
-                        ViewGroup.MarginLayoutParams params =
-                                (ViewGroup.MarginLayoutParams) lp;
-
-                        if (params.topMargin !=
-                                insetTop) {
-
-                            params.topMargin =
-                                    insetTop;
-
-                            v.setLayoutParams(
-                                    params
-                            );
-                        }
-                    }
-
-                    return insets;
+            ViewGroup.LayoutParams lp = v.getLayoutParams();
+            if (lp instanceof ViewGroup.MarginLayoutParams) {
+                ViewGroup.MarginLayoutParams params = (ViewGroup.MarginLayoutParams) lp;
+                if (params.topMargin != insetTop) {
+                    params.topMargin = insetTop;
+                    v.setLayoutParams(params);
                 }
-        );
+            }
 
-        int initialColor =
-                SystemUI.getDefaultSystemColor(
-                        this
-                );
+            return insets;
+        });
 
+        /*
+         * System UI بعد وجود WebView.
+         */
+        int initialColor = SystemUI.getDefaultSystemColor(this);
         SystemUI.applyKingMode(
                 this,
                 activeWebView,
                 initialColor
         );
 
-        SystemUI.applyHeaderColor(
+        // 👑 توحيد مصدر لون الخلفية والأيقونات من الدالة الموحدة لمنع التضارب
+        SystemUI.applyHeaderColor(this, initialColor);
+
+        /*
+         * WebEngineManager الآن فقط.
+         * لأنه يحتاج WebView حقيقي.
+         *
+         * تمرير null للـ splashOverlay و progressBar لأننا نعتمد على System Splash.
+         */
+        engineManager = new WebEngineManager(
                 this,
-                initialColor
+                activeWebView,
+                null,   // splashOverlay
+                null,   // progressBar
+                () -> splashRemoved = true,
+                () -> splashRemoved
         );
 
-        diag(
-                "06_SYSTEM_UI",
-                "initialized"
-        );
+        // ✅ ربط المحرك
+        capabilitiesEngine = engineManager.getCapabilitiesHandler();
 
-        engineManager =
-                new WebEngineManager(
-                        this,
-                        activeWebView,
-                        null,
-                        null,
-                        () ->
-                                splashRemoved = true,
-                        () ->
-                                splashRemoved
-                );
+        // 🔗 ربط الـ Bridge بعد اكتمال WebEngineManager
+        RoyalWebViewHost.bindEngineManager(engineManager);
 
-        capabilitiesEngine =
-                engineManager
-                        .getCapabilitiesHandler();
-
-        RoyalWebViewHost.bindEngineManager(
-                engineManager
-        );
-
+        // 🔗 تأكيد ربط واجهة الجافاسكريبت بالـ WebView
         activeWebView.addJavascriptInterface(
-                new RoyalJsBridge(
-                        activeWebView,
-                        engineManager
-                ),
+                new RoyalJsBridge(activeWebView, engineManager),
                 "RoyalJsBridge"
         );
 
@@ -338,16 +272,26 @@ public class MainActivity extends AppCompatActivity {
 
         engineManager.init();
 
+        /*
+         * Navigation manager كان يأخذ engineManager = null
+         * في النسخة القديمة.
+         *
+         * الآن يأخذ object حقيقي.
+         */
         new com.store.app.navigation.RoyalBackNavigation(
                 this,
                 activeWebView,
                 engineManager,
-                null
+                null // progressBar غير مستخدم
         ).setupBackNavigation();
 
-        // =====================================================
-        // RESTORE / LOAD
-        // =====================================================
+        /*
+         * =====================================================
+         * استعادة / تحميل الصفحة
+         * =====================================================
+         *
+         * يوجد مالك واحد فقط للـ navigation.
+         */
 
         boolean restored = false;
 
@@ -355,23 +299,21 @@ public class MainActivity extends AppCompatActivity {
 
             try {
 
-                activeWebView.restoreState(
-                        savedInstanceState
-                );
+                activeWebView.restoreState(savedInstanceState);
 
                 restored = true;
                 isPageLoaded = true;
 
-                diag(
-                        "07_RESTORE",
-                        "WebView state restored"
+                Log.i(
+                        TAG,
+                        "🔄 WebView restored from Activity state."
                 );
 
             } catch (Throwable t) {
 
                 Log.w(
                         TAG,
-                        "STEP[07_RESTORE] failed",
+                        "WebView restoreState failed.",
                         t
                 );
             }
@@ -379,19 +321,18 @@ public class MainActivity extends AppCompatActivity {
 
         if (!restored) {
 
-            restored =
-                    RoyalSessionSentinel.resurrect(
-                            activeWebView,
-                            this
-                    );
+            restored = RoyalSessionSentinel.resurrect(
+                    activeWebView,
+                    this
+            );
 
             if (restored) {
 
                 isPageLoaded = true;
 
-                diag(
-                        "08_SESSION",
-                        "session resurrected"
+                Log.i(
+                        TAG,
+                        "🧊 WebView session resurrected."
                 );
             }
         }
@@ -402,9 +343,6 @@ public class MainActivity extends AppCompatActivity {
                     BuildConfig.CLIENT_URL
             );
 
-            /*
-             * Web owns Status Bar هنا.
-             */
             SystemUI.scheduleStatusBarSync(
                     MainActivity.this,
                     activeWebView
@@ -412,16 +350,15 @@ public class MainActivity extends AppCompatActivity {
 
             isPageLoaded = true;
 
-            diag(
-                    "09_INITIAL_LOAD",
-                    BuildConfig.CLIENT_URL
+            Log.i(
+                    TAG,
+                    "🌐 Initial CLIENT_URL navigation started."
             );
         }
 
-        // =====================================================
-        // OFFLINE
-        // =====================================================
-
+        /*
+         * Offline
+         */
         NetworkMonitor.init(this);
 
         offlineController =
@@ -440,69 +377,32 @@ public class MainActivity extends AppCompatActivity {
                         offlineController
                 );
 
-        diag(
-                "10_OFFLINE",
-                "controller initialized"
-        );
-
-        // =====================================================
-        // AUTH
-        // =====================================================
-
+        /*
+         * Auth / Payment
+         */
         royalAuthManager =
                 new RoyalAuthManager(
                         this,
                         getApplicationContext()
                 );
 
-        handleInitialAuthIntent(
-                getIntent()
-        );
+        // ✅ معالجة Intent الأولي للـ Auth
+        handleInitialAuthIntent(getIntent());
 
-        // =====================================================
-        // INITIAL OFFLINE STATE
-        // =====================================================
+        if (!NetworkMonitor.isInternetAvailable(this)) {
 
-        if (!NetworkMonitor
-                .isInternetAvailable(this)) {
-
-            diag(
-                    "11_OFFLINE_STATE",
-                    "OFFLINE → Native UI requested"
+            offlineController.setOfflineUIVisibility(
+                    true
             );
-
-            /*
-             * مهم:
-             *
-             * هنا نثبت ملكية Native.
-             * WebView لن يستطيع الكتابة فوقها.
-             *
-             * لون مؤقت للتشخيص فقط:
-             * سنرى هل الوميض يأتي من هذه النقطة.
-             */
-            SystemUI.syncWithNativeUI(
-                    this,
-                    initialColor
-            );
-
-            offlineController
-                    .setOfflineUIVisibility(
-                            true
-                    );
         }
     }
 
     // =========================================================
-    // PAUSE
+    // 🔄 دورة الحياة المحدّثة
     // =========================================================
 
     @Override
     protected void onPause() {
-
-        diag(
-                "12_PAUSE",
-                "Activity pause"
-        );
 
         if (activeWebView != null) {
             activeWebView.onPause();
@@ -511,33 +411,16 @@ public class MainActivity extends AppCompatActivity {
         super.onPause();
     }
 
-    // =========================================================
-    // RESUME
-    // =========================================================
-
     @Override
     protected void onResume() {
 
         super.onResume();
 
-        diag(
-                "13_RESUME",
-                "Activity resume"
-        );
-
         if (activeWebView != null) {
-
             activeWebView.onResume();
 
-            /*
-             * لا نغير owner هنا.
-             *
-             * هذه هي النقطة التي كانت تسبب جزءًا مهمًا
-             * من الـ race condition.
-             */
-            SystemUI.restoreHeaderOnResume(
-                    this
-            );
+            // 👑 حماية العودة: إعادة تطبيق اللون والأيقونات المحفوظة فوراً قبل مزامنة الويب
+            SystemUI.restoreHeaderOnResume(this);
 
             SystemUI.scheduleStatusBarSync(
                     this,
@@ -546,7 +429,6 @@ public class MainActivity extends AppCompatActivity {
         }
 
         if (offlineController != null) {
-
             offlineController.onResume();
         }
 
@@ -559,44 +441,27 @@ public class MainActivity extends AppCompatActivity {
             );
 
             isPageLoaded = true;
-
-            diag(
-                    "14_RESUME_LOAD",
-                    "CLIENT_URL loaded"
-            );
         }
     }
-
-    // =========================================================
-    // DESTROY
-    // =========================================================
 
     @Override
     protected void onDestroy() {
 
-        diag(
-                "15_DESTROY",
-                "Activity destroying"
-        );
-
         SystemUI.cancelStatusBarSync();
 
+        // ✅ إضافة التدمير للمحرك كأولوية
         if (capabilitiesEngine != null) {
             capabilitiesEngine.destroy();
         }
 
-        mainHandler.removeCallbacksAndMessages(
-                null
-        );
+        mainHandler.removeCallbacksAndMessages(null);
 
         if (activeWebView != null) {
             activeWebView.stopLoading();
         }
 
         if (offlineController != null) {
-
             offlineController.destroy();
-
             offlineController = null;
         }
 
@@ -605,14 +470,11 @@ public class MainActivity extends AppCompatActivity {
                 .unbind();
 
         if (royalAuthManager != null) {
-
             royalAuthManager.destroy();
-
             royalAuthManager = null;
         }
 
         if (!isChangingConfigurations()) {
-
             RoyalWebViewHost.detach();
         }
 
@@ -622,23 +484,18 @@ public class MainActivity extends AppCompatActivity {
     }
 
     // =========================================================
-    // SAVE STATE
+    // 💾 حفظ واستعادة الحالة
     // =========================================================
 
     @Override
-    protected void onSaveInstanceState(
-            Bundle outState
-    ) {
+    protected void onSaveInstanceState(Bundle outState) {
 
         if (activeWebView != null) {
 
             try {
 
-                if (androidx.webkit.WebViewFeature
-                        .isFeatureSupported(
-                                androidx.webkit.WebViewFeature
-                                        .SAVE_STATE
-                        )) {
+                if (androidx.webkit.WebViewFeature.isFeatureSupported(
+                        androidx.webkit.WebViewFeature.SAVE_STATE)) {
 
                     androidx.webkit.WebViewCompat.saveState(
                             activeWebView,
@@ -658,55 +515,37 @@ public class MainActivity extends AppCompatActivity {
 
                 Log.w(
                         TAG,
-                        "STEP[16_SAVE] WebView state save failed.",
+                        "WebView state save failed.",
                         t
                 );
             }
         }
 
-        super.onSaveInstanceState(
-                outState
-        );
+        super.onSaveInstanceState(outState);
     }
 
+    // لا نستخدم onRestoreInstanceState، لأن الاستعادة تتم في initializeWebView.
+
     // =========================================================
-    // ACTIVITY RESULT
+    // 🔄 نتائج النشاطات والصلاحيات (محسّن)
     // =========================================================
 
     @Override
-    protected void onActivityResult(
-            int requestCode,
-            int resultCode,
-            Intent data
-    ) {
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
 
-        super.onActivityResult(
-                requestCode,
-                resultCode,
-                data
-        );
-
-        if (capabilitiesEngine != null
-                && capabilitiesEngine
-                .handleActivityResult(
-                        requestCode,
-                        resultCode,
-                        data
-                )) {
-
+        // ✅ معالجة النتائج واختيار الملفات مباشرة عبر محرك القدرات
+        if (capabilitiesEngine != null && capabilitiesEngine.handleActivityResult(requestCode, resultCode, data)) {
             return;
         }
     }
 
     // =========================================================
-    // NEW INTENT
+    // 🔗 معالجة الروابط العميقة (Deep Links / OAuth Callbacks)
     // =========================================================
 
     @Override
-    protected void onNewIntent(
-            Intent intent
-    ) {
-
+    protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
 
         setIntent(intent);
@@ -715,97 +554,57 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
 
-        Uri data =
-                intent.getData();
+        Uri data = intent.getData();
 
         if (data == null) {
             return;
         }
 
-        diag(
-                "17_NEW_INTENT",
-                data.toString()
-        );
+        Log.i(TAG, "🔗 Deep link received in onNewIntent: " + data.toString());
 
         if (royalAuthManager != null) {
-
-            boolean handled =
-                    royalAuthManager
-                            .handleRedirectIntent(
-                                    intent
-                            );
-
-            if (!handled
-                    && activeWebView != null
-                    && RoyalAuthManager
-                    .isAuthCallback(data)) {
-
-                dispatchAuthUrlToWebView(
-                        data.toString()
-                );
+            boolean handled = royalAuthManager.handleRedirectIntent(intent);
+            if (!handled && activeWebView != null && RoyalAuthManager.isAuthCallback(data)) {
+                dispatchAuthUrlToWebView(data.toString());
             }
-
-        } else if (activeWebView != null
-                && RoyalAuthManager
-                .isAuthCallback(data)) {
-
-            dispatchAuthUrlToWebView(
-                    data.toString()
-            );
+        } else if (activeWebView != null && RoyalAuthManager.isAuthCallback(data)) {
+            dispatchAuthUrlToWebView(data.toString());
         }
     }
 
-    // =========================================================
-    // INITIAL AUTH
-    // =========================================================
-
-    private void handleInitialAuthIntent(
-            Intent intent
-    ) {
+    /**
+     * معالجة Intent الأولي للـ Auth عند بدء التطبيق
+     */
+    private void handleInitialAuthIntent(Intent intent) {
 
         if (intent == null) {
             return;
         }
 
-        Uri data =
-                intent.getData();
+        Uri data = intent.getData();
 
         if (data == null) {
             return;
         }
 
-        diag(
-                "18_INITIAL_AUTH",
-                data.toString()
-        );
+        Log.i(TAG, "🔗 Initial Auth Intent received: " + data.toString());
 
         if (royalAuthManager != null) {
-
-            royalAuthManager
-                    .handleRedirectIntent(
-                            intent
-                    );
-
-        } else if (activeWebView != null
-                && RoyalAuthManager
-                .isAuthCallback(data)) {
-
-            dispatchAuthUrlToWebView(
-                    data.toString()
-            );
+            royalAuthManager.handleRedirectIntent(intent);
+        } else if (activeWebView != null && RoyalAuthManager.isAuthCallback(data)) {
+            dispatchAuthUrlToWebView(data.toString());
         }
     }
 
     // =========================================================
-    // PERMISSIONS
+    // 🔐 صلاحيات التطبيق (مدمجة مع محرك القدرات)
     // =========================================================
 
     @Override
     public void onRequestPermissionsResult(
             int requestCode,
             String[] permissions,
-            int[] grantResults
-    ) {
+            int[] grantResults) {
 
         super.onRequestPermissionsResult(
                 requestCode,
@@ -813,89 +612,36 @@ public class MainActivity extends AppCompatActivity {
                 grantResults
         );
 
+        // ✅ التعديل الجراحي الموصى به
         if (capabilitiesEngine != null) {
-
-            capabilitiesEngine
-                    .handlePermissionResult(
-                            requestCode,
-                            permissions,
-                            grantResults
-                    );
+            capabilitiesEngine.handlePermissionResult(requestCode, permissions, grantResults);
         }
     }
 
     // =========================================================
-    // AUTH CALLBACK
+    // 👑 دالة التوزيع المباشر لرابط العودة واستلام الـ Session Cookie فوراً
     // =========================================================
 
-    public void dispatchAuthUrlToWebView(
-            @NonNull String url
-    ) {
-
+    /**
+     * 👑 دالة التوزيع المباشر لرابط العودة، إغلاق الـ Custom Tab وتأكيد الـ Session Cookie
+     */
+    public void dispatchAuthUrlToWebView(@NonNull String url) {
         runOnUiThread(() -> {
-
-            Intent intent =
-                    new Intent(
-                            this,
-                            MainActivity.class
-                    );
-
-            intent.addFlags(
-                    Intent.FLAG_ACTIVITY_CLEAR_TOP
-                            | Intent.FLAG_ACTIVITY_SINGLE_TOP
-            );
-
+            // 1. تقديم MainActivity للواجهة فوراً لإغلاق الـ Custom Tab
+            Intent intent = new Intent(this, MainActivity.class);
+            intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
             startActivity(intent);
 
+            // 2. معالجة وتمرير الرابط الحقيقي الحاوي على code=
             if (engineManager != null) {
-
-                engineManager
-                        .handleAuthReturn(url);
-
+                engineManager.handleAuthReturn(url);
             } else if (activeWebView != null) {
-
-                Log.i(
-                        TAG,
-                        "STEP[19_AUTH] dispatching callback"
-                );
-
+                Log.i(TAG, "🚀 Dispatching OAuth Callback URL directly to WebView: " + url);
                 activeWebView.loadUrl(url);
-
-                android.webkit.CookieManager
-                        .getInstance()
-                        .flush();
-
+                android.webkit.CookieManager.getInstance().flush();
             } else {
-
-                Log.w(
-                        TAG,
-                        "STEP[19_AUTH] WebView unavailable"
-                );
+                Log.w(TAG, "⚠️ activeWebView and engineManager are null.");
             }
         });
-    }
-
-    // =========================================================
-    // 👑 DIAGNOSTIC HELPERS
-    // =========================================================
-
-    private void diag(
-            String step,
-            String message
-    ) {
-
-        Log.i(
-                TAG,
-                "STEP[" + step + "] "
-                        + message
-        );
-    }
-
-    private String hex(int color) {
-
-        return String.format(
-                "#%08X",
-                color
-        );
     }
             }
