@@ -19,6 +19,10 @@ public class SystemUI {
     private static int lastSyncedStatusBarColor =
             Integer.MIN_VALUE;
 
+    // 👑 الحافظ المصدر الموحد للون الهيدر الحالي
+    private static int currentHeaderColor =
+            Integer.MIN_VALUE;
+
     /**
      * 👑 مصدر ملكية الـ Status Bar
      *
@@ -216,7 +220,7 @@ public class SystemUI {
     }
 
     // =========================================================
-    // 👑 Force Native Status Bar (تلوين العنصر الناتيف العلوي للواجهات الناتيف والأوفلاين)
+    // 👑 Force Native Status Bar (الأوفلاين والواجهات الناتيفية عبر الدالة الموحدة)
     // =========================================================
     public static void forceNativeStatusBar(
             android.app.Activity activity,
@@ -227,37 +231,12 @@ public class SystemUI {
         Runnable apply = () -> {
             if (activity.isFinishing()) return;
 
-            Window window = activity.getWindow();
-            if (window == null) return;
-
-            cancelStatusBarColorAnimation(window);
-
             statusBarOwner = 1;
             cancelStatusBarSync();
             syncGeneration++;
 
-            boolean lightBackground = isColorLight(color);
-
-            // تلوين العنصر الناتيف العلوي المخصص
-            View contentView = activity.findViewById(android.R.id.content);
-            if (contentView instanceof ViewGroup) {
-                ViewGroup contentGroup = (ViewGroup) contentView;
-                if (contentGroup.getChildCount() > 0 && contentGroup.getChildAt(0) instanceof ViewGroup) {
-                    ViewGroup rootGroup = (ViewGroup) contentGroup.getChildAt(0);
-                    for (int i = 0; i < rootGroup.getChildCount(); i++) {
-                        View child = rootGroup.getChildAt(i);
-                        if (child.getLayoutParams().height > 0 && !(child instanceof WebView)) {
-                            child.setBackgroundColor(color);
-                        }
-                    }
-                }
-            }
-
-            // تثبيت شفافية شريط النظام وتحديث الأيقونات
-            window.setStatusBarColor(Color.TRANSPARENT);
-            setStatusBarIcons(window, lightBackground);
-
-            lastSyncedStatusBarColor = color;
+            // تطبيق اللون والأيقونات عبر المالك الموحد المباشر
+            applyHeaderColor(activity, color);
         };
 
         if (Looper.myLooper() == Looper.getMainLooper()) {
@@ -331,9 +310,9 @@ public class SystemUI {
     }
 
     // =========================================================
-    // 👑 تحديث عنصر Top Visual Surface الناتيف وضبط الأيقونات فوريًا
+    // 👑 المالك والدالة الموحدة الوحيدة لتلوين الهيدر وضبط الأيقونات
     // =========================================================
-    public static void updateStatusBarColor(
+    public static void applyHeaderColor(
             android.app.Activity activity,
             int targetColor
     ) {
@@ -345,30 +324,55 @@ public class SystemUI {
 
             cancelStatusBarColorAnimation(window);
 
-            // 1. شريط حالة النظام الشفاف دائماً
+            // 1. تثبيت الشفافية لمنع الومضات والتوافق التام مع أندرويد 15
             window.setStatusBarColor(Color.TRANSPARENT);
 
-            // 2. تلوين عنصر Top Visual Surface الناتيف العلوي المخصص
-            View contentView = activity.findViewById(android.R.id.content);
-            if (contentView instanceof ViewGroup) {
-                ViewGroup contentGroup = (ViewGroup) contentView;
-                if (contentGroup.getChildCount() > 0 && contentGroup.getChildAt(0) instanceof ViewGroup) {
-                    ViewGroup rootGroup = (ViewGroup) contentGroup.getChildAt(0);
-                    for (int i = 0; i < rootGroup.getChildCount(); i++) {
-                        View child = rootGroup.getChildAt(i);
-                        if (child.getLayoutParams().height > 0 && !(child instanceof WebView)) {
-                            child.setBackgroundColor(targetColor);
+            // 2. استهداف مباشر وصريح لعنصر Top Visual Surface عبر الوسم (Tag)
+            View topSurface = activity.findViewById(android.R.id.content)
+                    .findViewWithTag("TOP_VISUAL_SURFACE");
+
+            if (topSurface != null) {
+                topSurface.setBackgroundColor(targetColor);
+            } else {
+                // البحث الاحتياطي في حال عدم إيجاد الوسم مباشرة
+                View contentView = activity.findViewById(android.R.id.content);
+                if (contentView instanceof android.view.ViewGroup) {
+                    android.view.ViewGroup contentGroup = (android.view.ViewGroup) contentView;
+                    if (contentGroup.getChildCount() > 0 && contentGroup.getChildAt(0) instanceof android.view.ViewGroup) {
+                        android.view.ViewGroup rootGroup = (android.view.ViewGroup) contentGroup.getChildAt(0);
+                        for (int i = 0; i < rootGroup.getChildCount(); i++) {
+                            View child = rootGroup.getChildAt(i);
+                            if (child.getLayoutParams().height > 0 && !(child instanceof WebView)) {
+                                child.setBackgroundColor(targetColor);
+                            }
                         }
                     }
                 }
             }
 
-            // 3. ضبط نمط الأيقونات فوراً بناءً على درجة لون العنصر الناتيف العلوي
+            // 3. حساب تباين السطوع المباشر (WCAG 2.1) وضبط الأيقونات حصراً من لون الهيدر المصبوغ
             boolean lightBackground = isColorLight(targetColor);
             setStatusBarIcons(window, lightBackground);
 
+            currentHeaderColor = targetColor;
             lastSyncedStatusBarColor = targetColor;
         });
+    }
+
+    public static void updateStatusBarColor(
+            android.app.Activity activity,
+            int targetColor
+    ) {
+        applyHeaderColor(activity, targetColor);
+    }
+
+    // 👑 استعادة اللون والأيقونات المحفوظة فوراً عند العودة لمنع ظاهرة (أبيض على أبيض)
+    public static void restoreHeaderOnResume(android.app.Activity activity) {
+        if (currentHeaderColor != Integer.MIN_VALUE) {
+            applyHeaderColor(activity, currentHeaderColor);
+        } else {
+            applyHeaderColor(activity, getDefaultSystemColor(activity));
+        }
     }
 
     // =========================================================
@@ -697,4 +701,4 @@ public class SystemUI {
     public static int getDefaultSystemColor(android.content.Context context) {
         return isDarkMode(context) ? Color.parseColor("#121212") : Color.WHITE;
     }
-    }
+        }
