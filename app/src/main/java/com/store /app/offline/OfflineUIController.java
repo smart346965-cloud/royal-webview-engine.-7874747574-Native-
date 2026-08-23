@@ -119,7 +119,7 @@ public class OfflineUIController {
         // تحقق من حالة الشبكة عند العودة للتطبيق
         if (!NetworkMonitor.isInternetAvailable(activity)) {
 
-            SystemUI.forceNativeStatusBar(
+            SystemUI.applyHeaderColor(
                     activity,
                     offlineSurfaceColor
             );
@@ -516,10 +516,7 @@ public class OfflineUIController {
                     View.VISIBLE
             );
 
-            SystemUI.forceNativeStatusBar(
-                    activity,
-                    offlineSurfaceColor
-            );
+            // ❌ تم حذف الاستدعاء الثاني لـ forceNativeStatusBar هنا
 
             pureOfflineUI.setAlpha(1f);
 
@@ -686,4 +683,4 @@ public class OfflineUIController {
     public void setCallback(OfflineUICallback callback) {
         this.callback = callback;
     }
-    }
+            }
