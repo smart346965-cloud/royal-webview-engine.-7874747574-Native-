@@ -139,9 +139,10 @@ public class MainActivity extends AppCompatActivity {
         rootContainer = new FrameLayout(this);
         rootContainer.setBackgroundColor(initialColor);
 
-        // 👑 إنشاء عنصر Top Visual Surface الناتيف العلوي لتغطية منطقة شريط الحالة
+        // 👑 إسناد وسم صريح ومباشر لمنع البحث العشوائي في الـ Views وقمع الومضات
         View topVisualSurface = new View(this);
         topVisualSurface.setId(View.generateViewId());
+        topVisualSurface.setTag("TOP_VISUAL_SURFACE");
         topVisualSurface.setBackgroundColor(initialColor);
 
         FrameLayout.LayoutParams surfaceParams = new FrameLayout.LayoutParams(
@@ -235,9 +236,8 @@ public class MainActivity extends AppCompatActivity {
                 initialColor
         );
 
-        // 👑 ضبط أيقونات النظام فوراً حسب ثيم الجوال لمنع أي وميض مبكر
-        boolean isDarkSystem = SystemUI.isDarkMode(this);
-        SystemUI.setDynamicIcons(getWindow(), !isDarkSystem);
+        // 👑 توحيد مصدر لون الخلفية والأيقونات من الدالة الموحدة لمنع التضارب
+        SystemUI.applyHeaderColor(this, initialColor);
 
         /*
          * WebEngineManager الآن فقط.
@@ -418,6 +418,9 @@ public class MainActivity extends AppCompatActivity {
 
         if (activeWebView != null) {
             activeWebView.onResume();
+
+            // 👑 حماية العودة: إعادة تطبيق اللون والأيقونات المحفوظة فوراً قبل مزامنة الويب
+            SystemUI.restoreHeaderOnResume(this);
 
             SystemUI.scheduleStatusBarSync(
                     this,
@@ -641,4 +644,4 @@ public class MainActivity extends AppCompatActivity {
             }
         });
     }
-}
+                    }
