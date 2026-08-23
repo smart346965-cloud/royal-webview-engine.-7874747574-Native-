@@ -3,7 +3,6 @@ package com.store.app;
 import android.graphics.Color;
 import android.os.Handler;
 import android.os.Looper;
-import android.util.Log;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.Window;
@@ -153,32 +152,7 @@ public class SystemUI {
             );
         }
 
-        /*
-         * 👑 Android Legacy / Compatibility Layer
-         *
-         * بعض إصدارات Android / بعض التركيبات مع Edge-to-Edge
-         * قد لا تطبق controller وحده بالشكل المتوقع.
-         *
-         * لذلك نطبق نفس القرار أيضًا عبر systemUiVisibility.
-         */
-        if (android.os.Build.VERSION.SDK_INT >=
-                android.os.Build.VERSION_CODES.M) {
-
-            View decorView = window.getDecorView();
-
-            int flags = decorView.getSystemUiVisibility();
-
-            if (isLightBackground) {
-
-                flags |= View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
-
-            } else {
-
-                flags &= ~View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
-            }
-
-            decorView.setSystemUiVisibility(flags);
-        }
+        // ❌ تمت إزالة الكتابة المزدوجة عبر systemUiVisibility
     }
 
     // =========================================================
@@ -211,21 +185,7 @@ public class SystemUI {
             );
         }
 
-        if (android.os.Build.VERSION.SDK_INT >=
-                android.os.Build.VERSION_CODES.M) {
-
-            View decorView = window.getDecorView();
-
-            int flags = decorView.getSystemUiVisibility();
-
-            if (lightBackground) {
-                flags |= View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
-            } else {
-                flags &= ~View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
-            }
-
-            decorView.setSystemUiVisibility(flags);
-        }
+        // ❌ تمت إزالة الكتابة المزدوجة عبر systemUiVisibility
     }
 
     // =========================================================
