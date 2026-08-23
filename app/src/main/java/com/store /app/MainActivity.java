@@ -137,10 +137,34 @@ public class MainActivity extends AppCompatActivity {
         }
 
         rootContainer = new FrameLayout(this);
-
         rootContainer.setBackgroundColor(initialColor);
 
+        // 👑 إنشاء عنصر Top Visual Surface الناتيف العلوي لتغطية منطقة شريط الحالة
+        View topVisualSurface = new View(this);
+        topVisualSurface.setId(View.generateViewId());
+        topVisualSurface.setBackgroundColor(initialColor);
+
+        FrameLayout.LayoutParams surfaceParams = new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, 0);
+        topVisualSurface.setLayoutParams(surfaceParams);
+
         setContentView(rootContainer);
+
+        // تطبيق ارتفاع شريط الحالة والنوتش على العنصر الناتيف العلوي
+        ViewCompat.setOnApplyWindowInsetsListener(rootContainer, (v, insets) -> {
+            int insetTop = insets.getInsets(WindowInsetsCompat.Type.statusBars()
+                    | WindowInsetsCompat.Type.displayCutout()).top;
+
+            ViewGroup.LayoutParams lp = topVisualSurface.getLayoutParams();
+            if (lp.height != insetTop) {
+                lp.height = insetTop;
+                topVisualSurface.setLayoutParams(lp);
+            }
+            return insets;
+        });
+
+        // إضافة العنصر الناتيف العلوي للحاوية
+        rootContainer.addView(topVisualSurface);
 
         /*
          * Chromium startup barrier.
@@ -617,4 +641,4 @@ public class MainActivity extends AppCompatActivity {
             }
         });
     }
-            }
+    }
