@@ -14,36 +14,16 @@ import android.webkit.WebView;
 import androidx.core.view.WindowCompat;
 import androidx.core.view.WindowInsetsControllerCompat;
 
-/**
- * 👑 SystemUI
- *
- * المالك الوحيد لحالة Status Bar.
- *
- * المسؤوليات:
- * 1. Edge-to-edge.
- * 2. شفافية Status Bar.
- * 3. اختيار لون الأيقونات.
- * 4. إدارة مالك الحالة:
- *      WEB / NATIVE
- * 5. تشخيص تضارب الكتابة.
- *
- * لا يقوم هذا الملف بتلوين Views عشوائية.
- * ولا يستخدم systemUiVisibility كمسار ثانٍ.
- */
 public final class SystemUI {
 
     private static final String TAG = "ROYAL_UI_DIAG";
 
-    private static final int OWNER_WEB = 0;
-    private static final int OWNER_NATIVE = 1;
+    private static final int WEB = 0;
+    private static final int NATIVE = 1;
 
-    private static int owner = OWNER_WEB;
-
-    private static int currentBackground =
-            Integer.MIN_VALUE;
-
-    private static boolean currentLightIcons = false;
-
+    private static int owner = WEB;
+    private static int currentColor = Integer.MIN_VALUE;
+    private static boolean darkIcons = false;
     private static long generation = 0L;
 
     private static final Handler HANDLER =
@@ -51,23 +31,18 @@ public final class SystemUI {
 
     private static Runnable syncTask;
 
-    private SystemUI() {
-        // Utility class.
-    }
+    private SystemUI() {}
 
     // =========================================================
-    // 👑 EDGE TO EDGE
+    // EDGE TO EDGE
     // =========================================================
 
     public static void applyKingMode(
             androidx.fragment.app.FragmentActivity activity,
             WebView webView,
-            int initialColor
-    ) {
+            int initialColor) {
 
-        if (activity == null) {
-            return;
-        }
+        if (activity == null) return;
 
         Window window = activity.getWindow();
 
@@ -76,49 +51,28 @@ public final class SystemUI {
                 false
         );
 
-        /*
-         * Android 15:
-         * Status Bar يجب أن تكون شفافة.
-         */
-        window.setStatusBarColor(
-                Color.TRANSPARENT
-        );
-
-        window.setNavigationBarColor(
-                Color.TRANSPARENT
-        );
+        window.setStatusBarColor(Color.TRANSPARENT);
+        window.setNavigationBarColor(Color.TRANSPARENT);
 
         if (android.os.Build.VERSION.SDK_INT >=
                 android.os.Build.VERSION_CODES.Q) {
 
-            window.setStatusBarContrastEnforced(
-                    false
-            );
-
-            window.setNavigationBarContrastEnforced(
-                    false
-            );
+            window.setStatusBarContrastEnforced(false);
+            window.setNavigationBarContrastEnforced(false);
         }
 
-        log(
-                "KING_MODE",
-                "Edge-to-edge enabled | API="
-                        + android.os.Build.VERSION.SDK_INT
-        );
+        log("KING", "Edge-to-edge enabled");
     }
 
     // =========================================================
-    // 👑 ICONS
+    // ICONS
     // =========================================================
 
     public static void setStatusBarIcons(
             Window window,
-            boolean lightBackground
-    ) {
+            boolean lightBackground) {
 
-        if (window == null) {
-            return;
-        }
+        if (window == null) return;
 
         WindowInsetsControllerCompat controller =
                 WindowCompat.getInsetsController(
@@ -127,105 +81,77 @@ public final class SystemUI {
                 );
 
         if (controller == null) {
-            log(
-                    "ICON_CONTROLLER",
-                    "ERROR: WindowInsetsControllerCompat = null"
-            );
+            log("ICONS", "ERROR: controller=null");
             return;
         }
 
-        /*
-         * true  = خلفية فاتحة → أيقونات سوداء
-         * false = خلفية داكنة → أيقونات بيضاء
-         */
         controller.setAppearanceLightStatusBars(
                 lightBackground
         );
 
-        currentLightIcons =
-                lightBackground;
+        darkIcons = lightBackground;
 
         log(
-                "ICON_APPLY",
-                "Icons="
-                        + (lightBackground
-                        ? "DARK"
-                        : "LIGHT")
+                "ICONS",
+                lightBackground
+                        ? "DARK icons"
+                        : "LIGHT icons"
         );
     }
 
     public static void setDynamicIcons(
             Window window,
-            boolean isLightBackground
-    ) {
+            boolean lightBackground) {
 
         setStatusBarIcons(
                 window,
-                isLightBackground
+                lightBackground
         );
     }
 
     // =========================================================
-    // 👑 COLOR ANALYSIS
+    // COLOR ANALYSIS
     // =========================================================
 
     public static boolean isColorLight(int color) {
 
-        double red =
-                Color.red(color) / 255.0;
+        double r = Color.red(color) / 255.0;
+        double g = Color.green(color) / 255.0;
+        double b = Color.blue(color) / 255.0;
 
-        double green =
-                Color.green(color) / 255.0;
+        r = r <= 0.04045
+                ? r / 12.92
+                : Math.pow((r + 0.055) / 1.055, 2.4);
 
-        double blue =
-                Color.blue(color) / 255.0;
+        g = g <= 0.04045
+                ? g / 12.92
+                : Math.pow((g + 0.055) / 1.055, 2.4);
 
-        double r =
-                red <= 0.04045
-                        ? red / 12.92
-                        : Math.pow(
-                        (red + 0.055) / 1.055,
-                        2.4
-                );
-
-        double g =
-                green <= 0.04045
-                        ? green / 12.92
-                        : Math.pow(
-                        (green + 0.055) / 1.055,
-                        2.4
-                );
-
-        double b =
-                blue <= 0.04045
-                        ? blue / 12.92
-                        : Math.pow(
-                        (blue + 0.055) / 1.055,
-                        2.4
-                );
+        b = b <= 0.04045
+                ? b / 12.92
+                : Math.pow((b + 0.055) / 1.055, 2.4);
 
         double luminance =
-                (0.2126 * r)
-                        + (0.7152 * g)
-                        + (0.0722 * b);
+                0.2126 * r +
+                0.7152 * g +
+                0.0722 * b;
 
-        double blackContrast =
+        double black =
                 (luminance + 0.05) / 0.05;
 
-        double whiteContrast =
+        double white =
                 1.05 / (luminance + 0.05);
 
-        return blackContrast >= whiteContrast;
+        return black >= white;
     }
 
     // =========================================================
-    // 👑 NATIVE OWNER
+    // NATIVE OWNER
     // =========================================================
 
     public static void forceNativeStatusBar(
             Activity activity,
-            int color
-    ) {
+            int color) {
 
         if (activity == null ||
                 activity.isFinishing()) {
@@ -234,8 +160,7 @@ public final class SystemUI {
 
         activity.runOnUiThread(() -> {
 
-            owner = OWNER_NATIVE;
-
+            owner = NATIVE;
             generation++;
 
             cancelStatusBarSync();
@@ -245,33 +170,26 @@ public final class SystemUI {
                     color,
                     "NATIVE"
             );
-
-            diagnostic(
-                    "NATIVE_OWNER",
-                    activity
-            );
         });
     }
 
     public static void syncWithNativeUI(
             Activity activity,
-            int uiColor
-    ) {
+            int color) {
 
         forceNativeStatusBar(
                 activity,
-                uiColor
+                color
         );
     }
 
     // =========================================================
-    // 👑 WEB OWNER
+    // WEB SYNC
     // =========================================================
 
     public static void scheduleStatusBarSync(
             Activity activity,
-            WebView webView
-    ) {
+            WebView webView) {
 
         if (activity == null ||
                 webView == null) {
@@ -280,48 +198,39 @@ public final class SystemUI {
 
         cancelStatusBarSync();
 
-        /*
-         * مهم جدًا:
-         *
-         * لا نغير owner هنا.
-         *
-         * لأن Offline UI قد تكون مالكة للـ Status Bar.
-         */
-        final long requestedGeneration =
+        final long requestGeneration =
                 generation;
 
         syncTask = () -> {
 
-            if (activity.isFinishing()) {
-                return;
-            }
+            if (activity.isFinishing()) return;
 
             if (webView.getVisibility()
                     != View.VISIBLE) {
 
                 log(
-                        "WEB_SYNC",
-                        "SKIP: WebView not visible"
+                        "WEB",
+                        "SKIP: WebView invisible"
                 );
 
                 return;
             }
 
-            if (owner != OWNER_WEB) {
+            if (owner != WEB) {
 
                 log(
-                        "WEB_SYNC",
-                        "BLOCKED: Native UI owns Status Bar"
+                        "WEB",
+                        "BLOCKED: Native owner"
                 );
 
                 return;
             }
 
-            if (requestedGeneration != generation) {
+            if (requestGeneration != generation) {
 
                 log(
-                        "WEB_SYNC",
-                        "BLOCKED: generation changed"
+                        "WEB",
+                        "BLOCKED: stale generation"
                 );
 
                 return;
@@ -342,43 +251,29 @@ public final class SystemUI {
     public static void cancelStatusBarSync() {
 
         if (syncTask != null) {
-
-            HANDLER.removeCallbacks(
-                    syncTask
-            );
-
+            HANDLER.removeCallbacks(syncTask);
             syncTask = null;
         }
     }
 
     // =========================================================
-    // 👑 WEB COLOR EXTRACTION
+    // WEB COLOR
     // =========================================================
 
     public static void syncStatusBarWithWeb(
             Activity activity,
-            WebView webView
-    ) {
+            WebView webView) {
 
         if (activity == null ||
-                webView == null) {
-            return;
-        }
-
-        if (owner != OWNER_WEB) {
-
-            log(
-                    "WEB_COLOR",
-                    "BLOCKED: Native owner"
-            );
-
+                webView == null ||
+                owner != WEB) {
             return;
         }
 
         final long requestGeneration =
                 generation;
 
-        final String defaultHex =
+        final String fallback =
                 isDarkMode(activity)
                         ? "#121212"
                         : "#FFFFFF";
@@ -386,14 +281,12 @@ public final class SystemUI {
         String script =
                 "(function(){"
 
-                + "function norm(c){"
+                + "function n(c){"
                 + "try{"
                 + "var x=document.createElement('canvas');"
-                + "x.width=1;"
-                + "x.height=1;"
-                + "var ctx=x.getContext('2d');"
-                + "ctx.fillStyle=c;"
-                + "return ctx.fillStyle;"
+                + "var y=x.getContext('2d');"
+                + "y.fillStyle=c;"
+                + "return y.fillStyle;"
                 + "}catch(e){return null;}"
                 + "}"
 
@@ -401,56 +294,49 @@ public final class SystemUI {
                 + "'meta[name=\"theme-color\"]');"
 
                 + "if(m&&m.content){"
-                + "var c=norm(m.content);"
+                + "var c=n(m.content);"
                 + "if(c)return c;"
                 + "}"
 
-                + "var el=document.elementFromPoint("
-                + "window.innerWidth/2,20);"
+                + "var e=document.elementFromPoint("
+                + "innerWidth/2,20);"
 
-                + "while(el&&el!==document.documentElement){"
+                + "while(e&&e!==document.documentElement){"
+                + "var s=getComputedStyle(e);"
+                + "var b=s.backgroundColor;"
 
-                + "var s=getComputedStyle(el);"
-                + "var bg=s.backgroundColor;"
-
-                + "if(bg&&bg!=='transparent'&&"
-                + "bg!=='rgba(0, 0, 0, 0)'){"
-                + "var n=norm(bg);"
-                + "if(n)return n;"
+                + "if(b&&b!=='transparent'&&"
+                + "b!=='rgba(0, 0, 0, 0)'){"
+                + "var c=n(b);"
+                + "if(c)return c;"
                 + "}"
 
-                + "el=el.parentElement;"
+                + "e=e.parentElement;"
                 + "}"
 
-                + "return norm(getComputedStyle(document.body)"
+                + "return n(getComputedStyle(document.body)"
                 + ".backgroundColor)||'"
-                + defaultHex
+                + fallback
                 + "';"
-
                 + "})();";
 
         webView.evaluateJavascript(
                 script,
                 value -> {
 
-                    if (owner != OWNER_WEB) {
-
+                    if (owner != WEB) {
                         log(
-                                "WEB_RESULT",
+                                "RESULT",
                                 "DISCARDED: Native owner"
                         );
-
                         return;
                     }
 
-                    if (requestGeneration !=
-                            generation) {
-
+                    if (requestGeneration != generation) {
                         log(
-                                "WEB_RESULT",
-                                "DISCARDED: stale generation"
+                                "RESULT",
+                                "DISCARDED: stale"
                         );
-
                         return;
                     }
 
@@ -470,14 +356,13 @@ public final class SystemUI {
     }
 
     // =========================================================
-    // 👑 UNIFIED COLOR APPLICATION
+    // UNIFIED APPLY
     // =========================================================
 
     private static void applyHeaderColorInternal(
             Activity activity,
             int color,
-            String source
-    ) {
+            String source) {
 
         if (activity == null ||
                 activity.isFinishing()) {
@@ -487,15 +372,8 @@ public final class SystemUI {
         Window window =
                 activity.getWindow();
 
-        if (window == null) {
-            return;
-        }
+        if (window == null) return;
 
-        /*
-         * Status Bar شفافة دائمًا.
-         *
-         * لا نحاول تلوين Window نفسها.
-         */
         window.setStatusBarColor(
                 Color.TRANSPARENT
         );
@@ -508,27 +386,24 @@ public final class SystemUI {
                 light
         );
 
-        currentBackground = color;
+        currentColor = color;
 
         diagnostic(
-                "APPLY[" + source + "]",
+                source,
                 activity
         );
     }
 
     public static void applyHeaderColor(
             Activity activity,
-            int targetColor
-    ) {
+            int color) {
 
-        if (activity == null) {
-            return;
-        }
+        if (activity == null) return;
 
         activity.runOnUiThread(() ->
                 applyHeaderColorInternal(
                         activity,
-                        targetColor,
+                        color,
                         "DIRECT"
                 )
         );
@@ -536,31 +411,26 @@ public final class SystemUI {
 
     public static void updateStatusBarColor(
             Activity activity,
-            int targetColor
-    ) {
+            int color) {
 
         applyHeaderColor(
                 activity,
-                targetColor
+                color
         );
     }
 
     // =========================================================
-    // 👑 RESUME
+    // RESUME
     // =========================================================
 
     public static void restoreHeaderOnResume(
-            Activity activity
-    ) {
+            Activity activity) {
 
-        if (activity == null) {
-            return;
-        }
+        if (activity == null) return;
 
         int color =
-                currentBackground !=
-                        Integer.MIN_VALUE
-                        ? currentBackground
+                currentColor != Integer.MIN_VALUE
+                        ? currentColor
                         : getDefaultSystemColor(activity);
 
         applyHeaderColorInternal(
@@ -568,21 +438,15 @@ public final class SystemUI {
                 color,
                 "RESUME"
         );
-
-        diagnostic(
-                "RESUME",
-                activity
-        );
     }
 
     // =========================================================
-    // 👑 TRANSPARENT
+    // TRANSPARENT
     // =========================================================
 
     public static void makeStatusBarTransparent(
             Activity activity,
-            int underlyingColor
-    ) {
+            int underlyingColor) {
 
         if (activity == null ||
                 activity.isFinishing()) {
@@ -594,9 +458,7 @@ public final class SystemUI {
             Window window =
                     activity.getWindow();
 
-            if (window == null) {
-                return;
-            }
+            if (window == null) return;
 
             window.setStatusBarColor(
                     Color.TRANSPARENT
@@ -609,7 +471,7 @@ public final class SystemUI {
                     )
             );
 
-            currentBackground =
+            currentColor =
                     underlyingColor;
 
             diagnostic(
@@ -620,49 +482,48 @@ public final class SystemUI {
     }
 
     // =========================================================
-    // 👑 COLOR PARSER
+    // PARSER
     // =========================================================
 
     public static int parseColorString(
             Context context,
-            String colorStr
-    ) {
+            String value) {
 
         int fallback =
                 getDefaultSystemColor(context);
 
-        if (colorStr == null) {
+        if (value == null) {
             return fallback;
         }
 
-        colorStr =
-                colorStr
+        value =
+                value
                         .replace("\"", "")
                         .trim();
 
         try {
 
-            if (colorStr.startsWith("#")) {
-                return Color.parseColor(
-                        colorStr
-                );
+            if (value.startsWith("#")) {
+                return Color.parseColor(value);
             }
 
-            if (colorStr.startsWith("rgb")) {
+            if (value.startsWith("rgb")) {
 
                 int start =
-                        colorStr.indexOf("(");
+                        value.indexOf("(");
 
                 int end =
-                        colorStr.indexOf(")");
+                        value.indexOf(")");
 
                 String[] parts =
-                        colorStr
-                                .substring(
-                                        start + 1,
-                                        end
-                                )
-                                .split(",");
+                        value.substring(
+                                start + 1,
+                                end
+                        ).split(",");
+
+                if (parts.length < 3) {
+                    return fallback;
+                }
 
                 int r =
                         Integer.parseInt(
@@ -679,26 +540,26 @@ public final class SystemUI {
                                 parts[2].trim()
                         );
 
-                return Color.rgb(
-                        r,
-                        g,
-                        b
-                );
+                return Color.rgb(r, g, b);
             }
 
-        } catch (Throwable ignored) {
+        } catch (Throwable e) {
+
+            log(
+                    "PARSER",
+                    "ERROR: " + e.getMessage()
+            );
         }
 
         return fallback;
     }
 
     // =========================================================
-    // 👑 DARK MODE
+    // DARK MODE
     // =========================================================
 
     public static boolean isDarkMode(
-            Context context
-    ) {
+            Context context) {
 
         if (context == null) {
             return false;
@@ -715,8 +576,7 @@ public final class SystemUI {
     }
 
     public static int getDefaultSystemColor(
-            Context context
-    ) {
+            Context context) {
 
         return isDarkMode(context)
                 ? Color.parseColor("#121212")
@@ -724,13 +584,12 @@ public final class SystemUI {
     }
 
     // =========================================================
-    // 👑 DIAGNOSTIC
+    // DIAGNOSTIC
     // =========================================================
 
     private static void log(
             String step,
-            String message
-    ) {
+            String message) {
 
         Log.i(
                 TAG,
@@ -740,54 +599,51 @@ public final class SystemUI {
 
     private static void diagnostic(
             String step,
-            Activity activity
-    ) {
+            Activity activity) {
 
         Window window =
                 activity.getWindow();
 
         String color =
-                currentBackground ==
-                        Integer.MIN_VALUE
+                currentColor == Integer.MIN_VALUE
                         ? "UNSET"
                         : String.format(
-                        "#%08X",
-                        currentBackground
-                );
+                                "#%08X",
+                                currentColor
+                        );
 
         log(
                 step,
                 "owner="
-                        + (owner == OWNER_NATIVE
+                        + (owner == NATIVE
                         ? "NATIVE"
                         : "WEB")
                         + " | color="
                         + color
                         + " | icons="
-                        + (currentLightIcons
+                        + (darkIcons
                         ? "DARK"
                         : "LIGHT")
                         + " | generation="
                         + generation
                         + " | statusBar="
                         + String.format(
-                        "#%08X",
-                        window.getStatusBarColor()
-                );
+                                "#%08X",
+                                window.getStatusBarColor()
+                        )
+        );
     }
 
-    /**
-     * 👑 اطبع التشخيص الكامل يدويًا عند الحاجة.
-     */
     public static void dumpDiagnostic(
-            Activity activity
-    ) {
+            Activity activity) {
 
         if (activity == null) {
+
             Log.e(
                     TAG,
                     "STEP[DUMP] Activity=null"
             );
+
             return;
         }
 
@@ -804,4 +660,4 @@ public final class SystemUI {
                         + isDarkMode(activity)
         );
     }
-                }
+            }
