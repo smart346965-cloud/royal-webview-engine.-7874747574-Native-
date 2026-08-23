@@ -4,6 +4,7 @@ import android.graphics.Color;
 import android.os.Handler;
 import android.os.Looper;
 import android.view.View;
+import android.view.ViewGroup;
 import android.view.Window;
 import android.view.WindowManager;
 import android.webkit.WebView;
@@ -72,10 +73,10 @@ public class SystemUI {
         );
 
         // =========================================================
-        // 👑 منع الوميض الأسود: تعيين لون المظهر المبدئي بدلاً من الشفافية المفاجئة
+        // 👑 شريط نظام شفاف دائماً (متوافق 100% مع Android 15 Edge-to-Edge)
         // =========================================================
 
-        window.setStatusBarColor(initialColor);
+        window.setStatusBarColor(Color.TRANSPARENT);
 
         window.setNavigationBarColor(Color.TRANSPARENT);
 
@@ -215,102 +216,53 @@ public class SystemUI {
     }
 
     // =========================================================
-    // 👑 Force Native Status Bar (Offline UI / Native Screens)
+    // 👑 Force Native Status Bar (تلوين العنصر الناتيف العلوي للواجهات الناتيف والأوفلاين)
     // =========================================================
     public static void forceNativeStatusBar(
             android.app.Activity activity,
             int color
     ) {
-
-        if (activity == null ||
-                activity.isFinishing()) {
-            return;
-        }
+        if (activity == null || activity.isFinishing()) return;
 
         Runnable apply = () -> {
-
-            if (activity.isFinishing()) {
-                return;
-            }
+            if (activity.isFinishing()) return;
 
             Window window = activity.getWindow();
-
-            if (window == null) {
-                return;
-            }
+            if (window == null) return;
 
             cancelStatusBarColorAnimation(window);
 
             statusBarOwner = 1;
-
             cancelStatusBarSync();
-
             syncGeneration++;
 
-            boolean lightBackground =
-                    isColorLight(color);
+            boolean lightBackground = isColorLight(color);
 
-            window.setStatusBarColor(color);
-
-            setStatusBarIcons(
-                    window,
-                    lightBackground
-            );
-
-            /*
-             * تأكيد أخير بعد اكتمال تحديث الـ DecorView.
-             */
-            window.getDecorView().post(() -> {
-
-                if (activity.isFinishing()) {
-                    return;
-                }
-
-                WindowInsetsControllerCompat controller =
-                        WindowCompat.getInsetsController(
-                                window,
-                                window.getDecorView()
-                        );
-
-                if (controller != null) {
-                    controller.setAppearanceLightStatusBars(
-                            lightBackground
-                    );
-                }
-
-                if (android.os.Build.VERSION.SDK_INT >=
-                        android.os.Build.VERSION_CODES.M) {
-
-                    View decorView =
-                            window.getDecorView();
-
-                    int flags =
-                            decorView.getSystemUiVisibility();
-
-                    if (lightBackground) {
-                        flags |=
-                                View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
-                    } else {
-                        flags &=
-                                ~View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
+            // تلوين العنصر الناتيف العلوي المخصص
+            View contentView = activity.findViewById(android.R.id.content);
+            if (contentView instanceof ViewGroup) {
+                ViewGroup contentGroup = (ViewGroup) contentView;
+                if (contentGroup.getChildCount() > 0 && contentGroup.getChildAt(0) instanceof ViewGroup) {
+                    ViewGroup rootGroup = (ViewGroup) contentGroup.getChildAt(0);
+                    for (int i = 0; i < rootGroup.getChildCount(); i++) {
+                        View child = rootGroup.getChildAt(i);
+                        if (child.getLayoutParams().height > 0 && !(child instanceof WebView)) {
+                            child.setBackgroundColor(color);
+                        }
                     }
-
-                    decorView.setSystemUiVisibility(flags);
                 }
+            }
 
-                window.setStatusBarColor(color);
+            // تثبيت شفافية شريط النظام وتحديث الأيقونات
+            window.setStatusBarColor(Color.TRANSPARENT);
+            setStatusBarIcons(window, lightBackground);
 
-                lastSyncedStatusBarColor = color;
-            });
+            lastSyncedStatusBarColor = color;
         };
 
-        if (Looper.myLooper() ==
-                Looper.getMainLooper()) {
-
+        if (Looper.myLooper() == Looper.getMainLooper()) {
             apply.run();
-
         } else {
-
             activity.runOnUiThread(apply);
         }
     }
@@ -379,146 +331,43 @@ public class SystemUI {
     }
 
     // =========================================================
-    // 👑 Royal Status Bar Synchronization
-    //
-    // مسؤول عن:
-    // 1. تغيير لون Status Bar
-    // 2. تغيير أيقوناته
-    // 3. منع تكرار التحديثات
-    // 4. منع تضارب Animations
+    // 👑 تحديث عنصر Top Visual Surface الناتيف وضبط الأيقونات فوريًا
     // =========================================================
     public static void updateStatusBarColor(
             android.app.Activity activity,
             int targetColor
     ) {
-
-        if (activity == null ||
-                activity.isFinishing()) {
-            return;
-        }
+        if (activity == null || activity.isFinishing()) return;
 
         activity.runOnUiThread(() -> {
-
-            Window window =
-                    activity.getWindow();
-
-            if (window == null) {
-                return;
-            }
+            Window window = activity.getWindow();
+            if (window == null) return;
 
             cancelStatusBarColorAnimation(window);
 
-            /*
-             * 👑 اللون يحدد لون الأيقونات أولاً.
-             *
-             * لا ننتظر Animation.
-             * الأيقونات تتغير فورًا مع اللون المستهدف.
-             */
-            boolean lightBackground =
-                    isColorLight(targetColor);
+            // 1. شريط حالة النظام الشفاف دائماً
+            window.setStatusBarColor(Color.TRANSPARENT);
 
-            setStatusBarIcons(
-                    window,
-                    lightBackground
-            );
-
-            int currentColor =
-                    window.getStatusBarColor();
-
-            /*
-             * لا يوجد أي تغيير فعلي.
-             */
-            if (currentColor == targetColor &&
-                    lastSyncedStatusBarColor == targetColor) {
-
-                return;
-            }
-
-            lastSyncedStatusBarColor =
-                    targetColor;
-
-            /*
-             * إذا كان اللون الحالي نفسه الهدف:
-             * لا نحتاج Animation.
-             */
-            if (currentColor == targetColor) {
-                return;
-            }
-
-            /*
-             * 👑 Animation قصيرة جدًا.
-             *
-             * الأيقونات تم ضبطها مسبقًا،
-             * لذلك لا يوجد وقت تظهر فيه أيقونات
-             * غير مناسبة للون الجديد.
-             */
-            android.animation.ValueAnimator
-                    colorAnimation =
-                    android.animation.ValueAnimator.ofObject(
-                            new android.animation.ArgbEvaluator(),
-                            currentColor,
-                            targetColor
-                    );
-
-            colorAnimation.setDuration(120L);
-
-            colorAnimation.addUpdateListener(
-                    animator -> {
-
-                        if (activity.isFinishing()) {
-                            return;
-                        }
-
-                        int animatedColor =
-                                (int) animator.getAnimatedValue();
-
-                        window.setStatusBarColor(
-                                animatedColor
-                        );
-                    }
-            );
-
-            colorAnimation.addListener(
-                    new android.animation.AnimatorListenerAdapter() {
-
-                        @Override
-                        public void onAnimationEnd(
-                                android.animation.Animator animation
-                        ) {
-
-                            if (activity.isFinishing()) {
-                                return;
-                            }
-
-                            window.setStatusBarColor(
-                                    targetColor
-                            );
-
-                            /*
-                             * تأكيد نهائي للأيقونات
-                             */
-                            setStatusBarIcons(
-                                    window,
-                                    lightBackground
-                            );
-
-                            window.getDecorView()
-                                    .setTag(null);
-                        }
-
-                        @Override
-                        public void onAnimationCancel(
-                                android.animation.Animator animation
-                        ) {
-                            window.getDecorView().setTag(null);
+            // 2. تلوين عنصر Top Visual Surface الناتيف العلوي المخصص
+            View contentView = activity.findViewById(android.R.id.content);
+            if (contentView instanceof ViewGroup) {
+                ViewGroup contentGroup = (ViewGroup) contentView;
+                if (contentGroup.getChildCount() > 0 && contentGroup.getChildAt(0) instanceof ViewGroup) {
+                    ViewGroup rootGroup = (ViewGroup) contentGroup.getChildAt(0);
+                    for (int i = 0; i < rootGroup.getChildCount(); i++) {
+                        View child = rootGroup.getChildAt(i);
+                        if (child.getLayoutParams().height > 0 && !(child instanceof WebView)) {
+                            child.setBackgroundColor(targetColor);
                         }
                     }
-            );
+                }
+            }
 
-            window.getDecorView()
-                    .setTag(colorAnimation);
+            // 3. ضبط نمط الأيقونات فوراً بناءً على درجة لون العنصر الناتيف العلوي
+            boolean lightBackground = isColorLight(targetColor);
+            setStatusBarIcons(window, lightBackground);
 
-            colorAnimation.start();
+            lastSyncedStatusBarColor = targetColor;
         });
     }
 
@@ -848,4 +697,4 @@ public class SystemUI {
     public static int getDefaultSystemColor(android.content.Context context) {
         return isDarkMode(context) ? Color.parseColor("#121212") : Color.WHITE;
     }
-            }
+    }
