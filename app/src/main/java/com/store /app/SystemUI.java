@@ -190,6 +190,14 @@ public class SystemUI {
 
         if (window == null) return;
 
+        android.util.Log.i(
+                "ROYAL_UI_DIAG",
+                "STEP[ICON_REQUEST] "
+                        + "decision="
+                        + (lightBackground ? "DARK" : "LIGHT")
+                        + " | caller=SystemUI"
+        );
+
         WindowInsetsControllerCompat controller =
                 WindowCompat.getInsetsController(
                         window,
@@ -351,7 +359,32 @@ public class SystemUI {
             }
 
             // 3. حساب التباين من اللون الناتيف المصبوغ (الهيدر خلف الشريط)
+            android.util.Log.i(
+                    "ROYAL_UI_DIAG",
+                    "STEP[ICON_INPUT] "
+                            + "color="
+                            + String.format(
+                                    "#%08X",
+                                    targetColor
+                            )
+                            + " | source=applyHeaderColor"
+            );
+
             boolean lightBackground = isColorLight(targetColor);
+
+            android.util.Log.i(
+                    "ROYAL_UI_DIAG",
+                    "STEP[ICON_DECISION] "
+                            + "background="
+                            + String.format(
+                                    "#%08X",
+                                    targetColor
+                            )
+                            + " -> icons="
+                            + (lightBackground
+                            ? "DARK"
+                            : "LIGHT")
+            );
 
             // إذا كان اللون فاتح (أبيض أو ألوان فاتحة) → أيقونات سوداء
             // إذا كان اللون داكن (أسود أو ألوان داكنة) → أيقونات بيضاء
@@ -379,6 +412,151 @@ public class SystemUI {
     }
 
     // =========================================================
+    // 👑 ROYAL UI DIAGNOSTIC — WEB COLOR SOURCE
+    // =========================================================
+
+    private static void diagnoseWebColorSource(
+            android.app.Activity activity,
+            WebView webView
+    ) {
+
+        if (activity == null || webView == null) {
+            return;
+        }
+
+        String script =
+                "(function(){"
+
+                        + "function norm(c){"
+                        + "try{"
+                        + "var x=document.createElement('canvas');"
+                        + "x.width=1;"
+                        + "x.height=1;"
+                        + "var ctx=x.getContext('2d');"
+                        + "ctx.fillStyle=c;"
+                        + "return ctx.fillStyle;"
+                        + "}catch(e){return 'ERROR';}"
+                        + "}"
+
+                        + "function info(el,source){"
+                        + "if(!el)return null;"
+                        + "var s=getComputedStyle(el);"
+                        + "return {"
+                        + "source:source,"
+                        + "tag:el.tagName,"
+                        + "id:el.id||'',"
+                        + "className:typeof el.className==='string'?el.className:'',"
+                        + "background:s.backgroundColor,"
+                        + "normalized:norm(s.backgroundColor),"
+                        + "x:Math.round(window.innerWidth/2),"
+                        + "y:20"
+                        + "};"
+                        + "}"
+
+                        + "var result={};"
+
+                        // 1. theme-color
+                        + "var metas=document.querySelectorAll("
+                        + "'meta[name=\"theme-color\"]');"
+
+                        + "result.themeColors=[];"
+
+                        + "for(var i=0;i<metas.length;i++){"
+                        + "var m=metas[i];"
+                        + "result.themeColors.push({"
+                        + "content:m.content||'',"
+                        + "media:m.media||'',"
+                        + "active:!m.media||window.matchMedia(m.media).matches"
+                        + "});"
+                        + "}"
+
+                        // 2. العنصر الحقيقي عند Y=20
+                        + "var pointEl=document.elementFromPoint("
+                        + "window.innerWidth/2,20);"
+
+                        + "result.point=info(pointEl,'ELEMENT_FROM_POINT');"
+
+                        // 3. header
+                        + "var header=document.querySelector('header');"
+                        + "result.header=info(header,'HEADER');"
+
+                        // 4. nav
+                        + "var nav=document.querySelector('nav');"
+                        + "result.nav=info(nav,'NAV');"
+
+                        // 5. body
+                        + "result.body=info(document.body,'BODY');"
+
+                        // 6. اللون الفعلي الذي سيختاره المحرك الحالي
+                        + "result.selected='';"
+
+                        + "var activeMeta=null;"
+
+                        + "for(var j=0;j<metas.length;j++){"
+                        + "var mm=metas[j];"
+                        + "if(!mm.media||window.matchMedia(mm.media).matches){"
+                        + "if(mm.content){"
+                        + "activeMeta=norm(mm.content);"
+                        + "break;"
+                        + "}"
+                        + "}"
+                        + "}"
+
+                        + "if(activeMeta){"
+                        + "result.selected=activeMeta;"
+                        + "result.selectedSource='THEME_COLOR';"
+                        + "}else if(pointEl){"
+
+                        + "var cur=pointEl;"
+
+                        + "while(cur&&cur!==document.documentElement){"
+                        + "var cs=getComputedStyle(cur);"
+                        + "var bg=cs.backgroundColor;"
+
+                        + "if(bg&&bg!=='transparent'&&"
+                        + "bg!=='rgba(0, 0, 0, 0)'){"
+
+                        + "result.selected=norm(bg);"
+                        + "result.selectedSource='ELEMENT_FROM_POINT';"
+                        + "result.selectedTag=cur.tagName;"
+                        + "result.selectedId=cur.id||'';"
+                        + "result.selectedClass="
+                        + "typeof cur.className==='string'"
+                        + "?cur.className:'';"
+
+                        + "break;"
+                        + "}"
+
+                        + "cur=cur.parentElement;"
+                        + "}"
+
+                        + "}else{"
+
+                        + "result.selected=norm("
+                        + "getComputedStyle(document.body).backgroundColor"
+                        + ");"
+
+                        + "result.selectedSource='BODY';"
+
+                        + "}"
+
+                        + "return JSON.stringify(result);"
+
+                        + "})();";
+
+        webView.evaluateJavascript(
+                script,
+                value -> {
+
+                    Log.i(
+                            "ROYAL_UI_DIAG",
+                            "STEP[WEB_SOURCE] " + value
+                    );
+                }
+        );
+    }
+
+    // =========================================================
     // 👑 محرك الويب المطور لاستخراج الألوان مع Canvas Color Normalizer
     // =========================================================
     public static void syncStatusBarWithWeb(
@@ -399,6 +577,11 @@ public class SystemUI {
             return;
         }
 
+        diagnoseWebColorSource(
+                activity,
+                webView
+        );
+
         final long requestGeneration =
                 syncGeneration;
 
@@ -410,77 +593,82 @@ public class SystemUI {
         String jsScript =
                 "(function() {" +
 
-                "function normalizeColor(colorStr) {" +
-                "  if (!colorStr) return null;" +
-                "  try {" +
-                "    var canvas = document.createElement('canvas');" +
-                "    canvas.width = 1;" +
-                "    canvas.height = 1;" +
-                "    var ctx = canvas.getContext('2d');" +
-                "    ctx.fillStyle = colorStr;" +
-                "    return ctx.fillStyle;" +
-                "  } catch(e) {" +
-                "    return colorStr;" +
-                "  }" +
-                "}" +
+                        "function normalizeColor(colorStr) {" +
+                        "  if (!colorStr) return null;" +
+                        "  try {" +
+                        "    var canvas = document.createElement('canvas');" +
+                        "    canvas.width = 1;" +
+                        "    canvas.height = 1;" +
+                        "    var ctx = canvas.getContext('2d');" +
+                        "    ctx.fillStyle = colorStr;" +
+                        "    return ctx.fillStyle;" +
+                        "  } catch(e) {" +
+                        "    return colorStr;" +
+                        "  }" +
+                        "}" +
 
-                "function extractColor() {" +
+                        "function extractColor() {" +
 
-                "  var metas = document.querySelectorAll(" +
-                "'meta[name=\"theme-color\"]');" +
+                        "  var metas = document.querySelectorAll(" +
+                        "'meta[name=\"theme-color\"]');" +
 
-                "  for (var i = 0; i < metas.length; i++) {" +
+                        "  for (var i = 0; i < metas.length; i++) {" +
 
-                "    var m = metas[i];" +
+                        "    var m = metas[i];" +
 
-                "    if (!m.media || window.matchMedia(m.media).matches) {" +
+                        "    if (!m.media || window.matchMedia(m.media).matches) {" +
 
-                "      if (m.content) {" +
-                "        var normalized = normalizeColor(m.content);" +
-                "        if (normalized) return normalized;" +
-                "      }" +
-                "    }" +
-                "  }" +
+                        "      if (m.content) {" +
+                        "        var normalized = normalizeColor(m.content);" +
+                        "        if (normalized) return normalized;" +
+                        "      }" +
+                        "    }" +
+                        "  }" +
 
-                "  var el = document.elementFromPoint(" +
-                "window.innerWidth / 2, 20);" +
+                        "  var el = document.elementFromPoint(" +
+                        "window.innerWidth / 2, 20);" +
 
-                "  if (!el) {" +
-                "    el = document.querySelector('header')" +
-                "      || document.querySelector('nav')" +
-                "      || document.body;" +
-                "  }" +
+                        "  if (!el) {" +
+                        "    el = document.querySelector('header')" +
+                        "      || document.querySelector('nav')" +
+                        "      || document.body;" +
+                        "  }" +
 
-                "  while (el && el !== document.documentElement) {" +
+                        "  while (el && el !== document.documentElement) {" +
 
-                "    var st = window.getComputedStyle(el);" +
-                "    var bg = st.backgroundColor;" +
+                        "    var st = window.getComputedStyle(el);" +
+                        "    var bg = st.backgroundColor;" +
 
-                "    if (bg &&" +
-                "        bg !== 'transparent' &&" +
-                "        bg !== 'rgba(0, 0, 0, 0)') {" +
+                        "    if (bg &&" +
+                        "        bg !== 'transparent' &&" +
+                        "        bg !== 'rgba(0, 0, 0, 0)') {" +
 
-                "      return normalizeColor(bg);" +
-                "    }" +
+                        "      return normalizeColor(bg);" +
+                        "    }" +
 
-                "    el = el.parentElement;" +
-                "  }" +
+                        "    el = el.parentElement;" +
+                        "  }" +
 
-                "  var bodyBg =" +
-                "window.getComputedStyle(document.body).backgroundColor;" +
+                        "  var bodyBg =" +
+                        "window.getComputedStyle(document.body).backgroundColor;" +
 
-                "  return normalizeColor(bodyBg) ||" +
-                "'" + defaultHex + "';" +
+                        "  return normalizeColor(bodyBg) ||" +
+                        "'" + defaultHex + "';" +
 
-                "}" +
+                        "}" +
 
-                "return extractColor();" +
+                        "return extractColor();" +
 
-                "})();";
+                        "})();";
 
         webView.evaluateJavascript(
                 jsScript,
                 value -> {
+
+                    Log.i(
+                            "ROYAL_UI_DIAG",
+                            "STEP[WEB_RETURN] raw=" + value
+                    );
 
                     /*
                      * 👑 حماية من Race Condition
