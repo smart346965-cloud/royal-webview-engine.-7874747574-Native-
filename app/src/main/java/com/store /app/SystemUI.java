@@ -55,6 +55,7 @@ public class SystemUI {
         window.setStatusBarColor(Color.TRANSPARENT);
         window.setNavigationBarColor(Color.TRANSPARENT);
 
+        // 👑 كسر تدخل النظام التلقائي وحظر التباين القسري
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
             window.setNavigationBarContrastEnforced(false);
             window.setStatusBarContrastEnforced(false);
@@ -97,12 +98,16 @@ public class SystemUI {
             // 1. تثبيت شفافية شريط النظام
             window.setStatusBarColor(Color.TRANSPARENT);
 
-            // 2. استهداف مباشر وصريح لعنصر Top Visual Surface الناتيف عبر الوسم (Tag)
+            // 2. إصلاح الشفافية: دمج اللون المجلوب مع لون خلفية النافذة الأصلية لتوليد لون صلب
+            int defaultBg = getDefaultSystemColor(activity);
+            int solidColor = compositeColorWithBackground(targetColor, defaultBg);
+
+            // 3. استهداف مباشر وصريح لعنصر Top Visual Surface الناتيف عبر الوسم (Tag)
             View topSurface = activity.findViewById(android.R.id.content)
                     .findViewWithTag("TOP_VISUAL_SURFACE");
 
             if (topSurface != null) {
-                topSurface.setBackgroundColor(targetColor);
+                topSurface.setBackgroundColor(solidColor);
             } else {
                 // مسار احتياطي استثنائي
                 View contentView = activity.findViewById(android.R.id.content);
@@ -113,18 +118,18 @@ public class SystemUI {
                         for (int i = 0; i < rootGroup.getChildCount(); i++) {
                             View child = rootGroup.getChildAt(i);
                             if (child.getLayoutParams().height > 0 && !(child instanceof WebView)) {
-                                child.setBackgroundColor(targetColor);
+                                child.setBackgroundColor(solidColor);
                             }
                         }
                     }
                 }
             }
 
-            // 3. حساب التباين وتعديل الأيقونات مباشرة من لون الخلفية المستهدف بدون عوائق
-            boolean isLightHeader = isColorLight(targetColor);
+            // 4. حساب التباين وتعديل الأيقونات بناءً على اللون الصلب الماثل للعين
+            boolean isLightHeader = isColorLight(solidColor);
             setStatusBarIconsInternal(window, isLightHeader);
 
-            currentHeaderColor = targetColor;
+            currentHeaderColor = solidColor;
         });
     }
 
@@ -227,7 +232,23 @@ public class SystemUI {
     }
 
     // =========================================================
-    // 👑 6. محرك مزامنة الويب مع محول Canvas Color Normalizer
+    // 👑 6. محرك دمج الألوان لمنع الشفافية والتضارب التلقائي
+    // =========================================================
+    public static int compositeColorWithBackground(int foregroundColor, int backgroundColor) {
+        int alpha = Color.alpha(foregroundColor);
+        if (alpha == 255) return foregroundColor;
+        if (alpha == 0) return backgroundColor;
+
+        float a = alpha / 255.0f;
+        int r = (int) (Color.red(foregroundColor) * a + Color.red(backgroundColor) * (1 - a));
+        int g = (int) (Color.green(foregroundColor) * a + Color.green(backgroundColor) * (1 - a));
+        int b = (int) (Color.blue(foregroundColor) * a + Color.blue(backgroundColor) * (1 - a));
+
+        return Color.rgb(r, g, b);
+    }
+
+    // =========================================================
+    // 👑 7. محرك مزامنة الويب مع محول Canvas Color Normalizer
     // =========================================================
     public static void syncStatusBarWithWeb(
             android.app.Activity activity,
@@ -321,7 +342,7 @@ public class SystemUI {
     }
 
     // =========================================================
-    // 👑 7. تحويل الألوان والتعامل مع الشفافية RGBA
+    // 👑 8. تحويل الألوان والتعامل مع الشفافية RGBA
     // =========================================================
     public static int parseColorString(android.content.Context context, String colorStr) {
         int defaultColor = getDefaultSystemColor(context);
@@ -338,7 +359,8 @@ public class SystemUI {
 
                 if (parts.length >= 4) {
                     float a = Float.parseFloat(parts[3].trim());
-                    if (a < 0.1f) return defaultColor;
+                    int alphaInt = Math.round(a * 255);
+                    return Color.argb(alphaInt, r, g, b);
                 }
                 return Color.rgb(r, g, b);
             }
@@ -349,7 +371,7 @@ public class SystemUI {
     }
 
     // =========================================================
-    // 👑 8. استشعار ثيم النظام الافتراضي (Dark / Light)
+    // 👑 9. استشعار ثيم النظام الافتراضي (Dark / Light)
     // =========================================================
     public static boolean isDarkMode(android.content.Context context) {
         if (context == null) return false;
@@ -361,4 +383,4 @@ public class SystemUI {
     public static int getDefaultSystemColor(android.content.Context context) {
         return isDarkMode(context) ? Color.parseColor("#121212") : Color.WHITE;
     }
-    }
+            }
