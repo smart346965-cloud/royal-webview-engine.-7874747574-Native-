@@ -10,7 +10,6 @@
 
     <!-- 👑 ثيم التطبيق الليلي الأساسي بعد انقضاء الـ Splash -->
     <style name="AppTheme_NoSplash" parent="Theme.Material3.Dark.NoActionBar">
-        <item name="android:statusBarColor">#121212</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
         <item name="android:windowActivityTransitions">true</item>
         <item name="android:windowDrawsSystemBarBackgrounds">true</item>
