@@ -10,11 +10,16 @@
 
     <!-- 👑 ثيم التطبيق الليلي الأساسي بعد انقضاء الـ Splash -->
     <style name="AppTheme_NoSplash" parent="Theme.Material3.Dark.NoActionBar">
+        <!-- 🔑 الأسطر الأساسية لقطع الومضة الليلية نهائياً -->
+        <item name="android:windowBackground">#121212</item>
+        <item name="android:statusBarColor">#121212</item>
+        <item name="android:windowLightStatusBar" tools:targetApi="m">false</item>
+        
+        <!-- إعدادات شريط التنقل والتوافقية -->
         <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowLightNavigationBar" tools:targetApi="o_mr1">false</item>
         <item name="android:windowActivityTransitions">true</item>
         <item name="android:windowDrawsSystemBarBackgrounds">true</item>
         <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
-        <item name="android:windowLightNavigationBar" tools:targetApi="o_mr1">false</item>
-        <item name="android:windowBackground">#121212</item>
     </style>
 </resources>
