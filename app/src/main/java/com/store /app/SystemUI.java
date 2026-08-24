@@ -237,7 +237,10 @@ public class SystemUI {
 
         final long requestGeneration = syncGeneration;
 
-        String defaultHex = isDarkMode(activity) ? "#121212" : "#FFFFFF";
+        // 👑 استخدام لون الهيدر المحفوظ إن وجد أو لون الثيم كـ Fallback فقط دون إجبار الموقع على الداكن
+        String defaultHex = (currentHeaderColor != Integer.MIN_VALUE)
+                ? String.format("#%06X", (0xFFFFFF & currentHeaderColor))
+                : (isDarkMode(activity) ? "#121212" : "#FFFFFF");
 
         String jsScript =
                 "(function() {" +
