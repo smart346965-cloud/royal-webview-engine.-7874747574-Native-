@@ -349,10 +349,15 @@ public class MainActivity extends AppCompatActivity {
                     BuildConfig.CLIENT_URL
             );
 
-            SystemUI.scheduleStatusBarSync(
-                    MainActivity.this,
-                    activeWebView
-            );
+            // 👑 تأخير المزامنة حتى انتهاء الـ Splash تماماً لمنع قراءة الصفحة الفارغة
+            mainHandler.postDelayed(() -> {
+                if (!isFinishing() && activeWebView != null) {
+                    SystemUI.scheduleStatusBarSync(
+                            MainActivity.this,
+                            activeWebView
+                    );
+                }
+            }, FIXED_SPLASH_TIME + 500L);
 
             isPageLoaded = true;
 
@@ -428,10 +433,13 @@ public class MainActivity extends AppCompatActivity {
             // 👑 حماية العودة: إعادة تطبيق اللون والأيقونات المحفوظة فوراً قبل مزامنة الويب
             SystemUI.restoreHeaderOnResume(this);
 
-            SystemUI.scheduleStatusBarSync(
-                    this,
-                    activeWebView
-            );
+            // لا تُشغّل المزامنة إلا إذا انقضت مدة الـ Splash
+            if (System.currentTimeMillis() - splashStartTime >= FIXED_SPLASH_TIME) {
+                SystemUI.scheduleStatusBarSync(
+                        this,
+                        activeWebView
+                );
+            }
         }
 
         if (offlineController != null) {
@@ -659,6 +667,9 @@ public class MainActivity extends AppCompatActivity {
         super.onWindowFocusChanged(hasFocus);
         if (hasFocus) {
             SystemUI.restoreHeaderOnResume(this);
+            if (System.currentTimeMillis() - splashStartTime >= FIXED_SPLASH_TIME && activeWebView != null) {
+                SystemUI.scheduleStatusBarSync(this, activeWebView);
+            }
         }
     }
-            }
+                    }
