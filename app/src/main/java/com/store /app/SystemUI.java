@@ -40,6 +40,9 @@ public class SystemUI {
      */
     private static long syncGeneration = 0L;
 
+    // 👑 قفل ملكية الأيقونات — يمنع أي تعديل خارجي
+    private static boolean lockIcons = false;
+
     // =========================================================
     // 👑 إلغاء Animation قيد التشغيل
     // =========================================================
@@ -55,6 +58,16 @@ public class SystemUI {
         }
 
         decorView.setTag(null);
+    }
+
+    // 👑 تفعيل القفل — يمنع أي تعديل خارجي
+    public static void lockStatusBarIcons() {
+        lockIcons = true;
+    }
+
+    // 👑 إلغاء القفل — يسمح بالتعديلات من SystemUI فقط
+    public static void unlockStatusBarIcons() {
+        lockIcons = false;
     }
 
     // 1. تفعيل وضع "الملك" مع منع الوميض الأسود عبر تعيين اللون الأولي فوراً
@@ -165,6 +178,12 @@ public class SystemUI {
     ) {
 
         if (window == null) return;
+
+        // 👑 إذا القفل مفعل، تجاهل أي محاولة كتابة
+        if (lockIcons) {
+            Log.i("ROYAL_UI_DIAG", "ICON OVERRIDE BLOCKED — lock active");
+            return;
+        }
 
         android.util.Log.i(
                 "ROYAL_UI_DIAG",
@@ -855,4 +874,4 @@ public class SystemUI {
     public static int getDefaultSystemColor(android.content.Context context) {
         return isDarkMode(context) ? Color.parseColor("#121212") : Color.WHITE;
     }
-                    }
+            }
