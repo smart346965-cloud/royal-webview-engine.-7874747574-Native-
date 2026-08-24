@@ -248,7 +248,7 @@ public class SystemUI {
     }
 
     // =========================================================
-    // 👑 7. محرك مزامنة الويب مع محول Canvas Color Normalizer
+    // 👑 7. محرك مزامنة الويب مع محول Canvas Color Normalizer (محمي من الومضة السوداء)
     // =========================================================
     public static void syncStatusBarWithWeb(
             android.app.Activity activity,
@@ -258,7 +258,7 @@ public class SystemUI {
 
         final long requestGeneration = syncGeneration;
 
-        // 👑 استخدام لون الهيدر المحفوظ إن وجد أو لون الثيم كـ Fallback فقط دون إجبار الموقع على الداكن
+        // 👑 لون النظام المبدئي كـ Fallback آمن لمنع إرجاع الأسود أثناء التهيئة
         String defaultHex = (currentHeaderColor != Integer.MIN_VALUE)
                 ? String.format("#%06X", (0xFFFFFF & currentHeaderColor))
                 : (isDarkMode(activity) ? "#121212" : "#FFFFFF");
@@ -275,6 +275,11 @@ public class SystemUI {
                 "      return ctx.fillStyle;" +
                 "    } catch(e) { return colorStr; }" +
                 "  }" +
+                "  function isBlackOrTransparent(colorStr) {" +
+                "    if (!colorStr) return true;" +
+                "    var c = colorStr.toLowerCase().replace(/\\s+/g, '');" +
+                "    return c === 'transparent' || c === 'rgba(0,0,0,0)' || c === '#000000' || c === '#000' || c === 'rgb(0,0,0)';" +
+                "  }" +
                 "  function extractColor() {" +
                 "    var metas = document.querySelectorAll('meta[name=\"theme-color\"]');" +
                 "    for (var i = 0; i < metas.length; i++) {" +
@@ -282,7 +287,7 @@ public class SystemUI {
                 "      if (!m.media || window.matchMedia(m.media).matches) {" +
                 "        if (m.content) {" +
                 "          var normalized = normalizeColor(m.content);" +
-                "          if (normalized) return normalized;" +
+                "          if (normalized && !isBlackOrTransparent(normalized)) return normalized;" +
                 "        }" +
                 "      }" +
                 "    }" +
@@ -291,13 +296,16 @@ public class SystemUI {
                 "    while (el && el !== document.documentElement) {" +
                 "      var st = window.getComputedStyle(el);" +
                 "      var bg = st.backgroundColor;" +
-                "      if (bg && bg !== 'transparent' && bg !== 'rgba(0, 0, 0, 0)') {" +
+                "      if (bg && !isBlackOrTransparent(bg)) {" +
                 "        return normalizeColor(bg);" +
                 "      }" +
                 "      el = el.parentElement;" +
                 "    }" +
                 "    var bodyBg = window.getComputedStyle(document.body).backgroundColor;" +
-                "    return normalizeColor(bodyBg) || '" + defaultHex + "';" +
+                "    if (bodyBg && !isBlackOrTransparent(bodyBg)) {" +
+                "      return normalizeColor(bodyBg);" +
+                "    }" +
+                "    return '" + defaultHex + "';" +
                 "  }" +
                 "  return extractColor();" +
                 "})();";
@@ -383,4 +391,4 @@ public class SystemUI {
     public static int getDefaultSystemColor(android.content.Context context) {
         return isDarkMode(context) ? Color.parseColor("#121212") : Color.WHITE;
     }
-            }
+                }
