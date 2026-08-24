@@ -139,14 +139,20 @@ public class MainActivity extends AppCompatActivity {
         rootContainer = new FrameLayout(this);
         rootContainer.setBackgroundColor(initialColor);
 
-        // 👑 إسناد وسم صريح ومباشر لمنع البحث العشوائي في الـ Views وقمع الومضات
+        // 👑 Frame 0 Height: حساب ارتفاع شريط الحالة ناتيفياً فوراً لمنع تولد العنصر بارتفاع 0
+        int statusBarHeight = 0;
+        int resourceId = getResources().getIdentifier("status_bar_height", "dimen", "android");
+        if (resourceId > 0) {
+            statusBarHeight = getResources().getDimensionPixelSize(resourceId);
+        }
+
         View topVisualSurface = new View(this);
         topVisualSurface.setId(View.generateViewId());
         topVisualSurface.setTag("TOP_VISUAL_SURFACE");
         topVisualSurface.setBackgroundColor(initialColor);
 
         FrameLayout.LayoutParams surfaceParams = new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, 0);
+                ViewGroup.LayoutParams.MATCH_PARENT, statusBarHeight);
         topVisualSurface.setLayoutParams(surfaceParams);
 
         setContentView(rootContainer);
@@ -643,5 +649,16 @@ public class MainActivity extends AppCompatActivity {
                 Log.w(TAG, "⚠️ activeWebView and engineManager are null.");
             }
         });
+    }
+
+    // =========================================================
+    // 👑 المزامنة الناتيفية القاطعة لأيقونات شريط الحالة عند استعادة تركيز النافذة
+    // =========================================================
+    @Override
+    public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        if (hasFocus) {
+            SystemUI.restoreHeaderOnResume(this);
+        }
     }
             }
