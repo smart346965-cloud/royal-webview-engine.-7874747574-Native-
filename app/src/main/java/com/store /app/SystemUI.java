@@ -32,6 +32,11 @@ public class SystemUI {
      */
     private static int statusBarOwner = 0;
 
+    // 👑 مالك الأيقونات الحالي
+    // 0 = WebView (Online)
+    // 1 = Offline UI
+    private static int iconOwner = 0;
+
     /**
      * 👑 رقم جيل المزامنة
      *
@@ -179,6 +184,12 @@ public class SystemUI {
 
         if (window == null) return;
 
+        // 👑 إذا الأوفلاين هو المالك، لا تكتب الأيقونات
+        if (iconOwner == 1) {
+            Log.i("ROYAL_UI_DIAG", "ICON WRITE BLOCKED — Offline owner");
+            return;
+        }
+
         // 👑 إذا القفل مفعل، تجاهل أي محاولة كتابة
         if (lockIcons) {
             Log.i("ROYAL_UI_DIAG", "ICON OVERRIDE BLOCKED — lock active");
@@ -221,11 +232,15 @@ public class SystemUI {
             if (activity.isFinishing()) return;
 
             statusBarOwner = 1;
+            iconOwner = 1; // الأوفلاين يملك اللون فقط
             cancelStatusBarSync();
             syncGeneration++;
 
-            // تطبيق اللون والأيقونات عبر المالك الموحد المباشر
+            // تطبيق اللون فقط بدون كتابة الأيقونات
             applyHeaderColor(activity, color);
+
+            // قفل الأيقونات بحيث لا يكتب الأوفلاين
+            lockStatusBarIcons();
         };
 
         if (Looper.myLooper() == Looper.getMainLooper()) {
@@ -677,7 +692,11 @@ public class SystemUI {
                                     value
                             );
 
-                    // تمرير اللون المستخرج لتلوين الجزء الناتيف + الأيقونات معًا
+                    // السماح للأونلاين فقط بالكتابة
+                    iconOwner = 0;
+                    unlockStatusBarIcons();
+
+                    // تمرير اللون المستخرج وتحديث الأيقونات
                     applyHeaderColor(
                             activity,
                             parsedColor
@@ -874,4 +893,4 @@ public class SystemUI {
     public static int getDefaultSystemColor(android.content.Context context) {
         return isDarkMode(context) ? Color.parseColor("#121212") : Color.WHITE;
     }
-            }
+    }
