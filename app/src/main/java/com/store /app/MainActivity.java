@@ -353,7 +353,7 @@ public class MainActivity extends AppCompatActivity {
                     BuildConfig.CLIENT_URL
             );
 
-            // 👑 1. المزامنة المبكرة الخفية: تشغيل الجافاسكريبت عند 2.5 ثانية لجلب لون الصفحة وتجهيز الشريط تحت الـ Splash دون المساس بالأيقونات
+            // 👑 1. المزامنة المبكرة الخفية: تشغيلها عند 3.5 ثانية (بعد اكتمال رسم DOM الصفحة) لتلوين الشريط تحت الـ Splash
             mainHandler.postDelayed(() -> {
                 if (!isFinishing() && activeWebView != null) {
                     SystemUI.syncStatusBarWithWebEarly(
@@ -361,17 +361,17 @@ public class MainActivity extends AppCompatActivity {
                             activeWebView
                     );
                 }
-            }, 2500L);
+            }, 3500L);
 
-            // 👑 2. المزامنة الشاملة والأيقونات: تُنفّذ بعد اختفاء الـ Splash لضبط ألوان الأيقونات بتوافق تام
+            // 👑 2. المزامنة الشاملة وتعديل الأيقونات: تُنفّذ فوراً لحظة بدء أنيميشن اختفاء الـ Splash (عند 5.0 ثوانٍ)
             mainHandler.postDelayed(() -> {
                 if (!isFinishing() && activeWebView != null) {
-                    SystemUI.scheduleStatusBarSync(
+                    SystemUI.syncStatusBarWithWeb(
                             MainActivity.this,
                             activeWebView
                     );
                 }
-            }, FIXED_SPLASH_TIME + 500L);
+            }, FIXED_SPLASH_TIME);
 
             isPageLoaded = true;
 
@@ -686,4 +686,4 @@ public class MainActivity extends AppCompatActivity {
             }
         }
     }
-    }
+                                                  }
