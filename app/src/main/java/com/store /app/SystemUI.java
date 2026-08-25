@@ -85,11 +85,22 @@ public class SystemUI {
     }
 
     // =========================================================
-    // 👑 2. المالك والجهة الموحدة الحقيقية لتلوين الهيدر والأيقونات (مع التدرج الناعم)
+    // 👑 2. المالك والجهة الموحدة الحقيقية لتلوين الهيدر والأيقونات
     // =========================================================
     public static void applyHeaderColor(
             android.app.Activity activity,
             int targetColor
+    ) {
+        applyHeaderColorInternal(activity, targetColor, true);
+    }
+
+    /**
+     * دالة داخلية تتيح تلوين الشريط الناتيف مع خيار التحكم في تحديث الأيقونات
+     */
+    private static void applyHeaderColorInternal(
+            android.app.Activity activity,
+            int targetColor,
+            boolean updateIcons
     ) {
         if (activity == null || activity.isFinishing()) return;
 
@@ -97,21 +108,17 @@ public class SystemUI {
             Window window = activity.getWindow();
             if (window == null) return;
 
-            // 1. تثبيت شفافية شريط النظام
             window.setStatusBarColor(Color.TRANSPARENT);
 
-            // 2. إصلاح الشفافية: دمج اللون المجلوب مع لون خلفية النافذة الأصلية لتوليد لون صلب
             int defaultBg = getDefaultSystemColor(activity);
             int solidColor = compositeColorWithBackground(targetColor, defaultBg);
 
-            // 3. استهداف مباشر وصريح لعنصر Top Visual Surface الناتيف
             View topSurface = activity.findViewById(android.R.id.content)
                     .findViewWithTag("TOP_VISUAL_SURFACE");
 
             if (topSurface != null) {
                 int currentColor = currentHeaderColor != Integer.MIN_VALUE ? currentHeaderColor : defaultBg;
                 
-                // 👑 تحريك الانتقال بين الألوان (Fade) لمدة 150 ملي ثانية لمنع رمشة العين
                 if (currentColor != solidColor) {
                     ValueAnimator colorAnimation = 
                         ValueAnimator.ofObject(new ArgbEvaluator(), currentColor, solidColor);
@@ -124,26 +131,13 @@ public class SystemUI {
                 } else {
                     topSurface.setBackgroundColor(solidColor);
                 }
-            } else {
-                // مسار احتياطي استثنائي
-                View contentView = activity.findViewById(android.R.id.content);
-                if (contentView instanceof ViewGroup) {
-                    ViewGroup contentGroup = (ViewGroup) contentView;
-                    if (contentGroup.getChildCount() > 0 && contentGroup.getChildAt(0) instanceof ViewGroup) {
-                        ViewGroup rootGroup = (ViewGroup) contentGroup.getChildAt(0);
-                        for (int i = 0; i < rootGroup.getChildCount(); i++) {
-                            View child = rootGroup.getChildAt(i);
-                            if (child.getLayoutParams().height > 0 && !(child instanceof WebView)) {
-                                child.setBackgroundColor(solidColor);
-                            }
-                        }
-                    }
-                }
             }
 
-            // 4. حساب التباين وتعديل الأيقونات بناءً على اللون الصلب الماثل للعين
-            boolean isLightHeader = isColorLight(solidColor);
-            setStatusBarIconsInternal(window, isLightHeader);
+            // 👑 تحديث الأيقونات فقط إذا أُمرت الدالة بذلك (يُؤجل لما بعد الـ Splash)
+            if (updateIcons) {
+                boolean isLightHeader = isColorLight(solidColor);
+                setStatusBarIconsInternal(window, isLightHeader);
+            }
 
             currentHeaderColor = solidColor;
         });
@@ -333,6 +327,77 @@ public class SystemUI {
 
             int parsedColor = parseColorString(activity, value);
             applyHeaderColor(activity, parsedColor);
+        });
+    }
+
+    // =========================================================
+    // 👑 7-B. المزامنة المبكرة الخفية (تصبغ الشريط تحت الـ Splash دون مساس بالأيقونات)
+    // =========================================================
+    public static void syncStatusBarWithWebEarly(
+            android.app.Activity activity,
+            WebView webView
+    ) {
+        if (activity == null || webView == null) return;
+
+        final long requestGeneration = syncGeneration;
+        String defaultHex = (currentHeaderColor != Integer.MIN_VALUE)
+                ? String.format("#%06X", (0xFFFFFF & currentHeaderColor))
+                : (isDarkMode(activity) ? "#121212" : "#FFFFFF");
+
+        String jsScript =
+                "(function() {" +
+                "  function normalizeColor(colorStr) {" +
+                "    if (!colorStr) return null;" +
+                "    try {" +
+                "      var canvas = document.createElement('canvas');" +
+                "      canvas.width = 1; canvas.height = 1;" +
+                "      var ctx = canvas.getContext('2d');" +
+                "      ctx.fillStyle = colorStr;" +
+                "      return ctx.fillStyle;" +
+                "    } catch(e) { return colorStr; }" +
+                "  }" +
+                "  function isBlackOrTransparent(colorStr) {" +
+                "    if (!colorStr) return true;" +
+                "    var c = colorStr.toLowerCase().replace(/\\s+/g, '');" +
+                "    return c === 'transparent' || c === 'rgba(0,0,0,0)' || c === '#000000' || c === '#000' || c === 'rgb(0,0,0)';" +
+                "  }" +
+                "  function extractColor() {" +
+                "    var metas = document.querySelectorAll('meta[name=\"theme-color\"]');" +
+                "    for (var i = 0; i < metas.length; i++) {" +
+                "      var m = metas[i];" +
+                "      if (!m.media || window.matchMedia(m.media).matches) {" +
+                "        if (m.content) {" +
+                "          var normalized = normalizeColor(m.content);" +
+                "          if (normalized && !isBlackOrTransparent(normalized)) return normalized;" +
+                "        }" +
+                "      }" +
+                "    }" +
+                "    var el = document.elementFromPoint(window.innerWidth / 2, 20);" +
+                "    if (!el) el = document.querySelector('header') || document.querySelector('nav') || document.body;" +
+                "    while (el && el !== document.documentElement) {" +
+                "      var st = window.getComputedStyle(el);" +
+                "      var bg = st.backgroundColor;" +
+                "      if (bg && !isBlackOrTransparent(bg)) {" +
+                "        return normalizeColor(bg);" +
+                "      }" +
+                "      el = el.parentElement;" +
+                "    }" +
+                "    var bodyBg = window.getComputedStyle(document.body).backgroundColor;" +
+                "    if (bodyBg && !isBlackOrTransparent(bodyBg)) {" +
+                "      return normalizeColor(bodyBg);" +
+                "    }" +
+                "    return '" + defaultHex + "';" +
+                "  }" +
+                "  return extractColor();" +
+                "})();";
+
+        webView.evaluateJavascript(jsScript, value -> {
+            if (requestGeneration != syncGeneration) return;
+            if (value == null || value.equals("null") || value.equals("\"null\"")) return;
+
+            int parsedColor = parseColorString(activity, value);
+            // 👑 تغيير لون الشريط الناتيف فقط دون اللمس بالأيقونات
+            applyHeaderColorInternal(activity, parsedColor, false);
         });
     }
 
