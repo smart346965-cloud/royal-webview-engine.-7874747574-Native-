@@ -1,5 +1,7 @@
 package com.store.app;
 
+import android.animation.ArgbEvaluator;
+import android.animation.ValueAnimator;
 import android.graphics.Color;
 import android.os.Handler;
 import android.os.Looper;
@@ -83,7 +85,7 @@ public class SystemUI {
     }
 
     // =========================================================
-    // 👑 2. المالك والجهة الموحدة الحقيقية لتلوين الهيدر والأيقونات
+    // 👑 2. المالك والجهة الموحدة الحقيقية لتلوين الهيدر والأيقونات (مع التدرج الناعم)
     // =========================================================
     public static void applyHeaderColor(
             android.app.Activity activity,
@@ -102,12 +104,26 @@ public class SystemUI {
             int defaultBg = getDefaultSystemColor(activity);
             int solidColor = compositeColorWithBackground(targetColor, defaultBg);
 
-            // 3. استهداف مباشر وصريح لعنصر Top Visual Surface الناتيف عبر الوسم (Tag)
+            // 3. استهداف مباشر وصريح لعنصر Top Visual Surface الناتيف
             View topSurface = activity.findViewById(android.R.id.content)
                     .findViewWithTag("TOP_VISUAL_SURFACE");
 
             if (topSurface != null) {
-                topSurface.setBackgroundColor(solidColor);
+                int currentColor = currentHeaderColor != Integer.MIN_VALUE ? currentHeaderColor : defaultBg;
+                
+                // 👑 تحريك الانتقال بين الألوان (Fade) لمدة 150 ملي ثانية لمنع رمشة العين
+                if (currentColor != solidColor) {
+                    ValueAnimator colorAnimation = 
+                        ValueAnimator.ofObject(new ArgbEvaluator(), currentColor, solidColor);
+                    colorAnimation.setDuration(150L);
+                    colorAnimation.addUpdateListener(animator -> {
+                        int animatedColor = (int) animator.getAnimatedValue();
+                        topSurface.setBackgroundColor(animatedColor);
+                    });
+                    colorAnimation.start();
+                } else {
+                    topSurface.setBackgroundColor(solidColor);
+                }
             } else {
                 // مسار احتياطي استثنائي
                 View contentView = activity.findViewById(android.R.id.content);
@@ -391,4 +407,4 @@ public class SystemUI {
     public static int getDefaultSystemColor(android.content.Context context) {
         return isDarkMode(context) ? Color.parseColor("#121212") : Color.WHITE;
     }
-                }
+    }
