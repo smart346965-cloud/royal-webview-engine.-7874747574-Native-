@@ -117,20 +117,7 @@ public class SystemUI {
                     .findViewWithTag("TOP_VISUAL_SURFACE");
 
             if (topSurface != null) {
-                int currentColor = currentHeaderColor != Integer.MIN_VALUE ? currentHeaderColor : defaultBg;
-                
-                if (currentColor != solidColor) {
-                    ValueAnimator colorAnimation = 
-                        ValueAnimator.ofObject(new ArgbEvaluator(), currentColor, solidColor);
-                    colorAnimation.setDuration(150L);
-                    colorAnimation.addUpdateListener(animator -> {
-                        int animatedColor = (int) animator.getAnimatedValue();
-                        topSurface.setBackgroundColor(animatedColor);
-                    });
-                    colorAnimation.start();
-                } else {
-                    topSurface.setBackgroundColor(solidColor);
-                }
+                topSurface.setBackgroundColor(solidColor);
             }
 
             // 👑 تحديث الأيقونات فقط إذا أُمرت الدالة بذلك (يُؤجل لما بعد الـ Splash)
