@@ -139,39 +139,43 @@ public class MainActivity extends AppCompatActivity {
         rootContainer = new FrameLayout(this);
         rootContainer.setBackgroundColor(initialColor);
 
-        // 👑 Frame 0 Height: حساب ارتفاع شريط الحالة ناتيفياً فوراً لمنع تولد العنصر بارتفاع 0
+        // 👑 حساب الارتفاع الناتيفي لشريط الحالة صريحاً فوراً بدون انتظر
         int statusBarHeight = 0;
         int resourceId = getResources().getIdentifier("status_bar_height", "dimen", "android");
         if (resourceId > 0) {
             statusBarHeight = getResources().getDimensionPixelSize(resourceId);
         }
 
+        // 👑 إنشاء الدرع الناتيف الصلب المطابق تماماً للون السبلاش
         View topVisualSurface = new View(this);
         topVisualSurface.setId(View.generateViewId());
         topVisualSurface.setTag("TOP_VISUAL_SURFACE");
         topVisualSurface.setBackgroundColor(initialColor);
 
+        // إضافة العنصر فوراً بارتفاعه الصريح للدرع
         FrameLayout.LayoutParams surfaceParams = new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, statusBarHeight);
+                ViewGroup.LayoutParams.MATCH_PARENT, 
+                statusBarHeight > 0 ? statusBarHeight : ViewGroup.LayoutParams.WRAP_CONTENT
+        );
         topVisualSurface.setLayoutParams(surfaceParams);
 
         setContentView(rootContainer);
+        rootContainer.addView(topVisualSurface);
 
-        // تطبيق ارتفاع شريط الحالة والنوتش على العنصر الناتيف العلوي
+        // تحديث الارتفاع بدقة متناهية عند حساب النوتش دون إخفاء العنصر في Frame 0
         ViewCompat.setOnApplyWindowInsetsListener(rootContainer, (v, insets) -> {
             int insetTop = insets.getInsets(WindowInsetsCompat.Type.statusBars()
                     | WindowInsetsCompat.Type.displayCutout()).top;
 
-            ViewGroup.LayoutParams lp = topVisualSurface.getLayoutParams();
-            if (lp.height != insetTop) {
-                lp.height = insetTop;
-                topVisualSurface.setLayoutParams(lp);
+            if (insetTop > 0) {
+                ViewGroup.LayoutParams lp = topVisualSurface.getLayoutParams();
+                if (lp.height != insetTop) {
+                    lp.height = insetTop;
+                    topVisualSurface.setLayoutParams(lp);
+                }
             }
             return insets;
         });
-
-        // إضافة العنصر الناتيف العلوي للحاوية
-        rootContainer.addView(topVisualSurface);
 
         /*
          * Chromium startup barrier.
