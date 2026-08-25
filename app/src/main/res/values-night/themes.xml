@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources xmlns:tools="http://schemas.android.com/tools">
-    <!-- 👑 ثيم الـ Splash الليلي الموحد (يتفعل مع وضع الليل تلقائياً) -->
     <style name="Theme.App.Starting" parent="Theme.SplashScreen">
         <item name="windowSplashScreenBackground">#121212</item>
         <item name="windowSplashScreenAnimatedIcon">@mipmap/ic_launcher_round</item>
@@ -8,10 +7,10 @@
         <item name="postSplashScreenTheme">@style/AppTheme_NoSplash</item>
     </style>
 
-    <!-- 👑 ثيم التطبيق الليلي الأساسي بعد انقضاء الـ Splash -->
     <style name="AppTheme_NoSplash" parent="Theme.Material3.Dark.NoActionBar">
+        <!-- 👑 جعل شريط الحالة وشريط التنقل شفافين تماماً -->
+        <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
-        <item name="android:windowActivityTransitions">true</item>
         <item name="android:windowDrawsSystemBarBackgrounds">true</item>
         <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
         <item name="android:windowLightNavigationBar" tools:targetApi="o_mr1">false</item>
