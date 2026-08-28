@@ -71,6 +71,12 @@ public class MainActivity extends AppCompatActivity {
     private final Handler mainHandler =
             new Handler(Looper.getMainLooper());
 
+    // 👑 الحاويات النيتيف الثلاث المخصصة للباقة الفاخرة (VIP Module Slots)
+    private FrameLayout headerContainer;
+    private FrameLayout bottomContainer;
+    private FrameLayout sidebarContainer;
+    private FrameLayout webViewContainer;
+
     // =========================================================
     // 🚀 دورة الحياة الأساسية
     // =========================================================
@@ -136,8 +142,24 @@ public class MainActivity extends AppCompatActivity {
             );
         }
 
+        // 👑 إنشاء الجذر والحاويات البرمجية الثلاث
         rootContainer = new FrameLayout(this);
         rootContainer.setBackgroundColor(initialColor);
+
+        // 1. حاوية الـ WebView الرئيسية
+        webViewContainer = new FrameLayout(this);
+
+        // 2. حاوية الهيدر العلوي (افتراضياً مخفية View.GONE)
+        headerContainer = new FrameLayout(this);
+        headerContainer.setVisibility(View.GONE);
+
+        // 3. حاوية القائمة السفلية (افتراضياً مخفية View.GONE)
+        bottomContainer = new FrameLayout(this);
+        bottomContainer.setVisibility(View.GONE);
+
+        // 4. حاوية القائمة الجانبية (افتراضياً مخفية View.GONE)
+        sidebarContainer = new FrameLayout(this);
+        sidebarContainer.setVisibility(View.GONE);
 
         // 👑 حساب الارتفاع الناتيفي لشريط الحالة صريحاً فوراً بدون انتظر
         int statusBarHeight = 0;
@@ -204,20 +226,28 @@ public class MainActivity extends AppCompatActivity {
         activeWebView =
                 RoyalWebViewHost.attach(this);
 
-        /*
-         * WebView يدخل خلف الـ Splash.
-         *
-         * index 0 = خلفية
-         * Splash = فوقه (لكننا لا نستخدم splashContainer الآن)
-         */
-        rootContainer.addView(
+        // 👑 إضافة الـ WebView داخل حاويته المخصصة لعدم التأثير على الهيدر والفوتر
+        webViewContainer.addView(
                 activeWebView,
-                0,
                 new FrameLayout.LayoutParams(
                         ViewGroup.LayoutParams.MATCH_PARENT,
                         ViewGroup.LayoutParams.MATCH_PARENT
                 )
         );
+
+        // تنظيم إضافة الحاويات داخل الـ rootContainer بالترتيب الصحيح
+        rootContainer.addView(webViewContainer, 0, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        rootContainer.addView(headerContainer, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        
+        FrameLayout.LayoutParams bottomParams = new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        bottomParams.gravity = android.view.Gravity.BOTTOM;
+        rootContainer.addView(bottomContainer, bottomParams);
+
+        rootContainer.addView(sidebarContainer, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
 
         // 👑 تقليص Viewport المحرك أصلياً عبر Top Margin لحماية عناصر position: fixed
         ViewCompat.setOnApplyWindowInsetsListener(activeWebView, (v, insets) -> {
@@ -420,6 +450,9 @@ public class MainActivity extends AppCompatActivity {
                     true
             );
         }
+
+        // 👑 فحص وتفعيل الموديولات للباقة الفاخرة (إن وجدت)
+        loadVIPModules();
     }
 
     // =========================================================
@@ -686,4 +719,24 @@ public class MainActivity extends AppCompatActivity {
             }
         }
     }
+
+    // =========================================================
+    // 👑 دالة تفعيل الموديولات النيتيف الفاخرة آمنة تماماً (Zero-Crash)
+    // =========================================================
+    private void loadVIPModules() {
+        try {
+            // محاولة استدعاء حقن الموديول النيتيف فقط إذا تم حقنه أثناء البناء للباقة الفاخرة
+            Class<?> moduleInjector = Class.forName("com.store.app.modules.CustomModuleInjector");
+            java.lang.reflect.Method injectMethod = moduleInjector.getMethod("inject", 
+                    AppCompatActivity.class, FrameLayout.class, FrameLayout.class, FrameLayout.class, WebView.class);
+            
+            injectMethod.invoke(null, this, headerContainer, bottomContainer, sidebarContainer, activeWebView);
+            Log.i(TAG, "👑 VIP Native Modules Loaded Successfully!");
+        } catch (ClassNotFoundException e) {
+            // في الباقة العادية: الكلاس غير موجود، تظل الحاويات GONE وتعمل WebView بكامل الشاشة بأقصى أداء!
+            Log.i(TAG, "ℹ️ Basic Plan Active: Native Modules Slot Empty (Full Screen WebView).");
+        } catch (Throwable t) {
+            Log.e(TAG, "⚠️ Failed to initialize Native Modules.", t);
+        }
     }
+                        }
