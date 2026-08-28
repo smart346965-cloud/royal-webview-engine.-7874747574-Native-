@@ -60,6 +60,74 @@ jobs:
       #     IS_LIGHT_BG=true
       #     EOF
 
+      - name: Generate & Deploy config.json (Native Engine Only) 👑
+        if: github.event.client_payload.plan == 'native_engine'
+        run: |
+          echo "🔥 Creating runtime config.json for Premium App..."
+          mkdir -p output_config
+          
+          cat << 'EOF' > output_config/config.json
+          ${{ toJson(github.event.client_payload) }}
+          EOF
+
+          echo "✅ Config JSON Generated Successfully:"
+          cat output_config/config.json
+
+          # 🌐 [رفع الملف إلى Cloudflare CDN / R2 Storage]
+          echo "🚀 Deploying config.json to Cloudflare CDN..."
+          
+          # ⚙️ المتغيرات (استبدل القيم الوهمية بالبيانات الحقيقية لاحقاً من Cloudflare)
+          CF_ACCOUNT_ID="YOUR_CLOUDFLARE_ACCOUNT_ID_HERE"
+          CF_R2_BUCKET="nexus-configs"
+          CF_API_TOKEN="${{ secrets.CLOUDFLARE_API_TOKEN }}"
+          APP_ID="${{ github.event.client_payload.appId }}"
+
+          # أمر الرفع الصريح التلقائي إلى السحابة
+          curl -X PUT "https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/r2/buckets/${CF_R2_BUCKET}/objects/${APP_ID}.json" \
+            -H "Authorization: Bearer ${CF_API_TOKEN}" \
+            -H "Content-Type: application/json" \
+            --data-binary @output_config/config.json || echo "⚠️ Warning: Cloudflare upload skipped (Check API Credentials)."
+
+      # 🧩 1. سحب موديول العميل الفاخر من المستودع الخاص
+      - name: Fetch VIP Client Modules 🧩
+        if: github.event.client_payload.plan == 'native_engine'
+        uses: actions/checkout@v4
+        with:
+          repository: 'smart346965-cloud/nexus-clients-modules' # 👈 مستودع الموديولات المخصص
+          token: ${{ secrets.MODULES_REPOSITORY_PAT }} # 👈 المفتاح السري المعتمد
+          path: 'temp_vip_modules'
+
+      # 💉 2. حقن ملفات الكود والتصاميم بداخل كود الأندرويد الأصلي
+      - name: Inject VIP Modules into Android Project 💉
+        if: github.event.client_payload.plan == 'native_engine'
+        run: |
+          CLIENT_UID="${{ github.event.client_payload.uid }}"
+          APP_ID="${{ github.event.client_payload.appId }}"
+          
+          # المسار الدقيق لموديول العميل المعني
+          MODULE_PATH="temp_vip_modules/clients/client_${CLIENT_UID}/modules/mod_header_${APP_ID}"
+
+          echo "🚀 Injecting Custom Native Modules for Client UID: ${CLIENT_UID} | AppID: ${APP_ID}"
+
+          # إنشاء مجلدات المستقبل داخل مشروع الأندرويد
+          mkdir -p app/src/main/java/com/store/app/modules/
+          mkdir -p app/src/main/res/layout/
+
+          # أ. نسخ ملفات كود الأندرويد (Kotlin / Java)
+          if [ -d "$MODULE_PATH" ]; then
+            find "$MODULE_PATH" -type f \( -name "*.kt" -o -name "*.java" \) -exec cp {} app/src/main/java/com/store/app/modules/ \;
+            echo "✅ Native Code Files Injected Successfully!"
+
+            # ب. نسخ ملفات التنسيق والواجهات (XML Layouts)
+            find "$MODULE_PATH" -type f -name "*.xml" -exec cp {} app/src/main/res/layout/ \;
+            echo "✅ XML Layout Files Injected Successfully!"
+          else
+            echo "⚠️ Notice: VIP Module Directory Not Found at $MODULE_PATH. Building with Base Default Slots."
+          fi
+
+          # تنظيف المجلد المؤقت
+          rm -rf temp_vip_modules
+
       - name: Nexus Root Diagnostic 🔍
         run: |
           echo "========== BUILD.GRADLE CONTENT =========="
@@ -67,18 +135,44 @@ jobs:
           echo "========== GRADLE VERSION =========="
           ./gradlew --version
 
+      - name: Auto-Fetch Lucide SVG Icons 🎨
+        if: github.event.client_payload.plan == 'native_engine'
+        run: |
+          echo "🎨 Processing Icon Download for Premium Bottom Navigation..."
+          mkdir -p app/src/main/res/drawable/
+          
+          # استخراج أسماء الأيقونات وتنزيلها تلقائياً كملفات Vector
+          ICONS=$(echo '${{ toJson(github.event.client_payload.bottomNav) }}' | jq -r '.[].iconName // empty')
+
+          for icon in $ICONS; do
+            if [ -n "$icon" ]; then
+              echo "📥 Fetching Lucide Icon: $icon"
+              curl -sL "https://raw.githubusercontent.com/lucide-icons/lucide/main/icons/${icon}.svg" -o "app/src/main/res/drawable/ic_lucide_${icon}.svg" || true
+            fi
+          done
+
       - name: Build Signed APK & AAB 👑
         run: |
-          # 👑 التقاط الرابط بذكاء: إما من الوركر (client_payload) أو من الإدخال اليدوي للتجارب (inputs)
           INJECTED_URL="${{ github.event.client_payload.url || github.event.inputs.test_url }}"
-          echo "🔥 Injecting Target URL: $INJECTED_URL into the App Core..."
+          PLAN_TYPE="${{ github.event.client_payload.plan || 'app_conversion' }}"
+          APP_ID="${{ github.event.client_payload.appId || 'default' }}"
+
+          # تحديد رابط الإعدادات فقط إذا كانت الباقة native_engine
+          if [ "$PLAN_TYPE" = "native_engine" ]; then
+            CONFIG_URL_PARAM="-PCONFIG_URL=https://cdn.yourdomain.com/configs/${APP_ID}.json"
+          else
+            CONFIG_URL_PARAM="-PCONFIG_URL="
+          fi
+
+          echo "🔥 Injecting Target URL: $INJECTED_URL | Plan: $PLAN_TYPE"
 
           ./gradlew clean assembleRelease bundleRelease \
             -Pandroid.injected.signing.store.file=$(pwd)/release-key.jks \
             -Pandroid.injected.signing.store.password=${{ env.KEYSTORE_PASSWORD }} \
             -Pandroid.injected.signing.key.alias=${{ env.KEY_ALIAS }} \
             -Pandroid.injected.signing.key.password=${{ env.KEY_PASSWORD }} \
-            -PCLIENT_URL="$INJECTED_URL" # 👈 تمرير الرابط إلى محرك بناء الأندرويد
+            -PCLIENT_URL="$INJECTED_URL" \
+            $CONFIG_URL_PARAM
 
       - name: Extract Real SHA256 Fingerprint 🔐
         id: cert_info
