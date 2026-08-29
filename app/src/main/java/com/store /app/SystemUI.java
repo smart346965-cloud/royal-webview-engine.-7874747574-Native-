@@ -258,7 +258,7 @@ public class SystemUI {
         // 👑 لون النظام المبدئي كـ Fallback آمن لمنع إرجاع الأسود أثناء التهيئة
         String defaultHex = (currentHeaderColor != Integer.MIN_VALUE)
                 ? String.format("#%06X", (0xFFFFFF & currentHeaderColor))
-                : (isDarkMode(activity) ? "#121212" : "#FFFFFF");
+                : (isDarkMode(activity) ? "#0A0D2F" : "#FFFFFF");
 
         String jsScript =
                 "(function() {" +
@@ -329,7 +329,7 @@ public class SystemUI {
         final long requestGeneration = syncGeneration;
         String defaultHex = (currentHeaderColor != Integer.MIN_VALUE)
                 ? String.format("#%06X", (0xFFFFFF & currentHeaderColor))
-                : (isDarkMode(activity) ? "#121212" : "#FFFFFF");
+                : (isDarkMode(activity) ? "#0A0D2F" : "#FFFFFF");
 
         String jsScript =
                 "(function() {" +
@@ -457,6 +457,6 @@ public class SystemUI {
     }
 
     public static int getDefaultSystemColor(android.content.Context context) {
-        return isDarkMode(context) ? Color.parseColor("#121212") : Color.WHITE;
+        return isDarkMode(context) ? Color.parseColor("#0A0D2F") : Color.WHITE;
     }
     }
