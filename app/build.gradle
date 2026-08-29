@@ -55,6 +55,9 @@ dependencies {
     // 🔔 OneSignal
     implementation libs.onesignal
 
+    // 👑 WorkManager
+    implementation libs.work.runtime
+
     // 🔐 Auth Tab / Custom Tabs (الحل الرسمي من Google لجميع المصادقات والدفع)
     implementation libs.androidx.browser
 
