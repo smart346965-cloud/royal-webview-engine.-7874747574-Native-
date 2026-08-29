@@ -13,14 +13,22 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v4
-      - name: set up JDK 21
+
+      - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
-          java-version: '21'
+          java-version: '17'
           distribution: 'temurin'
           cache: gradle
+
+      - name: Install Android SDK 36
+        run: |
+          yes | sdkmanager --licenses > /dev/null || true
+          sdkmanager "platforms;android-36" "build-tools;36.0.0"
+
       - name: Grant execute permission
         run: chmod +x gradlew
 
@@ -127,6 +135,17 @@ jobs:
 
           # تنظيف المجلد المؤقت
           rm -rf temp_vip_modules
+
+      - name: Verify Build Toolchain 👑
+        run: |
+          echo "========== JAVA =========="
+          java -version
+
+          echo "========== GRADLE =========="
+          ./gradlew --version
+
+          echo "========== ANDROID SDK =========="
+          sdkmanager --list_installed | grep -E "platforms;android-36|build-tools;36.0.0" || true
 
       - name: Nexus Root Diagnostic 🔍
         run: |
