@@ -19,3 +19,26 @@
 # If you keep the line number information, uncomment this to
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
+
+# ============================================================
+# AndroidX WorkManager / Startup — R8 Runtime Protection
+# ============================================================
+
+-keep class androidx.work.** { *; }
+-keep class androidx.startup.** { *; }
+
+-keep class androidx.work.impl.WorkDatabase { *; }
+-keep class androidx.work.impl.WorkDatabase_Impl { *; }
+
+-keep class androidx.work.impl.WorkManagerInitializer { *; }
+
+-keepclassmembers class * extends androidx.work.ListenableWorker {
+    <init>(...);
+}
+
+-keepclassmembers class * extends androidx.work.Worker {
+    <init>(...);
+}
+
+-keepnames class androidx.work.**
+-keepnames class androidx.startup.**
