@@ -915,6 +915,80 @@ public class WebEngineManager {
         });
     }
 
+    // ==========================================
+    // 🧭 دوال فتح الروابط الخارجية
+    // ==========================================
+
+    /**
+     * فتح رابط HTTP/HTTPS خارجي في Custom Tab مع جلسة مسبقة إن وجدت.
+     */
+    private boolean launchExternalWebUrl(Uri uri) {
+        if (activity == null || uri == null) {
+            return false;
+        }
+
+        try {
+            CustomTabsIntent.Builder builder =
+                    (customTabsSession != null)
+                            ? new CustomTabsIntent.Builder(customTabsSession)
+                            : new CustomTabsIntent.Builder();
+
+            builder.setShowTitle(true);
+            builder.setShareState(CustomTabsIntent.SHARE_STATE_OFF);
+
+            CustomTabsIntent customTabsIntent = builder.build();
+
+            customTabsIntent.launchUrl(activity, uri);
+
+            Log.i(TAG, "🌐 External HTTP/HTTPS opened in Custom Tab: " + uri);
+
+            return true;
+
+        } catch (Throwable e) {
+            Log.e(TAG, "❌ Failed to open external URL in Custom Tab: " + uri, e);
+
+            // Fallback آمن للمتصفح/النظام
+            return launchExternal(uri);
+        }
+    }
+
+    private boolean launchExternal(Uri uri) {
+        try {
+            Intent intent = new Intent(Intent.ACTION_VIEW, uri);
+            intent.addCategory(Intent.CATEGORY_BROWSABLE);
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+
+            if (intent.resolveActivity(context.getPackageManager()) != null) {
+                applyNativeExitTransition();
+                context.startActivity(intent);
+            } else {
+                Log.w("RoyalEngine", "No Activity found for: " + uri);
+            }
+        } catch (Exception e) {
+            Log.e("RoyalEngine", "External launch failed", e);
+        }
+        return true;
+    }
+
+    private void applyNativeExitTransition() {
+        if (activity != null) {
+            activity.runOnUiThread(() -> {
+                activity.overridePendingTransition(android.R.anim.fade_in, android.R.anim.fade_out);
+            });
+        }
+    }
+
+    // =====================================================================
+    // 🔥 دوال الحالة العامة المطلوبة من الخارج
+    // =====================================================================
+    public boolean isPageValid() {
+        return OfflineStateManager.getInstance().isPageValid();
+    }
+
+    public boolean isOnErrorPage() {
+        return OfflineStateManager.getInstance().isOnErrorPage();
+    }
+
     private boolean handleUriLogic(Uri uri, boolean isMainFrame) {
         if (uri == null) return false;
 
@@ -956,7 +1030,7 @@ public class WebEngineManager {
         }
 
         if ("http".equals(scheme) || "https".equals(scheme)) {
-            return false;
+            return launchExternalWebUrl(uri);
         }
 
         // ✅ منع فتح روابط المصادقة المخصصة داخليًا أو خارجيًا
@@ -966,42 +1040,5 @@ public class WebEngineManager {
         }
 
         return launchExternal(uri);
-    }
-
-    private boolean launchExternal(Uri uri) {
-        try {
-            Intent intent = new Intent(Intent.ACTION_VIEW, uri);
-            intent.addCategory(Intent.CATEGORY_BROWSABLE);
-            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-
-            if (intent.resolveActivity(context.getPackageManager()) != null) {
-                applyNativeExitTransition();
-                context.startActivity(intent);
-            } else {
-                Log.w("RoyalEngine", "No Activity found for: " + uri);
-            }
-        } catch (Exception e) {
-            Log.e("RoyalEngine", "External launch failed", e);
-        }
-        return true;
-    }
-
-    private void applyNativeExitTransition() {
-        if (activity != null) {
-            activity.runOnUiThread(() -> {
-                activity.overridePendingTransition(android.R.anim.fade_in, android.R.anim.fade_out);
-            });
-        }
-    }
-
-    // =====================================================================
-    // 🔥 دوال الحالة العامة المطلوبة من الخارج
-    // =====================================================================
-    public boolean isPageValid() {
-        return OfflineStateManager.getInstance().isPageValid();
-    }
-
-    public boolean isOnErrorPage() {
-        return OfflineStateManager.getInstance().isOnErrorPage();
     }
     }
