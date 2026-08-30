@@ -412,7 +412,7 @@ public class OfflineUIController {
      */
     private Drawable createCardDrawable() {
         GradientDrawable gd = new GradientDrawable();
-        gd.setColor(Color.parseColor("#1C1C1E"));
+        gd.setColor(Color.parseColor("#E5E7EB")); // لون رمادي فاتح منسجم مع الخلفية البيضاء
         gd.setCornerRadii(new float[]{72, 72, 72, 72, 0, 0, 0, 0});
         return gd;
     }
