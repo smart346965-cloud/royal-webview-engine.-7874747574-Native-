@@ -1,17 +1,21 @@
 package com.store.app.offline;
 
 import android.app.Activity;
+import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.Paint;
+import android.graphics.Path;
+import android.graphics.RectF;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
+import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.webkit.WebView;
 import android.widget.FrameLayout;
-import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.TextView;
@@ -54,10 +58,21 @@ public class OfflineUIController {
     private boolean isOfflineUIVisible = false;
     private boolean isPageLoaded = false;
 
-    // 👑 اللون المرجعي الحالي لواجهة الأوفلاين.
-    // غيّره مستقبلاً هنا فقط إذا تغير تصميم الواجهة.
-    private int offlineSurfaceColor =
+    // 👑 ألوان واجهة الأوفلاين المركزية
+    private static final int OFFLINE_BACKGROUND =
             Color.parseColor("#F3F4F6");
+
+    private static final int OFFLINE_CARD =
+            Color.parseColor("#1C1C1E");
+
+    private static final int OFFLINE_PRIMARY_TEXT =
+            Color.WHITE;
+
+    private static final int OFFLINE_SECONDARY_TEXT =
+            Color.parseColor("#9CA3AF");
+
+    private static final int OFFLINE_ACCENT =
+            Color.parseColor("#7C8CF8");
 
     // مراجع للعناصر الأخرى (للوصول إليها من MainActivity)
     public interface OfflineUICallback {
@@ -121,7 +136,7 @@ public class OfflineUIController {
 
             SystemUI.applyHeaderColor(
                     activity,
-                    offlineSurfaceColor
+                    OFFLINE_BACKGROUND
             );
 
             // الإنترنت مقطوع
@@ -282,139 +297,372 @@ public class OfflineUIController {
      * 🍏 واجهة الأوفلاين الناتيف الكبيرة
      */
     private void createPureOfflineUI() {
+
         if (activity == null) return;
 
-        // 1. الحاوية الرئيسية
+        // =====================================================
+        // 👑 ROOT OFFLINE SURFACE
+        // =====================================================
+
         pureOfflineUI = new FrameLayout(activity);
 
         pureOfflineUI.setBackgroundColor(
-                offlineSurfaceColor
+                OFFLINE_BACKGROUND
         );
 
         pureOfflineUI.setVisibility(View.GONE);
 
-        // ☁️ أيقونة السحابة
-        ImageView cloudIcon = new ImageView(activity);
-        cloudIcon.setImageResource(R.drawable.ic_cloud_off);
-        cloudIcon.setAlpha(0.6f);
-        FrameLayout.LayoutParams cloudParams = new FrameLayout.LayoutParams(90, 90,
-                android.view.Gravity.TOP | android.view.Gravity.START);
-        cloudParams.setMargins(60, 80, 0, 0);
-        pureOfflineUI.addView(cloudIcon, cloudParams);
+        // =====================================================
+        // 🎨 PROFESSIONAL OFFLINE ILLUSTRATION
+        // =====================================================
 
-        // 🖼️ شعار المتجر
-        ImageView logo = new ImageView(activity);
-        logo.setImageResource(R.mipmap.ic_launcher);
-        FrameLayout.LayoutParams logoParams = new FrameLayout.LayoutParams(280, 280,
-                android.view.Gravity.CENTER);
-        logoParams.bottomMargin = 200;
-        pureOfflineUI.addView(logo, logoParams);
+        OfflineIllustrationView illustration =
+                new OfflineIllustrationView(activity);
 
-        // 💳 النافذة المنبثقة السفلية (Bottom Card Sheet)
+        FrameLayout.LayoutParams illustrationParams =
+                new FrameLayout.LayoutParams(
+                        dp(230),
+                        dp(230),
+                        Gravity.TOP | Gravity.CENTER_HORIZONTAL
+                );
+
+        illustrationParams.topMargin = dp(54);
+
+        pureOfflineUI.addView(
+                illustration,
+                illustrationParams
+        );
+
+        // =====================================================
+        // 💳 BOTTOM CARD
+        // =====================================================
+
         LinearLayout bottomCard = new LinearLayout(activity);
-        bottomCard.setOrientation(LinearLayout.VERTICAL);
-        bottomCard.setBackground(createCardDrawable());
-        bottomCard.setPadding(64, 72, 64, 88);
-        bottomCard.setGravity(android.view.Gravity.CENTER_HORIZONTAL);
 
-        // العنوان الرئيسي
+        bottomCard.setOrientation(
+                LinearLayout.VERTICAL
+        );
+
+        bottomCard.setBackground(
+                createCardDrawable()
+        );
+
+        bottomCard.setPadding(
+                dp(32),
+                dp(38),
+                dp(32),
+                dp(46)
+        );
+
+        bottomCard.setGravity(
+                Gravity.CENTER_HORIZONTAL
+        );
+
+        // =====================================================
+        // 📝 TITLE
+        // =====================================================
+
         TextView titleMsg = new TextView(activity);
-        titleMsg.setText("لا يوجد اتصال بالإنترنت");
-        titleMsg.setTextColor(Color.WHITE);
+
+        titleMsg.setText(
+                "لا يوجد اتصال بالإنترنت"
+        );
+
+        titleMsg.setTextColor(
+                OFFLINE_PRIMARY_TEXT
+        );
+
         titleMsg.setTextSize(18f);
-        titleMsg.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
-        titleMsg.setGravity(android.view.Gravity.CENTER);
-        LinearLayout.LayoutParams titleParams = new LinearLayout.LayoutParams(-1, -2);
-        titleParams.bottomMargin = 20;
-        bottomCard.addView(titleMsg, titleParams);
 
-        // الوصف الفرعي
+        titleMsg.setTypeface(
+                android.graphics.Typeface.DEFAULT_BOLD
+        );
+
+        titleMsg.setGravity(
+                Gravity.CENTER
+        );
+
+        LinearLayout.LayoutParams titleParams =
+                new LinearLayout.LayoutParams(
+                        -1,
+                        -2
+                );
+
+        titleParams.bottomMargin = dp(20);
+
+        bottomCard.addView(
+                titleMsg,
+                titleParams
+        );
+
+        // =====================================================
+        // 📝 DESCRIPTION
+        // =====================================================
+
         TextView subMsg = new TextView(activity);
-        subMsg.setText("يبدو أنك غير متصل بالشبكة. يرجى التحقق من الواي فاي أو بيانات الهاتف والمحاولة مجدداً.");
-        subMsg.setTextColor(Color.parseColor("#9CA3AF"));
+
+        subMsg.setText(
+                "يبدو أنك غير متصل بالشبكة. يرجى التحقق من الواي فاي أو بيانات الهاتف والمحاولة مجدداً."
+        );
+
+        subMsg.setTextColor(
+                OFFLINE_SECONDARY_TEXT
+        );
+
         subMsg.setTextSize(14f);
-        subMsg.setGravity(android.view.Gravity.CENTER);
-        subMsg.setLineSpacing(10f, 1.1f);
-        LinearLayout.LayoutParams subParams = new LinearLayout.LayoutParams(-1, -2);
-        subParams.bottomMargin = 56;
-        bottomCard.addView(subMsg, subParams);
 
-        // زر الإجراء الرئيسي (Pill Button)
-        FrameLayout btnContainer = new FrameLayout(activity);
-        GradientDrawable btnBg = new GradientDrawable();
-        btnBg.setColor(Color.parseColor("#007AFF"));
-        btnBg.setCornerRadius(36f);
-        btnContainer.setBackground(btnBg);
-        btnContainer.setPadding(0, 32, 0, 32);
+        subMsg.setGravity(
+                Gravity.CENTER
+        );
 
-        LinearLayout btnContent = new LinearLayout(activity);
-        btnContent.setOrientation(LinearLayout.HORIZONTAL);
-        btnContent.setGravity(android.view.Gravity.CENTER);
+        subMsg.setLineSpacing(
+                dp(10),
+                1.1f
+        );
 
-        TextView retryText = new TextView(activity);
-        retryText.setText("🔄  إعادة المحاولة");
-        retryText.setTextColor(Color.WHITE);
+        LinearLayout.LayoutParams subParams =
+                new LinearLayout.LayoutParams(
+                        -1,
+                        -2
+                );
+
+        subParams.bottomMargin = dp(40);
+
+        bottomCard.addView(
+                subMsg,
+                subParams
+        );
+
+        // =====================================================
+        // 🔘 RETRY BUTTON
+        // =====================================================
+
+        FrameLayout btnContainer =
+                new FrameLayout(activity);
+
+        GradientDrawable btnBg =
+                new GradientDrawable();
+
+        btnBg.setColor(
+                OFFLINE_ACCENT
+        );
+
+        btnBg.setCornerRadius(
+                dp(36)
+        );
+
+        btnContainer.setBackground(
+                btnBg
+        );
+
+        btnContainer.setPadding(
+                0,
+                dp(18),
+                0,
+                dp(18)
+        );
+
+        LinearLayout btnContent =
+                new LinearLayout(activity);
+
+        btnContent.setOrientation(
+                LinearLayout.HORIZONTAL
+        );
+
+        btnContent.setGravity(
+                Gravity.CENTER
+        );
+
+        TextView retryText =
+                new TextView(activity);
+
+        retryText.setText(
+                "🔄  إعادة المحاولة"
+        );
+
+        retryText.setTextColor(
+                Color.WHITE
+        );
+
         retryText.setTextSize(15f);
-        retryText.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
 
-        ProgressBar btnSpinner = new ProgressBar(activity, null, android.R.attr.progressBarStyleSmall);
-        btnSpinner.setVisibility(View.GONE);
-        btnSpinner.getIndeterminateDrawable().setColorFilter(Color.WHITE, android.graphics.PorterDuff.Mode.SRC_IN);
+        retryText.setTypeface(
+                android.graphics.Typeface.DEFAULT_BOLD
+        );
+
+        ProgressBar btnSpinner =
+                new ProgressBar(
+                        activity,
+                        null,
+                        android.R.attr.progressBarStyleSmall
+                );
+
+        btnSpinner.setVisibility(
+                View.GONE
+        );
+
+        btnSpinner
+                .getIndeterminateDrawable()
+                .setColorFilter(
+                        Color.WHITE,
+                        android.graphics.PorterDuff.Mode.SRC_IN
+                );
 
         btnContent.addView(retryText);
         btnContent.addView(btnSpinner);
 
-        FrameLayout.LayoutParams contentParams = new FrameLayout.LayoutParams(-2, -2,
-                android.view.Gravity.CENTER);
-        btnContainer.addView(btnContent, contentParams);
+        FrameLayout.LayoutParams contentParams =
+                new FrameLayout.LayoutParams(
+                        -2,
+                        -2,
+                        Gravity.CENTER
+                );
 
-        // تفاعل الزر
+        btnContainer.addView(
+                btnContent,
+                contentParams
+        );
+
+        // =====================================================
+        // 👆 BUTTON ACTION
+        // =====================================================
+
         btnContainer.setOnClickListener(v -> {
-            retryText.setVisibility(View.GONE);
-            btnSpinner.setVisibility(View.VISIBLE);
-            btnContainer.setEnabled(false);
 
-            new Handler(Looper.getMainLooper()).postDelayed(() -> {
+            retryText.setVisibility(
+                    View.GONE
+            );
+
+            btnSpinner.setVisibility(
+                    View.VISIBLE
+            );
+
+            btnContainer.setEnabled(
+                    false
+            );
+
+            new Handler(
+                    Looper.getMainLooper()
+            ).postDelayed(() -> {
+
                 if (NetworkMonitor.isInternetAvailable(activity)) {
+
                     hideOfflineUI();
+
                     if (webView != null) {
                         webView.reload();
                     }
-                } else {
-                    btnSpinner.setVisibility(View.GONE);
-                    retryText.setVisibility(View.VISIBLE);
-                    btnContainer.setEnabled(true);
 
-                    v.animate().translationX(12).setDuration(50)
-                            .withEndAction(() -> v.animate().translationX(-12).setDuration(50)
-                                    .withEndAction(() -> v.setTranslationX(0)).start()).start();
+                } else {
+
+                    btnSpinner.setVisibility(
+                            View.GONE
+                    );
+
+                    retryText.setVisibility(
+                            View.VISIBLE
+                    );
+
+                    btnContainer.setEnabled(
+                            true
+                    );
+
+                    v.animate()
+                            .translationX(12)
+                            .setDuration(50)
+                            .withEndAction(() ->
+                                    v.animate()
+                                            .translationX(-12)
+                                            .setDuration(50)
+                                            .withEndAction(() ->
+                                                    v.setTranslationX(0)
+                                            )
+                                            .start()
+                            )
+                            .start();
                 }
+
             }, 1000);
         });
 
-        LinearLayout.LayoutParams btnLayoutParams = new LinearLayout.LayoutParams(-1, -2);
-        btnLayoutParams.setMargins(16, 0, 16, 0);
-        bottomCard.addView(btnContainer, btnLayoutParams);
+        LinearLayout.LayoutParams btnLayoutParams =
+                new LinearLayout.LayoutParams(
+                        -1,
+                        -2
+                );
 
-        FrameLayout.LayoutParams cardParams = new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-                android.view.Gravity.BOTTOM);
-        pureOfflineUI.addView(bottomCard, cardParams);
+        btnLayoutParams.setMargins(
+                dp(8),
+                0,
+                dp(8),
+                0
+        );
 
-        activity.addContentView(pureOfflineUI, new ViewGroup.LayoutParams(-1, -1));
+        bottomCard.addView(
+                btnContainer,
+                btnLayoutParams
+        );
 
-        Log.d(TAG, "🍏 Pure Offline UI created.");
+        // =====================================================
+        // 📐 CARD POSITION
+        // =====================================================
+
+        FrameLayout.LayoutParams cardParams =
+                new FrameLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.WRAP_CONTENT,
+                        Gravity.BOTTOM
+                );
+
+        pureOfflineUI.addView(
+                bottomCard,
+                cardParams
+        );
+
+        activity.addContentView(
+                pureOfflineUI,
+                new ViewGroup.LayoutParams(
+                        -1,
+                        -1
+                )
+        );
+
+        Log.d(
+                TAG,
+                "🍏 Professional Offline UI created."
+        );
     }
 
     /**
      * 🔲 خلفية الكرت المنحنية
      */
     private Drawable createCardDrawable() {
-        GradientDrawable gd = new GradientDrawable();
-        gd.setColor(Color.parseColor("#E5E7EB")); // لون رمادي فاتح منسجم مع الخلفية البيضاء
-        gd.setCornerRadii(new float[]{72, 72, 72, 72, 0, 0, 0, 0});
+
+        GradientDrawable gd =
+                new GradientDrawable();
+
+        gd.setColor(
+                OFFLINE_CARD
+        );
+
+        gd.setCornerRadii(
+                new float[]{
+                        dp(34), dp(34),
+                        dp(34), dp(34),
+                        0, 0,
+                        0, 0
+                }
+        );
+
         return gd;
+    }
+
+    private int dp(float value) {
+        return Math.round(
+                value * activity.getResources()
+                        .getDisplayMetrics()
+                        .density
+        );
     }
 
     // =========================================================
@@ -429,7 +677,7 @@ public class OfflineUIController {
 
         SystemUI.syncWithNativeUI(
                 activity,
-                offlineSurfaceColor
+                OFFLINE_BACKGROUND
         );
     }
 
@@ -491,7 +739,7 @@ public class OfflineUIController {
              */
             SystemUI.forceNativeStatusBar(
                     activity,
-                    offlineSurfaceColor
+                    OFFLINE_BACKGROUND
             );
 
             /*
@@ -683,4 +931,300 @@ public class OfflineUIController {
     public void setCallback(OfflineUICallback callback) {
         this.callback = callback;
     }
-            }
+
+    /**
+     * 👑 Professional Offline Illustration
+     *
+     * رسم Native كامل بدون ImageView
+     * وبدون drawable خارجي.
+     */
+    private static class OfflineIllustrationView
+            extends View {
+
+        private final Paint paint =
+                new Paint(Paint.ANTI_ALIAS_FLAG);
+
+        private final Path path =
+                new Path();
+
+        private final RectF rect =
+                new RectF();
+
+        private float density;
+
+        OfflineIllustrationView(Activity activity) {
+
+            super(activity);
+
+            density = activity.getResources()
+                    .getDisplayMetrics()
+                    .density;
+
+            setLayerType(
+                    View.LAYER_TYPE_SOFTWARE,
+                    null
+            );
+        }
+
+        private float d(float value) {
+            return value * density;
+        }
+
+        @Override
+        protected void onDraw(Canvas canvas) {
+
+            super.onDraw(canvas);
+
+            float w = getWidth();
+            float h = getHeight();
+
+            float cx = w / 2f;
+            float cy = h / 2f;
+
+            paint.setStyle(
+                    Paint.Style.STROKE
+            );
+
+            paint.setStrokeCap(
+                    Paint.Cap.ROUND
+            );
+
+            paint.setStrokeJoin(
+                    Paint.Join.ROUND
+            );
+
+            // =================================================
+            // 🌐 MAIN NETWORK ORB
+            // =================================================
+
+            paint.setStrokeWidth(
+                    d(2.4f)
+            );
+
+            paint.setColor(
+                    Color.parseColor("#A7ADB8")
+            );
+
+            rect.set(
+                    cx - d(58),
+                    cy - d(58),
+                    cx + d(58),
+                    cy + d(58)
+            );
+
+            canvas.drawOval(
+                    rect,
+                    paint
+            );
+
+            // خطوط الكرة الرأسية
+            rect.set(
+                    cx - d(25),
+                    cy - d(58),
+                    cx + d(25),
+                    cy + d(58)
+            );
+
+            canvas.drawOval(
+                    rect,
+                    paint
+            );
+
+            // خط أفقي
+            canvas.drawLine(
+                    cx - d(58),
+                    cy,
+                    cx + d(58),
+                    cy,
+                    paint
+            );
+
+            // =================================================
+            // 🌐 NETWORK CONNECTION LINES
+            // =================================================
+
+            paint.setStrokeWidth(
+                    d(2f)
+            );
+
+            paint.setColor(
+                    Color.parseColor("#C4C8D0")
+            );
+
+            // أعلى يسار
+            canvas.drawLine(
+                    cx - d(54),
+                    cy - d(42),
+                    cx - d(82),
+                    cy - d(67),
+                    paint
+            );
+
+            // أعلى يمين
+            canvas.drawLine(
+                    cx + d(54),
+                    cy - d(42),
+                    cx + d(82),
+                    cy - d(67),
+                    paint
+            );
+
+            // أسفل يسار
+            canvas.drawLine(
+                    cx - d(54),
+                    cy + d(42),
+                    cx - d(82),
+                    cy + d(67),
+                    paint
+            );
+
+            // أسفل يمين
+            canvas.drawLine(
+                    cx + d(54),
+                    cy + d(42),
+                    cx + d(82),
+                    cy + d(67),
+                    paint
+            );
+
+            // =================================================
+            // ● NETWORK NODES
+            // =================================================
+
+            paint.setStyle(
+                    Paint.Style.FILL
+            );
+
+            paint.setColor(
+                    Color.parseColor("#A7ADB8")
+            );
+
+            canvas.drawCircle(
+                    cx - d(85),
+                    cy - d(70),
+                    d(7),
+                    paint
+            );
+
+            canvas.drawCircle(
+                    cx + d(85),
+                    cy - d(70),
+                    d(7),
+                    paint
+            );
+
+            canvas.drawCircle(
+                    cx - d(85),
+                    cy + d(70),
+                    d(7),
+                    paint
+            );
+
+            canvas.drawCircle(
+                    cx + d(85),
+                    cy + d(70),
+                    d(7),
+                    paint
+            );
+
+            // =================================================
+            // ⚡ BROKEN CONNECTION
+            // =================================================
+
+            paint.setStyle(
+                    Paint.Style.STROKE
+            );
+
+            paint.setStrokeWidth(
+                    d(5)
+            );
+
+            paint.setColor(
+                    Color.parseColor("#7C8CF8")
+            );
+
+            path.reset();
+
+            path.moveTo(
+                    cx - d(24),
+                    cy - d(9)
+            );
+
+            path.lineTo(
+                    cx - d(5),
+                    cy + d(10)
+            );
+
+            path.lineTo(
+                    cx + d(8),
+                    cy - d(4)
+            );
+
+            path.lineTo(
+                    cx + d(25),
+                    cy + d(14)
+            );
+
+            canvas.drawPath(
+                    path,
+                    paint
+            );
+
+            // =================================================
+            // ✕ DISCONNECTION MARK
+            // =================================================
+
+            paint.setStrokeWidth(
+                    d(4)
+            );
+
+            paint.setColor(
+                    Color.parseColor("#7C8CF8")
+            );
+
+            canvas.drawLine(
+                    cx - d(17),
+                    cy + d(82),
+                    cx + d(17),
+                    cy + d(116),
+                    paint
+            );
+
+            canvas.drawLine(
+                    cx + d(17),
+                    cy + d(82),
+                    cx - d(17),
+                    cy + d(116),
+                    paint
+            );
+
+            // =================================================
+            // ✨ SOFT GLOW
+            // =================================================
+
+            paint.setStyle(
+                    Paint.Style.FILL
+            );
+
+            paint.setColor(
+                    Color.parseColor("#147C8CF8")
+            );
+
+            paint.setShadowLayer(
+                    d(18),
+                    0,
+                    0,
+                    Color.parseColor("#557C8CF8")
+            );
+
+            canvas.drawCircle(
+                    cx,
+                    cy,
+                    d(9),
+                    paint
+            );
+
+            paint.clearShadowLayer();
+        }
+    }
+                                          }
