@@ -1,7 +1,11 @@
 package com.store.app.offline;
 
 import android.app.Activity;
+import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.Paint;
+import android.graphics.Path;
+import android.graphics.RectF;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Handler;
@@ -12,15 +16,12 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.webkit.WebView;
 import android.widget.FrameLayout;
-import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.TextView;
 
 import com.store.app.BuildConfig;
 import com.store.app.NetworkMonitor;
-import com.store.app.R;
-import com.store.app.RoyalNetworkEngine;
 import com.store.app.WebEngineManager;
 import com.store.app.SystemUI;
 import com.store.app.offline.OfflineStateManager;
@@ -315,37 +316,22 @@ public class OfflineUIController {
         );
 
         // =====================================================
-        // 🎨 ORIGINAL OFFLINE ILLUSTRATION
+        // 🎨 NATIVE OFFLINE ILLUSTRATION
         // =====================================================
 
-        ImageView illustration =
-                new ImageView(activity);
-
-        illustration.setImageResource(
-                R.drawable.offline_illustration
-        );
-
-        illustration.setScaleType(
-                ImageView.ScaleType.FIT_CENTER
-        );
-
-        illustration.setAdjustViewBounds(
-                true
-        );
-
-        illustration.setBackgroundColor(
-                Color.TRANSPARENT
-        );
+        OfflineIllustrationView illustration =
+                new OfflineIllustrationView(activity);
 
         FrameLayout.LayoutParams illustrationParams =
                 new FrameLayout.LayoutParams(
-                        dp(300),
+                        ViewGroup.LayoutParams.MATCH_PARENT,
                         dp(430),
                         Gravity.TOP | Gravity.CENTER_HORIZONTAL
                 );
 
-        illustrationParams.topMargin =
-                dp(34);
+        illustrationParams.leftMargin = dp(20);
+        illustrationParams.rightMargin = dp(20);
+        illustrationParams.topMargin = dp(24);
 
         pureOfflineUI.addView(
                 illustration,
@@ -967,5 +953,1162 @@ public class OfflineUIController {
 
     public void setCallback(OfflineUICallback callback) {
         this.callback = callback;
+    }
+
+    /**
+     * =========================================================
+     * 👑 Native Offline Illustration
+     * =========================================================
+     *
+     * رسم Native بالكامل باستخدام Canvas.
+     *
+     * المميزات:
+     *
+     * - لا يحتاج PNG
+     * - لا يحتاج Drawable
+     * - خلفية شفافة
+     * - Responsive على مختلف أحجام الشاشات
+     * - يحافظ على النسب
+     * - Glow خفيف
+     * - حدود أوضح وأغمق قليلًا
+     * - لا يعتمد على Density معينة
+     */
+    private static class OfflineIllustrationView extends View {
+
+        private final Paint paint =
+                new Paint(Paint.ANTI_ALIAS_FLAG);
+
+        private final Path path =
+                new Path();
+
+        private final RectF rect =
+                new RectF();
+
+        private final float density;
+
+        OfflineIllustrationView(Activity activity) {
+
+            super(activity);
+
+            density =
+                    activity.getResources()
+                            .getDisplayMetrics()
+                            .density;
+
+            setBackgroundColor(Color.TRANSPARENT);
+
+            /*
+             * نستخدم Software فقط لأننا نريد
+             * Shadow / Glow ناعم ومستقر على
+             * الأجهزة القديمة والجديدة.
+             */
+            setLayerType(
+                    View.LAYER_TYPE_SOFTWARE,
+                    null
+            );
+        }
+
+        private float d(float value) {
+            return value * density;
+        }
+
+        @Override
+        protected void onDraw(Canvas canvas) {
+
+            super.onDraw(canvas);
+
+            if (getWidth() <= 0 || getHeight() <= 0) {
+                return;
+            }
+
+            /*
+             * =====================================================
+             * DESIGN SPACE
+             * =====================================================
+             *
+             * الرسم الأصلي مبني على:
+             *
+             * 300 × 430
+             *
+             * ثم نقوم بعمل Scale تلقائي حسب
+             * مساحة الـ View الفعلية.
+             */
+
+            final float DESIGN_W = d(300);
+            final float DESIGN_H = d(430);
+
+            float availableW = getWidth();
+            float availableH = getHeight();
+
+            float scale =
+                    Math.min(
+                            availableW / DESIGN_W,
+                            availableH / DESIGN_H
+                    );
+
+            float offsetX =
+                    (availableW - DESIGN_W * scale) / 2f;
+
+            float offsetY =
+                    (availableH - DESIGN_H * scale) / 2f;
+
+            canvas.save();
+
+            canvas.translate(
+                    offsetX,
+                    offsetY
+            );
+
+            canvas.scale(
+                    scale,
+                    scale
+            );
+
+            /*
+             * بعد هذه النقطة كل الإحداثيات
+             * تعمل داخل مساحة 300×430.
+             */
+
+            drawCloudGlow(canvas);
+
+            drawCloud(canvas);
+
+            drawBrokenCable(canvas);
+
+            drawRouter(canvas);
+
+            drawSignal(canvas);
+
+            drawGroundShadow(canvas);
+
+            canvas.restore();
+        }
+
+        // =========================================================
+        // ✨ CLOUD GLOW
+        // =========================================================
+
+        private void drawCloudGlow(Canvas canvas) {
+
+            paint.reset();
+
+            paint.setAntiAlias(true);
+
+            paint.setStyle(
+                    Paint.Style.FILL
+            );
+
+            paint.setShader(
+                    new android.graphics.RadialGradient(
+                            d(150),
+                            d(92),
+                            d(88),
+                            new int[]{
+                                    Color.argb(48, 255, 214, 135),
+                                    Color.argb(22, 255, 226, 166),
+                                    Color.argb(0, 255, 235, 190)
+                            },
+                            new float[]{
+                                    0f,
+                                    0.45f,
+                                    1f
+                            },
+                            android.graphics.Shader.TileMode.CLAMP
+                    )
+            );
+
+            canvas.drawCircle(
+                    d(150),
+                    d(92),
+                    d(88),
+                    paint
+            );
+
+            paint.setShader(null);
+        }
+
+        // =========================================================
+        // ☁️ CLOUD
+        // =========================================================
+
+        private void drawCloud(Canvas canvas) {
+
+            path.reset();
+
+            /*
+             * قاعدة السحابة
+             */
+            path.moveTo(
+                    d(69),
+                    d(112)
+            );
+
+            /*
+             * الجانب الأيسر
+             */
+            path.cubicTo(
+                    d(61),
+                    d(111),
+                    d(55),
+                    d(105),
+                    d(55),
+                    d(97)
+            );
+
+            path.cubicTo(
+                    d(55),
+                    d(89),
+                    d(61),
+                    d(83),
+                    d(70),
+                    d(83)
+            );
+
+            /*
+             * السحابة الصغيرة اليسرى
+             */
+            path.cubicTo(
+                    d(71),
+                    d(74),
+                    d(78),
+                    d(68),
+                    d(87),
+                    d(68)
+            );
+
+            /*
+             * قمة السحابة
+             */
+            path.cubicTo(
+                    d(87),
+                    d(48),
+                    d(102),
+                    d(35),
+                    d(120),
+                    d(35)
+            );
+
+            path.cubicTo(
+                    d(137),
+                    d(35),
+                    d(149),
+                    d(44),
+                    d(153),
+                    d(57)
+            );
+
+            /*
+             * السحابة الصغيرة اليمنى
+             */
+            path.cubicTo(
+                    d(159),
+                    d(54),
+                    d(165),
+                    d(53),
+                    d(171),
+                    d(53)
+            );
+
+            path.cubicTo(
+                    d(185),
+                    d(53),
+                    d(195),
+                    d(63),
+                    d(195),
+                    d(76)
+            );
+
+            /*
+             * الجانب الأيمن
+             */
+            path.cubicTo(
+                    d(207),
+                    d(77),
+                    d(216),
+                    d(87),
+                    d(216),
+                    d(99)
+            );
+
+            path.cubicTo(
+                    d(216),
+                    d(107),
+                    d(210),
+                    d(112),
+                    d(201),
+                    d(112)
+            );
+
+            /*
+             * قاعدة السحابة
+             */
+            path.lineTo(
+                    d(69),
+                    d(112)
+            );
+
+            path.close();
+
+            /*
+             * -----------------------------------------------------
+             * Fill
+             * -----------------------------------------------------
+             */
+
+            paint.reset();
+
+            paint.setAntiAlias(true);
+
+            paint.setStyle(
+                    Paint.Style.FILL
+            );
+
+            paint.setShader(
+                    new android.graphics.LinearGradient(
+                            d(150),
+                            d(35),
+                            d(150),
+                            d(112),
+                            new int[]{
+                                    Color.rgb(250, 250, 249),
+                                    Color.rgb(232, 236, 242)
+                            },
+                            null,
+                            android.graphics.Shader.TileMode.CLAMP
+                    )
+            );
+
+            canvas.drawPath(
+                    path,
+                    paint
+            );
+
+            paint.setShader(null);
+
+            /*
+             * -----------------------------------------------------
+             * Border
+             * -----------------------------------------------------
+             *
+             * أغمق قليلاً من الصورة الأصلية
+             * حتى تكون واضحة فوق الخلفية.
+             */
+
+            paint.setStyle(
+                    Paint.Style.STROKE
+            );
+
+            paint.setStrokeWidth(
+                    d(2.4f)
+            );
+
+            paint.setStrokeCap(
+                    Paint.Cap.ROUND
+            );
+
+            paint.setStrokeJoin(
+                    Paint.Join.ROUND
+            );
+
+            paint.setColor(
+                    Color.rgb(145, 153, 164)
+            );
+
+            canvas.drawPath(
+                    path,
+                    paint
+            );
+
+            /*
+             * -----------------------------------------------------
+             * Cloud Face
+             * -----------------------------------------------------
+             */
+
+            paint.setStyle(
+                    Paint.Style.FILL
+            );
+
+            paint.setColor(
+                    Color.rgb(126, 135, 147)
+            );
+
+            // العين اليسرى
+            canvas.drawCircle(
+                    d(112),
+                    d(79),
+                    d(4.1f),
+                    paint
+            );
+
+            // العين اليمنى
+            canvas.drawCircle(
+                    d(166),
+                    d(79),
+                    d(4.1f),
+                    paint
+            );
+
+            /*
+             * الخدان
+             */
+
+            paint.setColor(
+                    Color.argb(
+                            125,
+                            232,
+                            199,
+                            172
+                    )
+            );
+
+            rect.set(
+                    d(101),
+                    d(86),
+                    d(121),
+                    d(96)
+            );
+
+            canvas.drawOval(
+                    rect,
+                    paint
+            );
+
+            rect.set(
+                    d(157),
+                    d(86),
+                    d(177),
+                    d(96)
+            );
+
+            canvas.drawOval(
+                    rect,
+                    paint
+            );
+
+            /*
+             * الابتسامة
+             */
+
+            paint.setStyle(
+                    Paint.Style.STROKE
+            );
+
+            paint.setStrokeWidth(
+                    d(2.2f)
+            );
+
+            paint.setStrokeCap(
+                    Paint.Cap.ROUND
+            );
+
+            paint.setColor(
+                    Color.rgb(116, 125, 137)
+            );
+
+            path.reset();
+
+            path.moveTo(
+                    d(128),
+                    d(88)
+            );
+
+            path.cubicTo(
+                    d(134),
+                    d(95),
+                    d(144),
+                    d(95),
+                    d(150),
+                    d(88)
+            );
+
+            canvas.drawPath(
+                    path,
+                    paint
+            );
+        }
+
+        // =========================================================
+        // 〰️ BROKEN CONNECTION
+        // =========================================================
+
+        private void drawBrokenCable(Canvas canvas) {
+
+            paint.reset();
+
+            paint.setAntiAlias(true);
+
+            paint.setStyle(
+                    Paint.Style.STROKE
+            );
+
+            paint.setStrokeWidth(
+                    d(2.8f)
+            );
+
+            paint.setStrokeCap(
+                    Paint.Cap.ROUND
+            );
+
+            paint.setStrokeJoin(
+                    Paint.Join.ROUND
+            );
+
+            paint.setColor(
+                    Color.rgb(145, 153, 164)
+            );
+
+            /*
+             * الجزء الأول من السلك
+             */
+
+            path.reset();
+
+            path.moveTo(
+                    d(150),
+                    d(112)
+            );
+
+            path.cubicTo(
+                    d(150),
+                    d(125),
+                    d(147),
+                    d(132),
+                    d(141),
+                    d(137)
+            );
+
+            path.cubicTo(
+                    d(134),
+                    d(143),
+                    d(134),
+                    d(150),
+                    d(145),
+                    d(153)
+            );
+
+            path.cubicTo(
+                    d(157),
+                    d(157),
+                    d(161),
+                    d(161),
+                    d(159),
+                    d(167)
+            );
+
+            canvas.drawPath(
+                    path,
+                    paint
+            );
+
+            /*
+             * الجزء الثاني
+             */
+
+            path.reset();
+
+            path.moveTo(
+                    d(159),
+                    d(167)
+            );
+
+            path.cubicTo(
+                    d(156),
+                    d(174),
+                    d(147),
+                    d(177),
+                    d(146),
+                    d(184)
+            );
+
+            path.cubicTo(
+                    d(145),
+                    d(191),
+                    d(154),
+                    d(193),
+                    d(155),
+                    d(201)
+            );
+
+            path.cubicTo(
+                    d(156),
+                    d(209),
+                    d(148),
+                    d(214),
+                    d(149),
+                    d(222)
+            );
+
+            canvas.drawPath(
+                    path,
+                    paint
+            );
+
+            /*
+             * الجزء الثالث
+             */
+
+            path.reset();
+
+            path.moveTo(
+                    d(149),
+                    d(222)
+            );
+
+            path.cubicTo(
+                    d(151),
+                    d(231),
+                    d(160),
+                    d(233),
+                    d(158),
+                    d(242)
+            );
+
+            path.cubicTo(
+                    d(157),
+                    d(250),
+                    d(151),
+                    d(255),
+                    d(150),
+                    d(265)
+            );
+
+            canvas.drawPath(
+                    path,
+                    paint
+            );
+
+            /*
+             * -----------------------------------------------------
+             * ✕ Disconnection
+             * -----------------------------------------------------
+             */
+
+            paint.setStrokeWidth(
+                    d(4.2f)
+            );
+
+            paint.setColor(
+                    Color.rgb(139, 148, 160)
+            );
+
+            canvas.drawLine(
+                    d(140),
+                    d(232),
+                    d(160),
+                    d(252),
+                    paint
+            );
+
+            canvas.drawLine(
+                    d(160),
+                    d(232),
+                    d(140),
+                    d(252),
+                    paint
+            );
+        }
+
+        // =========================================================
+        // 📡 ROUTER
+        // =========================================================
+
+        private void drawRouter(Canvas canvas) {
+
+            /*
+             * -----------------------------------------------------
+             * Antennas
+             * -----------------------------------------------------
+             */
+
+            paint.reset();
+
+            paint.setAntiAlias(true);
+
+            paint.setStyle(
+                    Paint.Style.STROKE
+            );
+
+            paint.setStrokeWidth(
+                    d(2.8f)
+            );
+
+            paint.setStrokeCap(
+                    Paint.Cap.ROUND
+            );
+
+            paint.setColor(
+                    Color.rgb(139, 147, 158)
+            );
+
+            path.reset();
+
+            path.moveTo(
+                    d(121),
+                    d(288)
+            );
+
+            path.lineTo(
+                    d(113),
+                    d(254)
+            );
+
+            canvas.drawPath(
+                    path,
+                    paint
+            );
+
+            path.reset();
+
+            path.moveTo(
+                    d(179),
+                    d(288)
+            );
+
+            path.lineTo(
+                    d(187),
+                    d(254)
+            );
+
+            canvas.drawPath(
+                    path,
+                    paint
+            );
+
+            /*
+             * -----------------------------------------------------
+             * Main Router Body
+             * -----------------------------------------------------
+             */
+
+            paint.setStyle(
+                    Paint.Style.FILL
+            );
+
+            paint.setShader(
+                    new android.graphics.LinearGradient(
+                            d(150),
+                            d(280),
+                            d(150),
+                            d(365),
+                            new int[]{
+                                    Color.rgb(250, 250, 248),
+                                    Color.rgb(220, 225, 232)
+                            },
+                            null,
+                            android.graphics.Shader.TileMode.CLAMP
+                    )
+            );
+
+            rect.set(
+                    d(116),
+                    d(284),
+                    d(184),
+                    d(365)
+            );
+
+            canvas.drawRoundRect(
+                    rect,
+                    d(7),
+                    d(7),
+                    paint
+            );
+
+            paint.setShader(null);
+
+            /*
+             * Router border
+             */
+
+            paint.setStyle(
+                    Paint.Style.STROKE
+            );
+
+            paint.setStrokeWidth(
+                    d(2.2f)
+            );
+
+            paint.setColor(
+                    Color.rgb(139, 147, 158)
+            );
+
+            canvas.drawRoundRect(
+                    rect,
+                    d(7),
+                    d(7),
+                    paint
+            );
+
+            /*
+             * -----------------------------------------------------
+             * Top Router
+             * -----------------------------------------------------
+             */
+
+            paint.setStyle(
+                    Paint.Style.FILL
+            );
+
+            paint.setShader(
+                    new android.graphics.LinearGradient(
+                            d(150),
+                            d(272),
+                            d(150),
+                            d(307),
+                            new int[]{
+                                    Color.rgb(253, 252, 247),
+                                    Color.rgb(226, 229, 226)
+                            },
+                            null,
+                            android.graphics.Shader.TileMode.CLAMP
+                    )
+            );
+
+            rect.set(
+                    d(106),
+                    d(272),
+                    d(194),
+                    d(307)
+            );
+
+            canvas.drawRoundRect(
+                    rect,
+                    d(7),
+                    d(7),
+                    paint
+            );
+
+            paint.setShader(null);
+
+            /*
+             * Top router border
+             */
+
+            paint.setStyle(
+                    Paint.Style.STROKE
+            );
+
+            paint.setStrokeWidth(
+                    d(2.3f)
+            );
+
+            paint.setColor(
+                    Color.rgb(137, 145, 156)
+            );
+
+            canvas.drawRoundRect(
+                    rect,
+                    d(7),
+                    d(7),
+                    paint
+            );
+
+            /*
+             * -----------------------------------------------------
+             * Wi-Fi icon on router
+             * -----------------------------------------------------
+             */
+
+            paint.setStrokeWidth(
+                    d(2.3f)
+            );
+
+            paint.setColor(
+                    Color.rgb(145, 153, 164)
+            );
+
+            rect.set(
+                    d(138),
+                    d(283),
+                    d(162),
+                    d(299)
+            );
+
+            canvas.drawArc(
+                    rect,
+                    220,
+                    100,
+                    false,
+                    paint
+            );
+
+            rect.set(
+                    d(142),
+                    d(287),
+                    d(158),
+                    d(299)
+            );
+
+            canvas.drawArc(
+                    rect,
+                    220,
+                    100,
+                    false,
+                    paint
+            );
+
+            paint.setStyle(
+                    Paint.Style.FILL
+            );
+
+            canvas.drawCircle(
+                    d(150),
+                    d(299),
+                    d(2.3f),
+                    paint
+            );
+
+            /*
+             * -----------------------------------------------------
+             * Router indicator lights
+             * -----------------------------------------------------
+             */
+
+            paint.setColor(
+                    Color.rgb(153, 160, 169)
+            );
+
+            canvas.drawCircle(
+                    d(178),
+                    d(293),
+                    d(2.1f),
+                    paint
+            );
+
+            canvas.drawCircle(
+                    d(185),
+                    d(293),
+                    d(2.1f),
+                    paint
+            );
+
+            /*
+             * -----------------------------------------------------
+             * Main body Wi-Fi
+             * -----------------------------------------------------
+             */
+
+            paint.setStyle(
+                    Paint.Style.STROKE
+            );
+
+            paint.setStrokeWidth(
+                    d(3)
+            );
+
+            paint.setStrokeCap(
+                    Paint.Cap.ROUND
+            );
+
+            rect.set(
+                    d(132),
+                    d(315),
+                    d(168),
+                    d(341)
+            );
+
+            canvas.drawArc(
+                    rect,
+                    220,
+                    100,
+                    false,
+                    paint
+            );
+
+            rect.set(
+                    d(138),
+                    d(321),
+                    d(162),
+                    d(341)
+            );
+
+            canvas.drawArc(
+                    rect,
+                    220,
+                    100,
+                    false,
+                    paint
+            );
+
+            paint.setStyle(
+                    Paint.Style.FILL
+            );
+
+            canvas.drawCircle(
+                    d(150),
+                    d(341),
+                    d(3),
+                    paint
+            );
+
+            /*
+             * -----------------------------------------------------
+             * Router bottom base
+             * -----------------------------------------------------
+             */
+
+            paint.setStyle(
+                    Paint.Style.FILL
+            );
+
+            paint.setShader(
+                    new android.graphics.LinearGradient(
+                            d(150),
+                            d(350),
+                            d(150),
+                            d(370),
+                            new int[]{
+                                    Color.rgb(242, 244, 246),
+                                    Color.rgb(205, 211, 219)
+                            },
+                            null,
+                            android.graphics.Shader.TileMode.CLAMP
+                    )
+            );
+
+            rect.set(
+                    d(100),
+                    d(350),
+                    d(200),
+                    d(371)
+            );
+
+            canvas.drawRoundRect(
+                    rect,
+                    d(8),
+                    d(8),
+                    paint
+            );
+
+            paint.setShader(null);
+
+            paint.setStyle(
+                    Paint.Style.STROKE
+            );
+
+            paint.setStrokeWidth(
+                    d(2.3f)
+            );
+
+            paint.setColor(
+                    Color.rgb(132, 141, 152)
+            );
+
+            canvas.drawRoundRect(
+                    rect,
+                    d(8),
+                    d(8),
+                    paint
+            );
+        }
+
+        // =========================================================
+        // 📶 SIGNAL BARS
+        // =========================================================
+
+        private void drawSignal(Canvas canvas) {
+
+            paint.reset();
+
+            paint.setAntiAlias(true);
+
+            paint.setStyle(
+                    Paint.Style.STROKE
+            );
+
+            paint.setStrokeWidth(
+                    d(2.4f)
+            );
+
+            paint.setStrokeCap(
+                    Paint.Cap.ROUND
+            );
+
+            paint.setColor(
+                    Color.rgb(145, 153, 164)
+            );
+
+            /*
+             * إشارة الشبكة الصغيرة
+             */
+
+            canvas.drawLine(
+                    d(196),
+                    d(391),
+                    d(196),
+                    d(401),
+                    paint
+            );
+
+            canvas.drawLine(
+                    d(205),
+                    d(385),
+                    d(205),
+                    d(401),
+                    paint
+            );
+
+            canvas.drawLine(
+                    d(214),
+                    d(377),
+                    d(214),
+                    d(401),
+                    paint
+            );
+
+            canvas.drawLine(
+                    d(223),
+                    d(369),
+                    d(223),
+                    d(401),
+                    paint
+            );
+        }
+
+        // =========================================================
+        // 🌫️ GROUND SHADOW
+        // =========================================================
+
+        private void drawGroundShadow(Canvas canvas) {
+
+            paint.reset();
+
+            paint.setAntiAlias(true);
+
+            paint.setStyle(
+                    Paint.Style.FILL
+            );
+
+            paint.setShader(
+                    new android.graphics.RadialGradient(
+                            d(150),
+                            d(405),
+                            d(80),
+                            new int[]{
+                                    Color.argb(55, 126, 135, 147),
+                                    Color.argb(20, 126, 135, 147),
+                                    Color.argb(0, 126, 135, 147)
+                            },
+                            new float[]{
+                                    0f,
+                                    0.55f,
+                                    1f
+                            },
+                            android.graphics.Shader.TileMode.CLAMP
+                    )
+            );
+
+            canvas.drawOval(
+                    new RectF(
+                            d(72),
+                            d(397),
+                            d(228),
+                            d(416)
+                    ),
+                    paint
+            );
+
+            paint.setShader(null);
+        }
     }
     }
