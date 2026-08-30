@@ -1,11 +1,7 @@
 package com.store.app.offline;
 
 import android.app.Activity;
-import android.graphics.Canvas;
 import android.graphics.Color;
-import android.graphics.Paint;
-import android.graphics.Path;
-import android.graphics.RectF;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Handler;
@@ -16,6 +12,7 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.webkit.WebView;
 import android.widget.FrameLayout;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.TextView;
@@ -62,17 +59,20 @@ public class OfflineUIController {
     private static final int OFFLINE_BACKGROUND =
             Color.parseColor("#F3F4F6");
 
-    private static final int OFFLINE_CARD =
-            Color.parseColor("#1C1C1E");
+    private static final int OFFLINE_CARD_TOP =
+            Color.parseColor("#FFFFFF");
+
+    private static final int OFFLINE_CARD_BOTTOM =
+            Color.parseColor("#F5F6F9");
 
     private static final int OFFLINE_PRIMARY_TEXT =
-            Color.WHITE;
+            Color.parseColor("#17181C");
 
     private static final int OFFLINE_SECONDARY_TEXT =
-            Color.parseColor("#9CA3AF");
+            Color.parseColor("#6B707A");
 
     private static final int OFFLINE_ACCENT =
-            Color.parseColor("#7C8CF8");
+            Color.parseColor("#6674E8");
 
     // مراجع للعناصر الأخرى (للوصول إليها من MainActivity)
     public interface OfflineUICallback {
@@ -310,23 +310,42 @@ public class OfflineUIController {
                 OFFLINE_BACKGROUND
         );
 
-        pureOfflineUI.setVisibility(View.GONE);
+        pureOfflineUI.setVisibility(
+                View.GONE
+        );
 
         // =====================================================
-        // 🎨 PROFESSIONAL OFFLINE ILLUSTRATION
+        // 🎨 ORIGINAL OFFLINE ILLUSTRATION
         // =====================================================
 
-        OfflineIllustrationView illustration =
-                new OfflineIllustrationView(activity);
+        ImageView illustration =
+                new ImageView(activity);
+
+        illustration.setImageResource(
+                R.drawable.offline_illustration
+        );
+
+        illustration.setScaleType(
+                ImageView.ScaleType.FIT_CENTER
+        );
+
+        illustration.setAdjustViewBounds(
+                true
+        );
+
+        illustration.setBackgroundColor(
+                Color.TRANSPARENT
+        );
 
         FrameLayout.LayoutParams illustrationParams =
                 new FrameLayout.LayoutParams(
-                        dp(230),
-                        dp(230),
+                        dp(300),
+                        dp(430),
                         Gravity.TOP | Gravity.CENTER_HORIZONTAL
                 );
 
-        illustrationParams.topMargin = dp(54);
+        illustrationParams.topMargin =
+                dp(34);
 
         pureOfflineUI.addView(
                 illustration,
@@ -337,7 +356,8 @@ public class OfflineUIController {
         // 💳 BOTTOM CARD
         // =====================================================
 
-        LinearLayout bottomCard = new LinearLayout(activity);
+        LinearLayout bottomCard =
+                new LinearLayout(activity);
 
         bottomCard.setOrientation(
                 LinearLayout.VERTICAL
@@ -362,7 +382,8 @@ public class OfflineUIController {
         // 📝 TITLE
         // =====================================================
 
-        TextView titleMsg = new TextView(activity);
+        TextView titleMsg =
+                new TextView(activity);
 
         titleMsg.setText(
                 "لا يوجد اتصال بالإنترنت"
@@ -372,7 +393,9 @@ public class OfflineUIController {
                 OFFLINE_PRIMARY_TEXT
         );
 
-        titleMsg.setTextSize(18f);
+        titleMsg.setTextSize(
+                18f
+        );
 
         titleMsg.setTypeface(
                 android.graphics.Typeface.DEFAULT_BOLD
@@ -388,7 +411,8 @@ public class OfflineUIController {
                         -2
                 );
 
-        titleParams.bottomMargin = dp(20);
+        titleParams.bottomMargin =
+                dp(20);
 
         bottomCard.addView(
                 titleMsg,
@@ -399,7 +423,8 @@ public class OfflineUIController {
         // 📝 DESCRIPTION
         // =====================================================
 
-        TextView subMsg = new TextView(activity);
+        TextView subMsg =
+                new TextView(activity);
 
         subMsg.setText(
                 "يبدو أنك غير متصل بالشبكة. يرجى التحقق من الواي فاي أو بيانات الهاتف والمحاولة مجدداً."
@@ -409,7 +434,9 @@ public class OfflineUIController {
                 OFFLINE_SECONDARY_TEXT
         );
 
-        subMsg.setTextSize(14f);
+        subMsg.setTextSize(
+                14f
+        );
 
         subMsg.setGravity(
                 Gravity.CENTER
@@ -426,7 +453,8 @@ public class OfflineUIController {
                         -2
                 );
 
-        subParams.bottomMargin = dp(40);
+        subParams.bottomMargin =
+                dp(40);
 
         bottomCard.addView(
                 subMsg,
@@ -484,7 +512,9 @@ public class OfflineUIController {
                 Color.WHITE
         );
 
-        retryText.setTextSize(15f);
+        retryText.setTextSize(
+                15f
+        );
 
         retryText.setTypeface(
                 android.graphics.Typeface.DEFAULT_BOLD
@@ -508,8 +538,13 @@ public class OfflineUIController {
                         android.graphics.PorterDuff.Mode.SRC_IN
                 );
 
-        btnContent.addView(retryText);
-        btnContent.addView(btnSpinner);
+        btnContent.addView(
+                retryText
+        );
+
+        btnContent.addView(
+                btnSpinner
+        );
 
         FrameLayout.LayoutParams contentParams =
                 new FrameLayout.LayoutParams(
@@ -604,7 +639,7 @@ public class OfflineUIController {
         );
 
         // =====================================================
-        // 📐 CARD POSITION
+        // 📐 CARD
         // =====================================================
 
         FrameLayout.LayoutParams cardParams =
@@ -639,11 +674,13 @@ public class OfflineUIController {
     private Drawable createCardDrawable() {
 
         GradientDrawable gd =
-                new GradientDrawable();
-
-        gd.setColor(
-                OFFLINE_CARD
-        );
+                new GradientDrawable(
+                        GradientDrawable.Orientation.TOP_BOTTOM,
+                        new int[]{
+                                OFFLINE_CARD_TOP,
+                                OFFLINE_CARD_BOTTOM
+                        }
+                );
 
         gd.setCornerRadii(
                 new float[]{
@@ -931,300 +968,4 @@ public class OfflineUIController {
     public void setCallback(OfflineUICallback callback) {
         this.callback = callback;
     }
-
-    /**
-     * 👑 Professional Offline Illustration
-     *
-     * رسم Native كامل بدون ImageView
-     * وبدون drawable خارجي.
-     */
-    private static class OfflineIllustrationView
-            extends View {
-
-        private final Paint paint =
-                new Paint(Paint.ANTI_ALIAS_FLAG);
-
-        private final Path path =
-                new Path();
-
-        private final RectF rect =
-                new RectF();
-
-        private float density;
-
-        OfflineIllustrationView(Activity activity) {
-
-            super(activity);
-
-            density = activity.getResources()
-                    .getDisplayMetrics()
-                    .density;
-
-            setLayerType(
-                    View.LAYER_TYPE_SOFTWARE,
-                    null
-            );
-        }
-
-        private float d(float value) {
-            return value * density;
-        }
-
-        @Override
-        protected void onDraw(Canvas canvas) {
-
-            super.onDraw(canvas);
-
-            float w = getWidth();
-            float h = getHeight();
-
-            float cx = w / 2f;
-            float cy = h / 2f;
-
-            paint.setStyle(
-                    Paint.Style.STROKE
-            );
-
-            paint.setStrokeCap(
-                    Paint.Cap.ROUND
-            );
-
-            paint.setStrokeJoin(
-                    Paint.Join.ROUND
-            );
-
-            // =================================================
-            // 🌐 MAIN NETWORK ORB
-            // =================================================
-
-            paint.setStrokeWidth(
-                    d(2.4f)
-            );
-
-            paint.setColor(
-                    Color.parseColor("#A7ADB8")
-            );
-
-            rect.set(
-                    cx - d(58),
-                    cy - d(58),
-                    cx + d(58),
-                    cy + d(58)
-            );
-
-            canvas.drawOval(
-                    rect,
-                    paint
-            );
-
-            // خطوط الكرة الرأسية
-            rect.set(
-                    cx - d(25),
-                    cy - d(58),
-                    cx + d(25),
-                    cy + d(58)
-            );
-
-            canvas.drawOval(
-                    rect,
-                    paint
-            );
-
-            // خط أفقي
-            canvas.drawLine(
-                    cx - d(58),
-                    cy,
-                    cx + d(58),
-                    cy,
-                    paint
-            );
-
-            // =================================================
-            // 🌐 NETWORK CONNECTION LINES
-            // =================================================
-
-            paint.setStrokeWidth(
-                    d(2f)
-            );
-
-            paint.setColor(
-                    Color.parseColor("#C4C8D0")
-            );
-
-            // أعلى يسار
-            canvas.drawLine(
-                    cx - d(54),
-                    cy - d(42),
-                    cx - d(82),
-                    cy - d(67),
-                    paint
-            );
-
-            // أعلى يمين
-            canvas.drawLine(
-                    cx + d(54),
-                    cy - d(42),
-                    cx + d(82),
-                    cy - d(67),
-                    paint
-            );
-
-            // أسفل يسار
-            canvas.drawLine(
-                    cx - d(54),
-                    cy + d(42),
-                    cx - d(82),
-                    cy + d(67),
-                    paint
-            );
-
-            // أسفل يمين
-            canvas.drawLine(
-                    cx + d(54),
-                    cy + d(42),
-                    cx + d(82),
-                    cy + d(67),
-                    paint
-            );
-
-            // =================================================
-            // ● NETWORK NODES
-            // =================================================
-
-            paint.setStyle(
-                    Paint.Style.FILL
-            );
-
-            paint.setColor(
-                    Color.parseColor("#A7ADB8")
-            );
-
-            canvas.drawCircle(
-                    cx - d(85),
-                    cy - d(70),
-                    d(7),
-                    paint
-            );
-
-            canvas.drawCircle(
-                    cx + d(85),
-                    cy - d(70),
-                    d(7),
-                    paint
-            );
-
-            canvas.drawCircle(
-                    cx - d(85),
-                    cy + d(70),
-                    d(7),
-                    paint
-            );
-
-            canvas.drawCircle(
-                    cx + d(85),
-                    cy + d(70),
-                    d(7),
-                    paint
-            );
-
-            // =================================================
-            // ⚡ BROKEN CONNECTION
-            // =================================================
-
-            paint.setStyle(
-                    Paint.Style.STROKE
-            );
-
-            paint.setStrokeWidth(
-                    d(5)
-            );
-
-            paint.setColor(
-                    Color.parseColor("#7C8CF8")
-            );
-
-            path.reset();
-
-            path.moveTo(
-                    cx - d(24),
-                    cy - d(9)
-            );
-
-            path.lineTo(
-                    cx - d(5),
-                    cy + d(10)
-            );
-
-            path.lineTo(
-                    cx + d(8),
-                    cy - d(4)
-            );
-
-            path.lineTo(
-                    cx + d(25),
-                    cy + d(14)
-            );
-
-            canvas.drawPath(
-                    path,
-                    paint
-            );
-
-            // =================================================
-            // ✕ DISCONNECTION MARK
-            // =================================================
-
-            paint.setStrokeWidth(
-                    d(4)
-            );
-
-            paint.setColor(
-                    Color.parseColor("#7C8CF8")
-            );
-
-            canvas.drawLine(
-                    cx - d(17),
-                    cy + d(82),
-                    cx + d(17),
-                    cy + d(116),
-                    paint
-            );
-
-            canvas.drawLine(
-                    cx + d(17),
-                    cy + d(82),
-                    cx - d(17),
-                    cy + d(116),
-                    paint
-            );
-
-            // =================================================
-            // ✨ SOFT GLOW
-            // =================================================
-
-            paint.setStyle(
-                    Paint.Style.FILL
-            );
-
-            paint.setColor(
-                    Color.parseColor("#147C8CF8")
-            );
-
-            paint.setShadowLayer(
-                    d(18),
-                    0,
-                    0,
-                    Color.parseColor("#557C8CF8")
-            );
-
-            canvas.drawCircle(
-                    cx,
-                    cy,
-                    d(9),
-                    paint
-            );
-
-            paint.clearShadowLayer();
-        }
     }
-                                          }
