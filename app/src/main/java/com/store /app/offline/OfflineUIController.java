@@ -58,8 +58,15 @@ public class OfflineUIController {
 
     // عناصر الواجهة
     private FrameLayout pureOfflineUI;
-    private TextView offlineBar;
     private ProgressBar progressBar;
+
+    /**
+     * 👑 مدير شريط الأوفلاين المنبثق.
+     *
+     * كل منطق الشريط نفسه أصبح داخله.
+     * OfflineUIController يحتفظ فقط بإدارته.
+     */
+    private OfflineBarController offlineBarController;
 
     // حالة الأوفلاين
     private boolean isOfflineUIVisible = false;
@@ -113,11 +120,16 @@ public class OfflineUIController {
     public void init() {
         Log.i(TAG, "🚀 Initializing OfflineUIController...");
 
-        // 1. إنشاء الواجهات
-        createOfflineBar();
+        // 1. إنشاء مدير شريط الأوفلاين
+        offlineBarController =
+                new OfflineBarController(activity);
+
+        offlineBarController.init();
+
+        // 2. إنشاء الواجهة الكبيرة
         createPureOfflineUI();
 
-        // 2. إنشاء شريط التقدم (progressBar) مرة واحدة
+        // 3. إنشاء شريط التقدم (progressBar) مرة واحدة
         progressBar = new ProgressBar(activity, null, android.R.attr.progressBarStyleHorizontal);
         progressBar.setMax(100);
         FrameLayout.LayoutParams p = new FrameLayout.LayoutParams(
@@ -125,7 +137,7 @@ public class OfflineUIController {
         activity.addContentView(progressBar, p);
         progressBar.setVisibility(View.GONE);
 
-        // 3. تسجيل مستمع الشبكة
+        // 4. تسجيل مستمع الشبكة
         NetworkMonitor.setListener(connected -> {
             Log.i(TAG, "📡 Network state changed: " + connected);
             handleNetworkChange(connected);
@@ -133,6 +145,18 @@ public class OfflineUIController {
 
         // 🔥 ربط OfflineStateManager
         OfflineStateManager.getInstance().bind(webView, this);
+
+        // ربط callback للشريط
+        offlineBarController.setCallback(
+                visible -> {
+
+                    if (callback != null) {
+                        callback.onOfflineBarVisibilityChanged(
+                                visible
+                        );
+                    }
+                }
+        );
 
         Log.i(TAG, "✅ OfflineUIController initialized.");
     }
@@ -167,9 +191,18 @@ public class OfflineUIController {
         Log.i(TAG, "🧹 Destroying OfflineUIController...");
         // تنظيف المستمعين
         NetworkMonitor.setListener(null);
-        // تنظيف المراجع
+
+        // 👑 تنظيف وحدة شريط الأوفلاين
+        if (offlineBarController != null) {
+
+            offlineBarController.destroy();
+
+            offlineBarController = null;
+        }
+
+        // تنظيف الواجهات
         pureOfflineUI = null;
-        offlineBar = null;
+
         callback = null;
     }
 
@@ -188,19 +221,34 @@ public class OfflineUIController {
     }
 
     private void handleOfflineState() {
-        Log.i(TAG, "📡 Network lost. Handling offline state...");
 
-        if (webView == null) return;
+        Log.i(
+                TAG,
+                "📡 Network lost. Handling offline state..."
+        );
+
+        if (webView == null) {
+            return;
+        }
 
         // إذا كانت الصفحة فارغة أو غير صالحة
-        if (webView.getUrl() == null || webView.getUrl().equals("about:blank")) {
+        if (webView.getUrl() == null ||
+                webView.getUrl().equals("about:blank")) {
+
             showOfflineUI();
-        } else if (engineManager != null && !engineManager.isPageValid()) {
+
+        } else if (engineManager != null &&
+                !engineManager.isPageValid()) {
+
             // الصفحة غير صالحة (خطأ)
             showOfflineUI();
+
         } else {
+
             // صفحة موجودة وصالحة → إظهار الشريط النحيف
-            showOfflineBar();
+            if (offlineBarController != null) {
+                offlineBarController.show();
+            }
         }
     }
 
@@ -212,8 +260,10 @@ public class OfflineUIController {
         // ❌ لا نخفي الواجهة الكبيرة هنا فوراً، سنتركها حتى يكتمل التحميل
         // لكي لا يرى المستخدم صفحة بيضاء أثناء انتظار رد السيرفر
         
-        if (offlineBar != null && offlineBar.getVisibility() == View.VISIBLE) {
-            hideOfflineBarWithAnimation();
+        if (offlineBarController != null &&
+                offlineBarController.isVisible()) {
+
+            offlineBarController.hideWithAnimation();
         }
 
         // [تعديل]: لا تعمل reload إذا الصفحة صالحة
@@ -229,33 +279,27 @@ public class OfflineUIController {
 
     // أضف هذه الدالة ليتم استدعاؤها من WebEngineManager عند نجاح التحميل
     public void forceHideAllInternal() {
+
         activity.runOnUiThread(() -> {
-            if (isOfflineUIVisible) hideOfflineUI();
-            setOfflineBarVisibility(false);
+
+            if (isOfflineUIVisible) {
+                hideOfflineUI();
+            }
+
+            if (offlineBarController != null) {
+                offlineBarController.hideImmediately();
+            }
         });
     }
 
     // استدعاء عند عودة الشبكة بينما الصفحة صالحة
     public void showOnlineBarTransition() {
-        if (offlineBar == null) return;
-        activity.runOnUiThread(() -> {
-            offlineBar.setBackgroundColor(Color.parseColor("#1A237E")); // لون الاستعادة
-            offlineBar.setText("🔄 تم استعادة الاتصال، جاري التحديث...");
-            if (offlineBar.getVisibility() != View.VISIBLE) {
-                offlineBar.setVisibility(View.VISIBLE);
-                offlineBar.setAlpha(0f);
-                offlineBar.animate().alpha(1f).setDuration(220).start();
-            } else {
-                offlineBar.animate().scaleX(1.02f).scaleY(1.02f).setDuration(110)
-                    .withEndAction(() -> offlineBar.animate().scaleX(1f).scaleY(1f).setDuration(110).start()).start();
-            }
-            // إخفاء تلقائي بعد مهلة قصيرة إذا لم يتم إخفاؤه من notifyPageReadyToHide
-            new Handler(Looper.getMainLooper()).postDelayed(() -> {
-                if (offlineBar != null && offlineBar.getVisibility() == View.VISIBLE) {
-                    hideOfflineBarWithAnimation();
-                }
-            }, 900);
-        });
+
+        if (offlineBarController == null) {
+            return;
+        }
+
+        offlineBarController.showOnlineTransition();
     }
 
     // عرض overlay تحميل فوق الويب فيو (بدون إخفاء الويب فيو)
@@ -283,29 +327,6 @@ public class OfflineUIController {
     // ==========================================
     // 🎨 إنشاء الواجهات
     // ==========================================
-
-    /**
-     * 📡 شريط الأوفلاين النحيف
-     */
-    private void createOfflineBar() {
-        if (activity == null) return;
-
-        offlineBar = new TextView(activity);
-        offlineBar.setText("لا يتوفر اتصال بالإنترنت");
-        offlineBar.setTextColor(Color.WHITE);
-        offlineBar.setBackgroundColor(Color.parseColor("#323232"));
-        offlineBar.setGravity(android.view.Gravity.CENTER);
-        offlineBar.setPadding(0, 12, 0, 12);
-        offlineBar.setTextSize(14f);
-        offlineBar.setVisibility(View.GONE);
-
-        FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, 80, android.view.Gravity.BOTTOM);
-        params.bottomMargin = 0;
-        activity.addContentView(offlineBar, params);
-
-        Log.d(TAG, "📡 Offline bar created.");
-    }
 
     /**
      * 🍏 واجهة الأوفلاين الناتيف الكبيرة
@@ -1250,12 +1271,18 @@ public class OfflineUIController {
      * 🔥 إظهار/إخفاء الشريط النحيف
      */
     public void setOfflineBarVisibility(boolean show) {
-        if (offlineBar == null) return;
+
+        if (offlineBarController == null) {
+            return;
+        }
 
         if (show) {
-            showOfflineBar();
+
+            offlineBarController.show();
+
         } else {
-            hideOfflineBarWithAnimation();
+
+            offlineBarController.hideWithAnimation();
         }
     }
 
@@ -1295,13 +1322,9 @@ public class OfflineUIController {
             /*
              * إخفاء الشريط النحيف فورًا.
              */
-            if (offlineBar != null) {
+            if (offlineBarController != null) {
 
-                offlineBar.animate().cancel();
-
-                offlineBar.setVisibility(
-                        View.GONE
-                );
+                offlineBarController.hideImmediately();
             }
 
             /*
@@ -1514,68 +1537,6 @@ public class OfflineUIController {
         );
     }
 
-    private void showOfflineBar() {
-        if (offlineBar == null) return;
-
-        activity.runOnUiThread(() -> {
-            offlineBar.setBackgroundColor(Color.parseColor("#323232"));
-            offlineBar.setText("لا يتوفر اتصال بالإنترنت");
-            offlineBar.setVisibility(View.VISIBLE);
-            offlineBar.animate().translationY(0).setDuration(400).start();
-        });
-
-        if (callback != null) {
-            callback.onOfflineBarVisibilityChanged(true);
-        }
-
-        Log.d(TAG, "📡 Offline bar shown.");
-    }
-
-    private void hideOfflineBarWithAnimation() {
-        if (offlineBar == null) return;
-
-        activity.runOnUiThread(() -> {
-            offlineBar.setBackgroundColor(Color.parseColor("#1A237E"));
-            offlineBar.setText("🔄 تم استعادة الاتصال، جاري التحديث...");
-
-            offlineBar.animate().translationY(100).setDuration(400)
-                    .withEndAction(() -> {
-                        offlineBar.setVisibility(View.GONE);
-                        // إعادة اللون الأصلي للاستخدام المستقبلي
-                        offlineBar.setBackgroundColor(Color.parseColor("#323232"));
-                        offlineBar.setText("لا يتوفر اتصال بالإنترنت");
-                    }).start();
-        });
-
-        // إخفاء أي overlay تحميل إن وُجد
-        hideLoadingOverlay();
-
-        if (callback != null) {
-            callback.onOfflineBarVisibilityChanged(false);
-        }
-
-        Log.d(TAG, "📡 Offline bar hidden with animation.");
-    }
-
-    // [إضافة جراحية في OfflineUIController.java]
-    public void shakeOfflineBar() {
-        if (offlineBar == null || offlineBar.getVisibility() != View.VISIBLE) {
-            showOfflineBar();
-        }
-
-        activity.runOnUiThread(() -> {
-            offlineBar.animate()
-                    .translationX(12f).setDuration(60)
-                    .withEndAction(() -> offlineBar.animate().translationX(-12f).setDuration(60)
-                    .withEndAction(() -> offlineBar.animate().translationX(0f).setDuration(60).start())
-                    .start()).start();
-
-            String originalText = offlineBar.getText().toString();
-            offlineBar.setText("⚠️ لا يمكن التحميل، تحقق من الاتصال");
-            new Handler(Looper.getMainLooper()).postDelayed(() -> offlineBar.setText(originalText), 1800);
-        });
-    }
-
     // ==========================================
     // 🔗 الدوال العامة للاستعلام عن الحالة
     // ==========================================
@@ -1592,8 +1553,26 @@ public class OfflineUIController {
         this.isPageLoaded = loaded;
     }
 
-    public void setCallback(OfflineUICallback callback) {
+    public void setCallback(
+            OfflineUICallback callback) {
+
         this.callback = callback;
+
+        if (offlineBarController != null) {
+
+            offlineBarController.setCallback(
+                    visible -> {
+
+                        if (this.callback != null) {
+
+                            this.callback
+                                    .onOfflineBarVisibilityChanged(
+                                            visible
+                                    );
+                        }
+                    }
+            );
+        }
     }
 
     // ==========================================
@@ -1642,6 +1621,15 @@ public class OfflineUIController {
         });
     }
 
+    public void shakeOfflineBar() {
+
+        if (offlineBarController == null) {
+            return;
+        }
+
+        offlineBarController.shake();
+    }
+
     private int dp(float value) {
         return Math.round(
                 value * activity.getResources()
@@ -1649,4 +1637,4 @@ public class OfflineUIController {
                         .density
         );
     }
-            }
+    }
