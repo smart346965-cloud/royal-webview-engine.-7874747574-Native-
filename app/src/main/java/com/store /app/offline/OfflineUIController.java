@@ -90,6 +90,10 @@ public class OfflineUIController {
     }
     private OfflineUICallback callback;
 
+    // 👑 متغيرات الأنيميشن
+    private ObjectAnimator floatingAnimator;
+    private ObjectAnimator elevationAnimator;
+
     // ==========================================
     // 🚀 دورة الحياة
     // ==========================================
@@ -1061,7 +1065,7 @@ public class OfflineUIController {
         public void draw(Canvas canvas) {
 
             RectF bounds =
-                    getBounds();
+                    new RectF(getBounds());
 
             float left =
                     bounds.left;
@@ -1310,7 +1314,7 @@ public class OfflineUIController {
                              *
                              * بشكل مستمر وهادئ.
                              */
-                            ObjectAnimator floating =
+                            floatingAnimator =
                                     ObjectAnimator.ofFloat(
                                             card,
                                             View.TRANSLATION_Y,
@@ -1319,28 +1323,24 @@ public class OfflineUIController {
                                             0f
                                     );
 
-                            floating.setDuration(
+                            floatingAnimator.setDuration(
                                     4000
                             );
 
-                            floating.setInterpolator(
+                            floatingAnimator.setInterpolator(
                                     new android.view.animation.AccelerateDecelerateInterpolator()
                             );
 
-                            floating.setRepeatCount(
+                            floatingAnimator.setRepeatCount(
                                     ObjectAnimator.INFINITE
                             );
 
-                            floating.start();
-
-                            card.setTag(
-                                    floating
-                            );
+                            floatingAnimator.start();
 
                             /*
                              * محاكاة نبض الظل.
                              */
-                            ObjectAnimator elevation =
+                            elevationAnimator =
                                     ObjectAnimator.ofFloat(
                                             card,
                                             View.TRANSLATION_Z,
@@ -1349,24 +1349,19 @@ public class OfflineUIController {
                                             dp(16)
                                     );
 
-                            elevation.setDuration(
+                            elevationAnimator.setDuration(
                                     4000
                             );
 
-                            elevation.setInterpolator(
+                            elevationAnimator.setInterpolator(
                                     new android.view.animation.AccelerateDecelerateInterpolator()
                             );
 
-                            elevation.setRepeatCount(
+                            elevationAnimator.setRepeatCount(
                                     ObjectAnimator.INFINITE
                             );
 
-                            elevation.start();
-
-                            card.setTag(
-                                    "elevation_anim",
-                                    elevation
-                            );
+                            elevationAnimator.start();
                         })
                         .start();
             }
@@ -1417,20 +1412,14 @@ public class OfflineUIController {
 
                 card.animate().cancel();
 
-                Object tag =
-                        card.getTag();
-
-                if (tag instanceof ObjectAnimator) {
-                    ((ObjectAnimator) tag).cancel();
+                if (floatingAnimator != null) {
+                    floatingAnimator.cancel();
+                    floatingAnimator = null;
                 }
 
-                Object elevationTag =
-                        card.getTag(
-                                "elevation_anim"
-                        );
-
-                if (elevationTag instanceof ObjectAnimator) {
-                    ((ObjectAnimator) elevationTag).cancel();
+                if (elevationAnimator != null) {
+                    elevationAnimator.cancel();
+                    elevationAnimator = null;
                 }
 
                 card.setTranslationY(
@@ -1574,4 +1563,4 @@ public class OfflineUIController {
                         .density
         );
     }
-            }
+}
