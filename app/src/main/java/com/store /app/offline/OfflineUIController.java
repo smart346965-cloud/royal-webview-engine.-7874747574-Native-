@@ -459,16 +459,22 @@ public class OfflineUIController {
                 bottomInset = insets.getSystemWindowInsetBottom();
             }
 
-            // مسافة أمان إضافية فوق الأسهم / الإيماءات
             int professionalSpacing = dp(16);
 
             FrameLayout.LayoutParams updatedParams =
                     (FrameLayout.LayoutParams) bottomCard.getLayoutParams();
 
-            updatedParams.bottomMargin =
-                    bottomInset + professionalSpacing;
+            /*
+             * ثبّت مكان الكرت بعد ظهوره.
+             * لا نسمح بتغيير الـ bottomMargin بسبب
+             * ظهور/اختفاء OfflineBar.
+             */
+            if (updatedParams.bottomMargin <= 0) {
+                updatedParams.bottomMargin =
+                        bottomInset + professionalSpacing;
 
-            bottomCard.setLayoutParams(updatedParams);
+                bottomCard.setLayoutParams(updatedParams);
+            }
 
             return insets;
         });
@@ -1643,4 +1649,4 @@ public class OfflineUIController {
                         .density
         );
     }
-                        }
+            }
