@@ -19,6 +19,7 @@ import android.util.Log;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.WindowInsets;
 import android.webkit.WebView;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
@@ -437,13 +438,44 @@ public class OfflineUIController {
         cardParams.rightMargin =
                 dp(16);
 
-        cardParams.bottomMargin =
-                dp(4);
+        // 👑 مسافة احترافية فوق شريط التنقل السفلي
+        cardParams.bottomMargin = dp(16);
 
         pureOfflineUI.addView(
                 bottomCard,
                 cardParams
         );
+
+        // 👑 مزامنة الكرت مع مساحة شريط النظام السفلي
+        pureOfflineUI.setOnApplyWindowInsetsListener((v, insets) -> {
+
+            int bottomInset;
+
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+                bottomInset = insets.getInsets(
+                        WindowInsets.Type.systemBars()
+                ).bottom;
+            } else {
+                bottomInset = insets.getSystemWindowInsetBottom();
+            }
+
+            // مسافة أمان إضافية فوق الأسهم / الإيماءات
+            int professionalSpacing = dp(16);
+
+            FrameLayout.LayoutParams updatedParams =
+                    (FrameLayout.LayoutParams) bottomCard.getLayoutParams();
+
+            updatedParams.bottomMargin =
+                    bottomInset + professionalSpacing;
+
+            bottomCard.setLayoutParams(updatedParams);
+
+            return insets;
+        });
+
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.KITKAT) {
+            pureOfflineUI.requestApplyInsets();
+        }
 
         // =====================================================
         // 📝 TITLE
@@ -1283,6 +1315,8 @@ public class OfflineUIController {
             // 👑 تشغيل Animation الكرت عند ظهوره
             View card = pureOfflineUI.getChildAt(1);
 
+            updateOfflineCardBottomInset(card);
+
             if (card != null) {
 
                 card.setAlpha(0f);
@@ -1556,6 +1590,52 @@ public class OfflineUIController {
         this.callback = callback;
     }
 
+    // ==========================================
+    // 👑 تحديث المسافة السفلية للكرت
+    // ==========================================
+    private void updateOfflineCardBottomInset(View card) {
+
+        if (card == null || pureOfflineUI == null) {
+            return;
+        }
+
+        pureOfflineUI.post(() -> {
+
+            int bottomInset = 0;
+
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+
+                WindowInsets insets =
+                        pureOfflineUI.getRootWindowInsets();
+
+                if (insets != null) {
+                    bottomInset =
+                            insets.getInsets(
+                                    WindowInsets.Type.systemBars()
+                            ).bottom;
+                }
+
+            } else if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+
+                WindowInsets insets =
+                        pureOfflineUI.getRootWindowInsets();
+
+                if (insets != null) {
+                    bottomInset =
+                            insets.getSystemWindowInsetBottom();
+                }
+            }
+
+            FrameLayout.LayoutParams params =
+                    (FrameLayout.LayoutParams) card.getLayoutParams();
+
+            params.bottomMargin =
+                    bottomInset + dp(16);
+
+            card.setLayoutParams(params);
+        });
+    }
+
     private int dp(float value) {
         return Math.round(
                 value * activity.getResources()
@@ -1563,4 +1643,4 @@ public class OfflineUIController {
                         .density
         );
     }
-}
+                        }
