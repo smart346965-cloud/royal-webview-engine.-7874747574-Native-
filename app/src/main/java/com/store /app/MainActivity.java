@@ -383,17 +383,7 @@ public class MainActivity extends AppCompatActivity {
                     BuildConfig.CLIENT_URL
             );
 
-            // 👑 1. المزامنة المبكرة الخفية: تشغيلها عند 3.5 ثانية (بعد اكتمال رسم DOM الصفحة) لتلوين الشريط تحت الـ Splash
-            mainHandler.postDelayed(() -> {
-                if (!isFinishing() && activeWebView != null) {
-                    SystemUI.syncStatusBarWithWebEarly(
-                            MainActivity.this,
-                            activeWebView
-                    );
-                }
-            }, 3500L);
-
-            // 👑 2. المزامنة الشاملة وتعديل الأيقونات: تُنفّذ فوراً لحظة بدء أنيميشن اختفاء الـ Splash (عند 5.0 ثوانٍ)
+            // 👑 المزامنة الشاملة وتعديل الأيقونات عند انتهاء مدة الـ Splash
             mainHandler.postDelayed(() -> {
                 if (!isFinishing() && activeWebView != null) {
                     SystemUI.syncStatusBarWithWeb(
@@ -739,4 +729,4 @@ public class MainActivity extends AppCompatActivity {
             Log.e(TAG, "⚠️ Failed to initialize Native Modules.", t);
         }
     }
-                        }
+            }
