@@ -755,6 +755,47 @@ public class SystemUI {
     }
 
     // =========================================================
+    // 👑 إعادة تشغيل مؤقت Navigation Bar عند تفاعل المستخدم
+    // =========================================================
+    public static void notifyNavigationUserInteraction(
+            android.app.Activity activity
+    ) {
+        if (activity == null ||
+                activity.isFinishing() ||
+                !navigationBarControllerReady) {
+            return;
+        }
+
+        if (detectedNavigationMode == 2) {
+            cancelNavigationBarHide();
+            return;
+        }
+
+        Window window = activity.getWindow();
+
+        if (window == null) {
+            return;
+        }
+
+        WindowInsetsControllerCompat controller =
+                WindowCompat.getInsetsController(
+                        window,
+                        window.getDecorView()
+                );
+
+        if (controller != null) {
+
+            // إظهار الشريط فوراً
+            controller.show(
+                    androidx.core.view.WindowInsetsCompat.Type.navigationBars()
+            );
+
+            // 👑 إعادة عداد الـ 5 ثوانٍ من الصفر
+            scheduleNavigationBarHide(activity);
+        }
+    }
+
+    // =========================================================
     // 👑 Navigation Bar Visibility Monitor
     // =========================================================
 
@@ -786,4 +827,4 @@ public class SystemUI {
             scheduleNavigationBarHide(activity);
         }
     }
-            }
+        }
