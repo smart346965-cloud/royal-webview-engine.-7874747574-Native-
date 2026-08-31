@@ -827,4 +827,4 @@ public class SystemUI {
             scheduleNavigationBarHide(activity);
         }
     }
-        }
+    }
