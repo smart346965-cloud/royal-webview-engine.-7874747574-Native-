@@ -13,6 +13,7 @@ import androidx.activity.OnBackPressedCallback;
 import androidx.appcompat.app.AppCompatActivity;
 
 import com.store.app.BuildConfig;
+import com.store.app.SystemUI;
 import com.store.app.WebEngineManager;
 
 public class RoyalBackNavigation {
@@ -83,6 +84,11 @@ public class RoyalBackNavigation {
                 new OnBackPressedCallback(true) {
                     @Override
                     public void handleOnBackPressed() {
+
+                        // 👑 إبلاغ SystemUI بتفاعل المستخدم مع زر الرجوع
+                        // يظهر Navigation Bar ويعيد مؤقت الـ 5 ثوانٍ
+                        SystemUI.notifyNavigationUserInteraction(activity);
+
                         try {
                             if (activeWebView == null) {
                                 performRoyalExit();
@@ -170,4 +176,4 @@ public class RoyalBackNavigation {
             } catch (Exception ignored) {}
         }
     }
-}
+                                              }
