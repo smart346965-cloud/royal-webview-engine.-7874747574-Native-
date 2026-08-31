@@ -186,16 +186,36 @@ public class MainActivity extends AppCompatActivity {
 
         // تحديث الارتفاع بدقة متناهية عند حساب النوتش دون إخفاء العنصر في Frame 0
         ViewCompat.setOnApplyWindowInsetsListener(rootContainer, (v, insets) -> {
-            int insetTop = insets.getInsets(WindowInsetsCompat.Type.statusBars()
-                    | WindowInsetsCompat.Type.displayCutout()).top;
+
+            int insetTop = insets.getInsets(
+                    WindowInsetsCompat.Type.statusBars()
+                            | WindowInsetsCompat.Type.displayCutout()
+            ).top;
 
             if (insetTop > 0) {
-                ViewGroup.LayoutParams lp = topVisualSurface.getLayoutParams();
+
+                ViewGroup.LayoutParams lp =
+                        topVisualSurface.getLayoutParams();
+
                 if (lp.height != insetTop) {
+
                     lp.height = insetTop;
+
                     topVisualSurface.setLayoutParams(lp);
                 }
             }
+
+            // 👑 مراقبة Navigation Bar
+            boolean navigationVisible =
+                    insets.isVisible(
+                            WindowInsetsCompat.Type.navigationBars()
+                    );
+
+            SystemUI.onNavigationBarVisibilityChanged(
+                    MainActivity.this,
+                    navigationVisible
+            );
+
             return insets;
         });
 
@@ -465,12 +485,14 @@ public class MainActivity extends AppCompatActivity {
         super.onResume();
 
         if (activeWebView != null) {
+
             activeWebView.onResume();
 
-            // 👑 حماية العودة: إعادة تطبيق اللون والأيقونات المحفوظة فوراً قبل مزامنة الويب
+            // 👑 إعادة تقييم Navigation Mode
+            SystemUI.refreshNavigationBar(this);
+
             SystemUI.restoreHeaderOnResume(this);
 
-            // لا تُشغّل المزامنة إلا إذا انقضت مدة الـ Splash
             if (System.currentTimeMillis() - splashStartTime >= FIXED_SPLASH_TIME) {
                 SystemUI.scheduleStatusBarSync(
                         this,
@@ -499,6 +521,7 @@ public class MainActivity extends AppCompatActivity {
     protected void onDestroy() {
 
         SystemUI.cancelStatusBarSync();
+        SystemUI.cancelNavigationBarHide();
 
         // ✅ إضافة التدمير للمحرك كأولوية
         if (capabilitiesEngine != null) {
@@ -703,9 +726,19 @@ public class MainActivity extends AppCompatActivity {
     public void onWindowFocusChanged(boolean hasFocus) {
         super.onWindowFocusChanged(hasFocus);
         if (hasFocus) {
+
+            // 👑 إعادة تقييم Navigation Mode عند استعادة التركيز
+            SystemUI.refreshNavigationBar(this);
+
             SystemUI.restoreHeaderOnResume(this);
-            if (System.currentTimeMillis() - splashStartTime >= FIXED_SPLASH_TIME && activeWebView != null) {
-                SystemUI.scheduleStatusBarSync(this, activeWebView);
+
+            if (System.currentTimeMillis() - splashStartTime >= FIXED_SPLASH_TIME
+                    && activeWebView != null) {
+
+                SystemUI.scheduleStatusBarSync(
+                        this,
+                        activeWebView
+                );
             }
         }
     }
@@ -729,4 +762,4 @@ public class MainActivity extends AppCompatActivity {
             Log.e(TAG, "⚠️ Failed to initialize Native Modules.", t);
         }
     }
-            }
+        }
