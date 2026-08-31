@@ -1,9 +1,18 @@
 package com.store.app.offline;
 
+import android.animation.Animator;
+import android.animation.AnimatorListenerAdapter;
+import android.animation.AnimatorSet;
+import android.animation.ObjectAnimator;
 import android.app.Activity;
+import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.Paint;
+import android.graphics.Path;
+import android.graphics.RectF;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
+import android.graphics.drawable.RippleDrawable;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
@@ -353,7 +362,7 @@ public class OfflineUIController {
         );
 
         // =====================================================
-        // 💳 BOTTOM CARD
+        // 💳 PROFESSIONAL FLOATING CARD
         // =====================================================
 
         LinearLayout bottomCard =
@@ -363,19 +372,73 @@ public class OfflineUIController {
                 LinearLayout.VERTICAL
         );
 
+        bottomCard.setGravity(
+                Gravity.CENTER_HORIZONTAL
+        );
+
         bottomCard.setBackground(
                 createCardDrawable()
         );
 
+        /*
+         * HTML equivalent:
+         *
+         * padding: 26px 22px;
+         * border-radius: 28px;
+         * border: 1px solid rgba(0,0,0,.04);
+         * box-shadow: ...
+         */
         bottomCard.setPadding(
-                dp(32),
-                dp(38),
-                dp(32),
-                dp(46)
+                dp(22),
+                dp(26),
+                dp(22),
+                dp(26)
         );
 
-        bottomCard.setGravity(
-                Gravity.CENTER_HORIZONTAL
+        /*
+         * ظل حقيقي Native.
+         *
+         * elevation = طبقة الظل الأساسية.
+         * ويتم تحريكها لاحقاً في الـ ambient animation.
+         */
+        bottomCard.setElevation(
+                dp(16)
+        );
+
+        bottomCard.setTranslationZ(
+                dp(0)
+        );
+
+        // =====================================================
+        // 📐 RESPONSIVE CARD POSITION
+        // =====================================================
+
+        FrameLayout.LayoutParams cardParams =
+                new FrameLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.WRAP_CONTENT,
+                        Gravity.BOTTOM
+                );
+
+        /*
+         * HTML body:
+         *
+         * padding: 16px;
+         *
+         * لذلك الكرت لا يلامس حواف الشاشة.
+         */
+        cardParams.leftMargin =
+                dp(16);
+
+        cardParams.rightMargin =
+                dp(16);
+
+        cardParams.bottomMargin =
+                dp(4);
+
+        pureOfflineUI.addView(
+                bottomCard,
+                cardParams
         );
 
         // =====================================================
@@ -394,25 +457,30 @@ public class OfflineUIController {
         );
 
         titleMsg.setTextSize(
-                18f
+                20f
         );
 
         titleMsg.setTypeface(
-                android.graphics.Typeface.DEFAULT_BOLD
+                android.graphics.Typeface.DEFAULT,
+                android.graphics.Typeface.BOLD
         );
 
         titleMsg.setGravity(
                 Gravity.CENTER
         );
 
+        titleMsg.setIncludeFontPadding(
+                true
+        );
+
         LinearLayout.LayoutParams titleParams =
                 new LinearLayout.LayoutParams(
-                        -1,
-                        -2
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.WRAP_CONTENT
                 );
 
         titleParams.bottomMargin =
-                dp(20);
+                dp(8);
 
         bottomCard.addView(
                 titleMsg,
@@ -435,26 +503,30 @@ public class OfflineUIController {
         );
 
         subMsg.setTextSize(
-                14f
+                14.72f
         );
 
         subMsg.setGravity(
                 Gravity.CENTER
         );
 
+        subMsg.setIncludeFontPadding(
+                true
+        );
+
         subMsg.setLineSpacing(
-                dp(10),
-                1.1f
+                0,
+                1.6f
         );
 
         LinearLayout.LayoutParams subParams =
                 new LinearLayout.LayoutParams(
-                        -1,
-                        -2
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.WRAP_CONTENT
                 );
 
         subParams.bottomMargin =
-                dp(40);
+                dp(22);
 
         bottomCard.addView(
                 subMsg,
@@ -462,33 +534,31 @@ public class OfflineUIController {
         );
 
         // =====================================================
-        // 🔘 RETRY BUTTON
+        // 🔘 PROFESSIONAL RETRY BUTTON
         // =====================================================
 
         FrameLayout btnContainer =
                 new FrameLayout(activity);
 
-        GradientDrawable btnBg =
-                new GradientDrawable();
-
-        btnBg.setColor(
-                OFFLINE_ACCENT
-        );
-
-        btnBg.setCornerRadius(
-                dp(36)
-        );
-
         btnContainer.setBackground(
-                btnBg
+                createRetryButtonDrawable()
         );
 
-        btnContainer.setPadding(
-                0,
-                dp(18),
-                0,
-                dp(18)
+        btnContainer.setClickable(
+                true
         );
+
+        btnContainer.setFocusable(
+                true
+        );
+
+        btnContainer.setForeground(
+                createRippleDrawable()
+        );
+
+        // =====================================================
+        // 🔄 BUTTON CONTENT
+        // =====================================================
 
         LinearLayout btnContent =
                 new LinearLayout(activity);
@@ -501,11 +571,55 @@ public class OfflineUIController {
                 Gravity.CENTER
         );
 
+        btnContent.setLayoutDirection(
+                View.LAYOUT_DIRECTION_RTL
+        );
+
+        // =====================================================
+        // 🔄 RETRY ICON
+        // =====================================================
+
+        ImageView retryIcon =
+                new ImageView(activity);
+
+        retryIcon.setImageDrawable(
+                new RetryIconDrawable(
+                        Color.WHITE,
+                        dp(18)
+                )
+        );
+
+        LinearLayout.LayoutParams iconParams =
+                new LinearLayout.LayoutParams(
+                        dp(18),
+                        dp(18)
+                );
+
+        /*
+         * HTML:
+         * gap: 5px
+         */
+        iconParams.setMargins(
+                0,
+                0,
+                0,
+                0
+        );
+
+        btnContent.addView(
+                retryIcon,
+                iconParams
+        );
+
+        // =====================================================
+        // 📝 RETRY TEXT
+        // =====================================================
+
         TextView retryText =
                 new TextView(activity);
 
         retryText.setText(
-                "🔄  إعادة المحاولة"
+                "إعادة المحاولة"
         );
 
         retryText.setTextColor(
@@ -513,43 +627,67 @@ public class OfflineUIController {
         );
 
         retryText.setTextSize(
-                15f
+                15.68f
         );
 
         retryText.setTypeface(
-                android.graphics.Typeface.DEFAULT_BOLD
+                android.graphics.Typeface.DEFAULT,
+                android.graphics.Typeface.BOLD
         );
 
-        ProgressBar btnSpinner =
-                new ProgressBar(
-                        activity,
-                        null,
-                        android.R.attr.progressBarStyleSmall
-                );
-
-        btnSpinner.setVisibility(
-                View.GONE
+        retryText.setGravity(
+                Gravity.CENTER
         );
 
-        btnSpinner
-                .getIndeterminateDrawable()
-                .setColorFilter(
-                        Color.WHITE,
-                        android.graphics.PorterDuff.Mode.SRC_IN
+        LinearLayout.LayoutParams retryTextParams =
+                new LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.WRAP_CONTENT,
+                        ViewGroup.LayoutParams.WRAP_CONTENT
                 );
 
-        btnContent.addView(
-                retryText
+        retryTextParams.setMargins(
+                dp(5),
+                0,
+                0,
+                0
         );
 
         btnContent.addView(
-                btnSpinner
+                retryText,
+                retryTextParams
         );
+
+        // =====================================================
+        // ⚪ THREE DOTS LOADER
+        // =====================================================
+
+        LinearLayout dotsLoader =
+                createDotsLoader();
+
+        FrameLayout.LayoutParams dotsParams =
+                new FrameLayout.LayoutParams(
+                        dp(30),
+                        dp(24),
+                        Gravity.CENTER
+                );
+
+        dotsLoader.setVisibility(
+                View.INVISIBLE
+        );
+
+        btnContainer.addView(
+                dotsLoader,
+                dotsParams
+        );
+
+        // =====================================================
+        // 🎯 BUTTON CONTENT CENTER
+        // =====================================================
 
         FrameLayout.LayoutParams contentParams =
                 new FrameLayout.LayoutParams(
-                        -2,
-                        -2,
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.MATCH_PARENT,
                         Gravity.CENTER
                 );
 
@@ -559,26 +697,79 @@ public class OfflineUIController {
         );
 
         // =====================================================
-        // 👆 BUTTON ACTION
+        // 👆 RETRY ACTION
         // =====================================================
 
         btnContainer.setOnClickListener(v -> {
 
-            retryText.setVisibility(
-                    View.GONE
-            );
-
-            btnSpinner.setVisibility(
-                    View.VISIBLE
-            );
+            if (!btnContainer.isEnabled()) {
+                return;
+            }
 
             btnContainer.setEnabled(
                     false
             );
 
+            /*
+             * إخفاء محتوى الزر.
+             */
+            btnContent.animate()
+                    .alpha(0f)
+                    .setDuration(160)
+                    .start();
+
+            /*
+             * إظهار اللودر.
+             */
+            dotsLoader.setVisibility(
+                    View.VISIBLE
+            );
+
+            dotsLoader.setAlpha(
+                    0f
+            );
+
+            dotsLoader.animate()
+                    .alpha(1f)
+                    .setDuration(180)
+                    .start();
+
+            /*
+             * دوران احترافي مستمر.
+             */
+            ObjectAnimator loaderRotation =
+                    ObjectAnimator.ofFloat(
+                            dotsLoader,
+                            View.ROTATION,
+                            0f,
+                            360f
+                    );
+
+            loaderRotation.setDuration(
+                    1200
+            );
+
+            loaderRotation.setRepeatCount(
+                    ObjectAnimator.INFINITE
+            );
+
+            loaderRotation.setInterpolator(
+                    new android.view.animation.LinearInterpolator()
+            );
+
+            loaderRotation.start();
+
+            /*
+             * نفس منطق الانتظار السابق:
+             * لا نغير منطق الشبكة.
+             */
             new Handler(
                     Looper.getMainLooper()
             ).postDelayed(() -> {
+
+                if (loaderRotation != null) {
+                    loaderRotation.cancel();
+                }
 
                 if (NetworkMonitor.isInternetAvailable(activity)) {
 
@@ -590,27 +781,46 @@ public class OfflineUIController {
 
                 } else {
 
-                    btnSpinner.setVisibility(
-                            View.GONE
-                    );
+                    dotsLoader.animate()
+                            .alpha(0f)
+                            .setDuration(160)
+                            .withEndAction(() -> {
 
-                    retryText.setVisibility(
-                            View.VISIBLE
-                    );
+                                dotsLoader.setVisibility(
+                                        View.INVISIBLE
+                                );
 
-                    btnContainer.setEnabled(
-                            true
-                    );
+                                dotsLoader.setRotation(
+                                        0f
+                                );
 
+                                btnContent.animate()
+                                        .alpha(1f)
+                                        .setDuration(180)
+                                        .start();
+
+                                btnContainer.setEnabled(
+                                        true
+                                );
+                            })
+                            .start();
+
+                    /*
+                     * نفس حركة التنبيه السابقة،
+                     * لكن أنعم بصرياً.
+                     */
                     v.animate()
-                            .translationX(12)
-                            .setDuration(50)
+                            .translationX(dp(8))
+                            .setDuration(55)
                             .withEndAction(() ->
                                     v.animate()
-                                            .translationX(-12)
-                                            .setDuration(50)
+                                            .translationX(dp(-8))
+                                            .setDuration(55)
                                             .withEndAction(() ->
-                                                    v.setTranslationX(0)
+                                                    v.animate()
+                                                            .translationX(0)
+                                                            .setDuration(55)
+                                                            .start()
                                             )
                                             .start()
                             )
@@ -620,18 +830,15 @@ public class OfflineUIController {
             }, 1000);
         });
 
+        // =====================================================
+        // 📏 BUTTON SIZE
+        // =====================================================
+
         LinearLayout.LayoutParams btnLayoutParams =
                 new LinearLayout.LayoutParams(
-                        -1,
-                        -2
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        dp(52)
                 );
-
-        btnLayoutParams.setMargins(
-                dp(8),
-                0,
-                dp(8),
-                0
-        );
 
         bottomCard.addView(
                 btnContainer,
@@ -639,28 +846,37 @@ public class OfflineUIController {
         );
 
         // =====================================================
-        // 📐 CARD
+        // 🎬 CARD ENTRANCE ANIMATION
         // =====================================================
 
-        FrameLayout.LayoutParams cardParams =
-                new FrameLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT,
-                        ViewGroup.LayoutParams.WRAP_CONTENT,
-                        Gravity.BOTTOM
-                );
+        bottomCard.setAlpha(
+                0f
+        );
 
-        pureOfflineUI.addView(
-                bottomCard,
-                cardParams
+        bottomCard.setTranslationY(
+                dp(24)
+        );
+
+        bottomCard.setScaleX(
+                0.98f
+        );
+
+        bottomCard.setScaleY(
+                0.98f
         );
 
         activity.addContentView(
                 pureOfflineUI,
                 new ViewGroup.LayoutParams(
-                        -1,
-                        -1
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.MATCH_PARENT
                 )
         );
+
+        /*
+         * تشغيل الدخول فقط عند ظهور الواجهة.
+         * لا يتم تشغيله هنا حتى لا يغير سلوك النظام.
+         */
 
         Log.d(
                 TAG,
@@ -674,32 +890,287 @@ public class OfflineUIController {
     private Drawable createCardDrawable() {
 
         GradientDrawable gd =
-                new GradientDrawable(
-                        GradientDrawable.Orientation.TOP_BOTTOM,
-                        new int[]{
-                                OFFLINE_CARD_TOP,
-                                OFFLINE_CARD_BOTTOM
-                        }
-                );
+                new GradientDrawable();
 
-        gd.setCornerRadii(
-                new float[]{
-                        dp(34), dp(34),
-                        dp(34), dp(34),
-                        0, 0,
-                        0, 0
-                }
+        gd.setColor(
+                OFFLINE_CARD_TOP
+        );
+
+        /*
+         * HTML:
+         * border-radius: 28px;
+         */
+        gd.setCornerRadius(
+                dp(28)
+        );
+
+        /*
+         * HTML:
+         * border: 1px solid rgba(0,0,0,0.04)
+         *
+         * نستخدم لوناً فعلياً ثابتاً حتى تكون النتيجة
+         * متناسقة على جميع إصدارات Android.
+         */
+        gd.setStroke(
+                dp(1),
+                Color.parseColor("#0A000000")
         );
 
         return gd;
     }
 
-    private int dp(float value) {
-        return Math.round(
-                value * activity.getResources()
-                        .getDisplayMetrics()
-                        .density
+    private Drawable createRetryButtonDrawable() {
+
+        GradientDrawable gd =
+                new GradientDrawable();
+
+        gd.setColor(
+                OFFLINE_ACCENT
         );
+
+        /*
+         * HTML:
+         * border-radius: 16px;
+         */
+        gd.setCornerRadius(
+                dp(16)
+        );
+
+        return gd;
+    }
+
+    private Drawable createRippleDrawable() {
+
+        GradientDrawable mask =
+                new GradientDrawable();
+
+        mask.setColor(
+                Color.WHITE
+        );
+
+        mask.setCornerRadius(
+                dp(16)
+        );
+
+        return new RippleDrawable(
+                android.content.res.ColorStateList.valueOf(
+                        Color.parseColor("#30FFFFFF")
+                ),
+                null,
+                mask
+        );
+    }
+
+    private LinearLayout createDotsLoader() {
+
+        LinearLayout loader =
+                new LinearLayout(activity);
+
+        loader.setOrientation(
+                LinearLayout.HORIZONTAL
+        );
+
+        loader.setGravity(
+                Gravity.CENTER
+        );
+
+        loader.setLayoutDirection(
+                View.LAYOUT_DIRECTION_LTR
+        );
+
+        for (int i = 0; i < 3; i++) {
+
+            View dot =
+                    new View(activity);
+
+            GradientDrawable dotDrawable =
+                    new GradientDrawable();
+
+            dotDrawable.setShape(
+                    GradientDrawable.OVAL
+            );
+
+            dotDrawable.setColor(
+                    Color.WHITE
+            );
+
+            dot.setBackground(
+                    dotDrawable
+            );
+
+            LinearLayout.LayoutParams dotParams =
+                    new LinearLayout.LayoutParams(
+                            dp(6),
+                            dp(6)
+                    );
+
+            if (i > 0) {
+                dotParams.leftMargin =
+                        dp(4);
+            }
+
+            loader.addView(
+                    dot,
+                    dotParams
+            );
+        }
+
+        return loader;
+    }
+
+    private static class RetryIconDrawable
+            extends Drawable {
+
+        private final Paint paint =
+                new Paint(Paint.ANTI_ALIAS_FLAG);
+
+        private final Path path =
+                new Path();
+
+        private final float size;
+
+        RetryIconDrawable(
+                int color,
+                float size
+        ) {
+
+            this.size = size;
+
+            paint.setColor(
+                    color
+            );
+
+            paint.setStyle(
+                    Paint.Style.STROKE
+            );
+
+            paint.setStrokeWidth(
+                    size * 0.115f
+            );
+
+            paint.setStrokeCap(
+                    Paint.Cap.ROUND
+            );
+
+            paint.setStrokeJoin(
+                    Paint.Join.ROUND
+            );
+        }
+
+        @Override
+        public void draw(Canvas canvas) {
+
+            RectF bounds =
+                    getBounds();
+
+            float left =
+                    bounds.left;
+
+            float top =
+                    bounds.top;
+
+            float right =
+                    bounds.right;
+
+            float bottom =
+                    bounds.bottom;
+
+            float cx =
+                    (left + right) / 2f;
+
+            float cy =
+                    (top + bottom) / 2f;
+
+            float radius =
+                    Math.min(
+                            right - left,
+                            bottom - top
+                    ) * 0.34f;
+
+            /*
+             * سهم دائري قريب جداً من
+             * Material refresh icon الموجود في HTML.
+             */
+            RectF arcRect =
+                    new RectF(
+                            cx - radius,
+                            cy - radius,
+                            cx + radius,
+                            cy + radius
+                    );
+
+            canvas.drawArc(
+                    arcRect,
+                    -55f,
+                    285f,
+                    false,
+                    paint
+            );
+
+            path.reset();
+
+            float arrowX =
+                    cx + radius * 0.98f;
+
+            float arrowY =
+                    cy - radius * 0.88f;
+
+            path.moveTo(
+                    arrowX,
+                    arrowY
+            );
+
+            path.lineTo(
+                    arrowX - size * 0.28f,
+                    arrowY
+            );
+
+            path.moveTo(
+                    arrowX,
+                    arrowY
+            );
+
+            path.lineTo(
+                    arrowX,
+                    arrowY + size * 0.28f
+            );
+
+            canvas.drawPath(
+                    path,
+                    paint
+            );
+        }
+
+        @Override
+        public void setAlpha(int alpha) {
+            paint.setAlpha(
+                    alpha
+            );
+        }
+
+        @Override
+        public void setColorFilter(
+                android.graphics.ColorFilter colorFilter) {
+
+            paint.setColorFilter(
+                    colorFilter
+            );
+        }
+
+        @Override
+        public int getOpacity() {
+            return android.graphics.PixelFormat.TRANSLUCENT;
+        }
+
+        @Override
+        public int getIntrinsicWidth() {
+            return Math.round(size);
+        }
+
+        @Override
+        public int getIntrinsicHeight() {
+            return Math.round(size);
+        }
     }
 
     // =========================================================
@@ -805,6 +1276,101 @@ public class OfflineUIController {
 
             pureOfflineUI.setAlpha(1f);
 
+            // 👑 تشغيل Animation الكرت عند ظهوره
+            View card = pureOfflineUI.getChildAt(1);
+
+            if (card != null) {
+
+                card.setAlpha(0f);
+                card.setTranslationY(dp(24));
+                card.setScaleX(0.98f);
+                card.setScaleY(0.98f);
+
+                card.animate()
+                        .alpha(1f)
+                        .translationY(0f)
+                        .scaleX(1f)
+                        .scaleY(1f)
+                        .setDuration(800)
+                        .setInterpolator(
+                                new android.view.animation.PathInterpolator(
+                                        0.16f,
+                                        1f,
+                                        0.3f,
+                                        1f
+                                )
+                        )
+                        .withEndAction(() -> {
+
+                            /*
+                             * Ambient floating:
+                             *
+                             * HTML:
+                             * translateY(-4px)
+                             *
+                             * بشكل مستمر وهادئ.
+                             */
+                            ObjectAnimator floating =
+                                    ObjectAnimator.ofFloat(
+                                            card,
+                                            View.TRANSLATION_Y,
+                                            0f,
+                                            -dp(4),
+                                            0f
+                                    );
+
+                            floating.setDuration(
+                                    4000
+                            );
+
+                            floating.setInterpolator(
+                                    new android.view.animation.AccelerateDecelerateInterpolator()
+                            );
+
+                            floating.setRepeatCount(
+                                    ObjectAnimator.INFINITE
+                            );
+
+                            floating.start();
+
+                            card.setTag(
+                                    floating
+                            );
+
+                            /*
+                             * محاكاة نبض الظل.
+                             */
+                            ObjectAnimator elevation =
+                                    ObjectAnimator.ofFloat(
+                                            card,
+                                            View.TRANSLATION_Z,
+                                            dp(16),
+                                            dp(22),
+                                            dp(16)
+                                    );
+
+                            elevation.setDuration(
+                                    4000
+                            );
+
+                            elevation.setInterpolator(
+                                    new android.view.animation.AccelerateDecelerateInterpolator()
+                            );
+
+                            elevation.setRepeatCount(
+                                    ObjectAnimator.INFINITE
+                            );
+
+                            elevation.start();
+
+                            card.setTag(
+                                    "elevation_anim",
+                                    elevation
+                            );
+                        })
+                        .start();
+            }
+
             /*
              * WebView يختفي بعد أن أصبحت
              * الواجهة الأصلية جاهزة.
@@ -842,6 +1408,38 @@ public class OfflineUIController {
 
             if (activity.isFinishing()) {
                 return;
+            }
+
+            // 👑 إلغاء الأنيميشن عند الإخفاء
+            View card = pureOfflineUI.getChildAt(1);
+
+            if (card != null) {
+
+                card.animate().cancel();
+
+                Object tag =
+                        card.getTag();
+
+                if (tag instanceof ObjectAnimator) {
+                    ((ObjectAnimator) tag).cancel();
+                }
+
+                Object elevationTag =
+                        card.getTag(
+                                "elevation_anim"
+                        );
+
+                if (elevationTag instanceof ObjectAnimator) {
+                    ((ObjectAnimator) elevationTag).cancel();
+                }
+
+                card.setTranslationY(
+                        dp(0)
+                );
+
+                card.setTranslationZ(
+                        dp(16)
+                );
             }
 
             pureOfflineUI.animate()
@@ -968,4 +1566,12 @@ public class OfflineUIController {
     public void setCallback(OfflineUICallback callback) {
         this.callback = callback;
     }
-}
+
+    private int dp(float value) {
+        return Math.round(
+                value * activity.getResources()
+                        .getDisplayMetrics()
+                        .density
+        );
+    }
+            }
