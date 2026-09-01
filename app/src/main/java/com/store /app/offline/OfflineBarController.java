@@ -38,7 +38,12 @@ public class OfflineBarController {
     // =========================================================
 
     private static final long SHOW_DURATION = 620L;
-    private static final long HIDE_DURATION = 620L;
+
+    /*
+     * نزول الشريط مستقل عن سرعة Navigation Bar.
+     */
+    private static final long HIDE_DURATION = 720L;
+
     private static final long RESTORE_DURATION = 260L;
 
     private static final TimeInterpolator PREMIUM_INTERPOLATOR =
@@ -47,11 +52,19 @@ public class OfflineBarController {
                 return 1f + t * t * t + t * t;
             };
 
+    private static final TimeInterpolator SMOOTH_HIDE_INTERPOLATOR =
+            input -> {
+                float t = input - 1f;
+                return 1f + t * t * t + t * t;
+            };
+
     private ValueAnimator navigationPositionAnimator;
 
-    private float lastAnimatedTranslation = Float.NaN;
-
     private int lastNavigationTarget = Integer.MIN_VALUE;
+
+    private boolean navigationBarWasVisible = false;
+
+    private boolean independentHideRunning = false;
 
     private final Activity activity;
     private final Handler mainHandler;
@@ -186,13 +199,53 @@ public class OfflineBarController {
                                         overlayRoot
                                 );
 
-                        if (finalInsets != null) {
-
-                            updateInsets(
-                                    finalInsets,
-                                    true
-                            );
+                        if (finalInsets == null) {
+                            return;
                         }
+
+                        Insets navigation =
+                                finalInsets.getInsets(
+                                        WindowInsetsCompat.Type.navigationBars()
+                                );
+
+                        boolean visible =
+                                finalInsets.isVisible(
+                                        WindowInsetsCompat.Type.navigationBars()
+                                );
+
+                        /*
+                         * إذا اختفى Navigation Bar أثناء/بعد
+                         * animation، لا نسمح بإجبار الشريط على
+                         * النزول حسب قيمة inset النهائية.
+                         */
+                        if (!visible &&
+                                offlineBar != null &&
+                                offlineBar.getVisibility()
+                                        == View.VISIBLE) {
+
+                            navigationBarVisible =
+                                    false;
+
+                            navigationBottomInset =
+                                    navigation.bottom;
+
+                            startIndependentHideAnimation();
+
+                            updateVeil(
+                                    0,
+                                    false
+                            );
+
+                            navigationBarWasVisible =
+                                    false;
+
+                            return;
+                        }
+
+                        updateInsets(
+                                finalInsets,
+                                true
+                        );
                     }
                 }
         );
@@ -220,7 +273,7 @@ public class OfflineBarController {
         navigationBottomInset = navigation.bottom;
         gestureBottomInset = gestures.bottom;
 
-        navigationBarVisible =
+        boolean newNavigationVisible =
                 insets.isVisible(
                         WindowInsetsCompat.Type.navigationBars()
                 );
@@ -229,84 +282,231 @@ public class OfflineBarController {
                 navigationBottomInset == 0 &&
                         gestureBottomInset > 0;
 
-        applyNavigationPosition(animatePosition);
-    }
+        /*
+         * =====================================================
+         * 🔻 NAVIGATION BAR اختفت
+         *
+         * هنا لا نستخدم navigationBottomInset إطلاقاً
+         * لتحديد حركة النزول.
+         * =====================================================
+         */
+        if (navigationBarWasVisible &&
+                !newNavigationVisible &&
+                offlineBar != null &&
+                offlineBar.getVisibility() == View.VISIBLE) {
 
-    private void applyInitialInsets(
-            WindowInsetsCompat insets) {
+            navigationBarVisible = false;
 
-        updateInsets(
-                insets,
-                false
-        );
+            startIndependentHideAnimation();
 
-        if (offlineBar != null) {
+            updateVeil(0, false);
 
-            int target =
-                    calculateBarTranslation();
+            navigationBarWasVisible = false;
 
-            offlineBar.setTranslationY(
-                    target
-            );
-
-            lastAnimatedTranslation =
-                    target;
-
-            lastNavigationTarget =
-                    target;
+            return;
         }
-    }
 
-    private int calculateBarTranslation() {
-        if (navigationBarVisible && navigationBottomInset > 0) return -navigationBottomInset;
-        return 0;
+        navigationBarVisible =
+                newNavigationVisible;
+
+        navigationBarWasVisible =
+                newNavigationVisible;
+
+        /*
+         * =====================================================
+         * 🔺 ظهور Navigation Bar
+         *
+         * هنا نستمر باستخدام الـ inset الطبيعي.
+         * =====================================================
+         */
+        applyNavigationPosition(
+                animatePosition
+        );
     }
 
     private void applyNavigationPosition(
             boolean animate) {
 
         if (offlineBar == null ||
-                overlayRoot == null) {
+                overlayRoot == null ||
+                independentHideRunning) {
             return;
         }
 
         final int target =
                 calculateBarTranslation();
 
+        /*
+         * الشريط غير ظاهر.
+         */
         if (offlineBar.getVisibility()
                 != View.VISIBLE) {
 
             cancelNavigationPositionAnimation();
 
-            offlineBar.setTranslationY(target);
+            offlineBar.setTranslationY(
+                    target
+            );
 
-            lastAnimatedTranslation = target;
-            lastNavigationTarget = target;
+            lastNavigationTarget =
+                    target;
 
-            updateVeil(target, false);
+            updateVeil(
+                    target,
+                    false
+            );
 
             return;
         }
 
+        /*
+         * لا يوجد تغيير.
+         */
         if (lastNavigationTarget == target) {
             return;
         }
 
-        if (!animate) {
+        /*
+         * ظهور Navigation Bar فقط:
+         * نسمح للحركة بالصعود.
+         */
+        if (animate &&
+                target < offlineBar.getTranslationY()) {
 
-            cancelNavigationPositionAnimation();
-
-            offlineBar.setTranslationY(target);
-
-            lastAnimatedTranslation = target;
-            lastNavigationTarget = target;
-
-            updateVeil(target, false);
+            animateNavigationPosition(
+                    target
+            );
 
             return;
         }
 
-        animateNavigationPosition(target);
+        /*
+         * أي حركة نزول نمنعها هنا.
+         *
+         * النزول له محرك مستقل.
+         */
+        if (target >=
+                offlineBar.getTranslationY()) {
+
+            return;
+        }
+
+        /*
+         * الحالة الفورية.
+         */
+        cancelNavigationPositionAnimation();
+
+        offlineBar.setTranslationY(
+                target
+        );
+
+        lastNavigationTarget =
+                target;
+
+        updateVeil(
+                target,
+                false
+        );
+    }
+
+    // =========================================================
+    // 🔻 INDEPENDENT HIDE MOTION
+    // =========================================================
+
+    private void startIndependentHideAnimation() {
+
+        if (offlineBar == null ||
+                offlineBar.getVisibility()
+                        != View.VISIBLE) {
+            return;
+        }
+
+        if (independentHideRunning) {
+            return;
+        }
+
+        independentHideRunning = true;
+
+        cancelNavigationPositionAnimation();
+
+        final float start =
+                offlineBar.getTranslationY();
+
+        final float end = 0f;
+
+        /*
+         * لا نقرأ navigationBottomInset هنا.
+         *
+         * النزول دائماً يبدأ من الموضع الحالي
+         * وينتهي عند موضع الشاشة الطبيعي.
+         */
+        ValueAnimator animator =
+                ValueAnimator.ofFloat(
+                        start,
+                        end
+                );
+
+        animator.setDuration(
+                HIDE_DURATION
+        );
+
+        animator.setInterpolator(
+                SMOOTH_HIDE_INTERPOLATOR
+        );
+
+        animator.addUpdateListener(
+                animation -> {
+
+                    if (offlineBar == null) {
+                        return;
+                    }
+
+                    float value =
+                            (Float)
+                                    animation.getAnimatedValue();
+
+                    offlineBar.setTranslationY(
+                            value
+                    );
+                }
+        );
+
+        animator.addListener(
+                new AnimatorListenerAdapter() {
+
+                    @Override
+                    public void onAnimationEnd(
+                            android.animation.Animator animation) {
+
+                        if (offlineBar == null) {
+                            return;
+                        }
+
+                        offlineBar.setTranslationY(
+                                0f
+                        );
+
+                        lastNavigationTarget =
+                                0;
+
+                        independentHideRunning =
+                                false;
+                    }
+
+                    @Override
+                    public void onAnimationCancel(
+                            android.animation.Animator animation) {
+
+                        independentHideRunning =
+                                false;
+                    }
+                }
+        );
+
+        navigationPositionAnimator =
+                animator;
+
+        animator.start();
     }
 
     private void animateNavigationPosition(
@@ -329,9 +529,6 @@ public class OfflineBarController {
             offlineBar.setTranslationY(
                     targetTranslation
             );
-
-            lastAnimatedTranslation =
-                    targetTranslation;
 
             lastNavigationTarget =
                     targetTranslation;
@@ -395,9 +592,6 @@ public class OfflineBarController {
 
                     offlineBar.setTranslationY(value);
 
-                    lastAnimatedTranslation =
-                            value;
-
                     updateVeil(
                             Math.round(value),
                             true
@@ -419,9 +613,6 @@ public class OfflineBarController {
                         offlineBar.setTranslationY(
                                 targetTranslation
                         );
-
-                        lastAnimatedTranslation =
-                                targetTranslation;
 
                         lastNavigationTarget =
                                 targetTranslation;
@@ -514,6 +705,48 @@ public class OfflineBarController {
         }
     }
 
+    private int calculateBarTranslation() {
+
+        /*
+         * الصعود فقط يعتمد على Navigation Bar.
+         */
+        if (navigationBarVisible &&
+                navigationBottomInset > 0) {
+
+            return -navigationBottomInset;
+        }
+
+        /*
+         * النزول لا يستخدم inset.
+         */
+        return 0;
+    }
+
+    private void applyInitialInsets(
+            WindowInsetsCompat insets) {
+
+        updateInsets(
+                insets,
+                false
+        );
+
+        if (offlineBar != null) {
+
+            int target =
+                    calculateBarTranslation();
+
+            offlineBar.setTranslationY(
+                    target
+            );
+
+            lastNavigationTarget =
+                    target;
+
+            navigationBarWasVisible =
+                    navigationBarVisible;
+        }
+    }
+
     public void show() {
         if (offlineBar == null) return;
         activity.runOnUiThread(() -> {
@@ -523,6 +756,8 @@ public class OfflineBarController {
             offlineBar.setText(DEFAULT_TEXT);
             applyBarBackground(BAR_TOP, BAR_BOTTOM);
             cancelNavigationPositionAnimation();
+            independentHideRunning = false;
+            navigationBarWasVisible = navigationBarVisible;
 
             int initialTranslation =
                     calculateBarTranslation();
@@ -530,9 +765,6 @@ public class OfflineBarController {
             offlineBar.setTranslationY(
                     initialTranslation
             );
-
-            lastAnimatedTranslation =
-                    initialTranslation;
 
             lastNavigationTarget =
                     initialTranslation;
@@ -550,6 +782,7 @@ public class OfflineBarController {
         if (offlineBar == null) return;
         activity.runOnUiThread(() -> {
             if (activity.isFinishing()) return;
+            independentHideRunning = false;
             cancelNavigationPositionAnimation();
             offlineBar.animate().cancel();
             applyBarBackground(RESTORED_TOP, RESTORED_BOTTOM);
@@ -569,9 +802,6 @@ public class OfflineBarController {
                         initialTranslation
                 );
 
-                lastAnimatedTranslation =
-                        initialTranslation;
-
                 lastNavigationTarget =
                         initialTranslation;
                 applyBarBackground(BAR_TOP, BAR_BOTTOM);
@@ -585,11 +815,12 @@ public class OfflineBarController {
         if (offlineBar == null) return;
         activity.runOnUiThread(() -> {
             offlineBar.animate().cancel();
+            independentHideRunning = false;
+            cancelNavigationPositionAnimation();
             offlineBar.setVisibility(View.GONE);
             offlineBar.setAlpha(1f);
             offlineBar.setScaleX(1f);
             offlineBar.setScaleY(1f);
-            cancelNavigationPositionAnimation();
 
             int initialTranslation =
                     calculateBarTranslation();
@@ -597,9 +828,6 @@ public class OfflineBarController {
             offlineBar.setTranslationY(
                     initialTranslation
             );
-
-            lastAnimatedTranslation =
-                    initialTranslation;
 
             lastNavigationTarget =
                     initialTranslation;
@@ -621,6 +849,8 @@ public class OfflineBarController {
             applyBarBackground(RESTORED_TOP, RESTORED_BOTTOM);
             offlineBar.setText(RESTORED_TEXT);
             cancelNavigationPositionAnimation();
+            independentHideRunning = false;
+            navigationBarWasVisible = navigationBarVisible;
 
             int initialTranslation =
                     calculateBarTranslation();
@@ -628,9 +858,6 @@ public class OfflineBarController {
             offlineBar.setTranslationY(
                     initialTranslation
             );
-
-            lastAnimatedTranslation =
-                    initialTranslation;
 
             lastNavigationTarget =
                     initialTranslation;
@@ -692,4 +919,4 @@ public class OfflineBarController {
     }
 
     private int dp(float value) { return Math.round(value * activity.getResources().getDisplayMetrics().density); }
-            }
+                            }
