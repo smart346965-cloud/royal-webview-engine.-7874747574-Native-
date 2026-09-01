@@ -41,8 +41,9 @@ public class OfflineBarController {
 
     private static final int COLLAPSED_SIZE_DP = 50;
     private static final int EXPANDED_WIDTH_DP = 230;
-    private static final int BADGE_BOTTOM_MARGIN_DP = 20;
-    private static final int BADGE_HORIZONTAL_MARGIN_DP = 20;
+    private static final int BADGE_BOTTOM_MARGIN_DP = 28; // ارتفاع ثابت مريح فوق NavigationBar
+    private static final int BADGE_HORIZONTAL_MARGIN_DP = 16; // تثبيت فاصل يمين الشاشة
+    private static final int ICON_SIZE_DP = 24;
 
     private static final long APPEAR_DURATION = 700L;
     private static final long EXPAND_DURATION = 650L;
@@ -62,9 +63,6 @@ public class OfflineBarController {
     private ImageView offlineIcon;
     private TextView offlineBar;
 
-    private int navigationBottomInset = 0;
-    private int gestureBottomInset = 0;
-    private boolean gestureNavigation = false;
     private boolean initialized = false;
     private boolean expanded = false;
     private boolean onlineMode = false;
@@ -87,18 +85,8 @@ public class OfflineBarController {
         if (activity == null || activity.isFinishing() || initialized) return;
         initialized = true;
         createOverlay();
-        installInsetsController();
-        overlayRoot.post(() -> {
-            WindowInsetsCompat insets = ViewCompat.getRootWindowInsets(overlayRoot);
-            if (insets != null) {
-                Insets navigation = insets.getInsets(WindowInsetsCompat.Type.navigationBars());
-                Insets gestures = insets.getInsets(WindowInsetsCompat.Type.systemGestures());
-                navigationBottomInset = navigation.bottom;
-                gestureBottomInset = gestures.bottom;
-                gestureNavigation = navigationBottomInset == 0 && gestureBottomInset > 0;
-                applySafeAreaPosition();
-            }
-        });
+        applySafeAreaPosition();
+        // تم إلغاء تتبع انزلاق شريط التنقل بناءً على طلبك
     }
 
     private void createOverlay() {
@@ -119,6 +107,7 @@ public class OfflineBarController {
         offlineBadge.setVisibility(View.GONE);
         offlineBadge.setAlpha(0f);
 
+        // 📍 التثبيت الصارم في الزاوية السفلية اليمنى (Gravity.BOTTOM | Gravity.END)
         FrameLayout.LayoutParams badgeParams = new FrameLayout.LayoutParams(dp(COLLAPSED_SIZE_DP), dp(COLLAPSED_SIZE_DP));
         badgeParams.gravity = Gravity.BOTTOM | Gravity.END;
         badgeParams.rightMargin = dp(BADGE_HORIZONTAL_MARGIN_DP);
@@ -126,32 +115,41 @@ public class OfflineBarController {
         overlayRoot.addView(offlineBadge, badgeParams);
         applyBadgeBackground(false);
 
+        // 📡 الأيقونة - تتوسط الكبسولة هندسياً عند الحالة المغلقة (Collapsed)
         offlineIcon = new ImageView(activity);
         offlineIcon.setImageDrawable(new LuxuryCloudDrawable(OFFLINE_COLOR));
-        offlineIcon.setScaleType(ImageView.ScaleType.CENTER);
-        FrameLayout.LayoutParams iconParams = new FrameLayout.LayoutParams(dp(24), dp(24));
-        iconParams.gravity = Gravity.CENTER_VERTICAL | Gravity.START;
-        iconParams.leftMargin = dp(13);
+        offlineIcon.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+
+        FrameLayout.LayoutParams iconParams = new FrameLayout.LayoutParams(dp(ICON_SIZE_DP), dp(ICON_SIZE_DP));
+        iconParams.gravity = Gravity.CENTER_VERTICAL | Gravity.END;
+        // حساب الهامش الأيمن ليكون في المنتصف تماماً عند CollapsedSize (50dp - 24dp) / 2 = 13dp
+        iconParams.rightMargin = dp((COLLAPSED_SIZE_DP - ICON_SIZE_DP) / 2f);
         offlineBadge.addView(offlineIcon, iconParams);
 
+        // 📝 النص - يبدأ من يسار الأيقونة ويمتد لليسار بدقة مع اتجاه اللغة العربية
         offlineBar = new TextView(activity);
         offlineBar.setText(DEFAULT_TEXT);
         offlineBar.setTextColor(TEXT_COLOR);
-        offlineBar.setTextSize(13.5f);
-        offlineBar.setGravity(Gravity.CENTER_VERTICAL);
+        offlineBar.setTextSize(13f);
+        offlineBar.setGravity(Gravity.CENTER_VERTICAL | Gravity.RIGHT);
         offlineBar.setSingleLine(true);
-        offlineBar.setTypeface(android.graphics.Typeface.create("sans", android.graphics.Typeface.NORMAL));
+        offlineBar.setTypeface(android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL));
         offlineBar.setAlpha(0f);
-        offlineBar.setTranslationX(dp(12));
-        FrameLayout.LayoutParams textParams = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.MATCH_PARENT);
-        textParams.gravity = Gravity.CENTER_VERTICAL | Gravity.START;
-        textParams.leftMargin = dp(49);
-        textParams.rightMargin = dp(13);
+        offlineBar.setTranslationX(dp(-10)); // دخول من اليمين لليسار
+
+        FrameLayout.LayoutParams textParams = new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.MATCH_PARENT);
+        textParams.gravity = Gravity.CENTER_VERTICAL | Gravity.END;
+        textParams.rightMargin = dp(COLLAPSED_SIZE_DP); // تبدأ بداية النص بعد مسافة الأيقونة الدائرية
+        textParams.leftMargin = dp(16); // هامش أمان أيسر للنص
         offlineBadge.addView(offlineBar, textParams);
 
         offlineBadge.setOnClickListener(v -> {
-            if (expanded) collapseBadge();
-            else expandBadge();
+            if (expanded) {
+                collapseBadge();
+            } else {
+                expandBadge();
+            }
         });
     }
 
@@ -164,37 +162,39 @@ public class OfflineBarController {
         offlineBadge.setElevation(dp(14));
     }
 
-    private void installInsetsController() {
-        ViewCompat.setOnApplyWindowInsetsListener(overlayRoot, (view, insets) -> {
-            Insets navigation = insets.getInsets(WindowInsetsCompat.Type.navigationBars());
-            Insets gestures = insets.getInsets(WindowInsetsCompat.Type.systemGestures());
-            navigationBottomInset = navigation.bottom;
-            gestureBottomInset = gestures.bottom;
-            gestureNavigation = navigationBottomInset == 0 && gestureBottomInset > 0;
-            applySafeAreaPosition();
-            return insets;
-        });
-        ViewCompat.requestApplyInsets(overlayRoot);
-    }
-
     private void applySafeAreaPosition() {
         if (offlineBadge == null) return;
         FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) offlineBadge.getLayoutParams();
         if (params == null) return;
         params.gravity = Gravity.BOTTOM | Gravity.END;
         params.rightMargin = dp(BADGE_HORIZONTAL_MARGIN_DP);
-        params.bottomMargin = navigationBottomInset + dp(BADGE_BOTTOM_MARGIN_DP);
+        params.bottomMargin = dp(BADGE_BOTTOM_MARGIN_DP);
         offlineBadge.setLayoutParams(params);
+    }
+
+    private int calculateTargetWidth() {
+        if (offlineBar == null) return dp(EXPANDED_WIDTH_DP);
+        // 📐 قياس العرض الفعلي المطلوب للنص بدقة
+        offlineBar.measure(
+                View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED),
+                View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
+        );
+        int textWidth = offlineBar.getMeasuredWidth();
+        // العرض الكلي = عرض النص + عرض مساحة الأيقونة اليمنى (50dp) + الهامش الأيسر (18dp)
+        int requiredWidth = textWidth + dp(COLLAPSED_SIZE_DP) + dp(18);
+        return Math.max(requiredWidth, dp(EXPANDED_WIDTH_DP));
     }
 
     private void expandBadge() {
         if (offlineBadge == null || expanded) return;
         expanded = true;
         cancelAutoCollapse();
+
+        int targetWidth = calculateTargetWidth();
         FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) offlineBadge.getLayoutParams();
-        int startWidth = offlineBadge.getWidth();
-        if (startWidth <= 0) startWidth = dp(COLLAPSED_SIZE_DP);
-        ValueAnimator widthAnimator = ValueAnimator.ofInt(startWidth, dp(EXPANDED_WIDTH_DP));
+        int startWidth = offlineBadge.getWidth() > 0 ? offlineBadge.getWidth() : dp(COLLAPSED_SIZE_DP);
+
+        ValueAnimator widthAnimator = ValueAnimator.ofInt(startWidth, targetWidth);
         widthAnimator.setDuration(EXPAND_DURATION);
         widthAnimator.setInterpolator(SPRING_INTERPOLATOR);
         widthAnimator.addUpdateListener(animation -> {
@@ -203,8 +203,18 @@ public class OfflineBarController {
             offlineBadge.setLayoutParams(params);
         });
         widthAnimator.start();
+
         applyBadgeBackground(true);
-        offlineBar.animate().alpha(1f).translationX(0f).setStartDelay(120L).setDuration(TEXT_DURATION).setInterpolator(SMOOTH_INTERPOLATOR).start();
+
+        // إظهار النص بانسيابية وانزلاق مطاطي متناسق مع اتجاه اللغة
+        offlineBar.animate()
+                .alpha(1f)
+                .translationX(0f)
+                .setStartDelay(100L)
+                .setDuration(TEXT_DURATION)
+                .setInterpolator(SMOOTH_INTERPOLATOR)
+                .start();
+
         scheduleAutoCollapse(3800L);
     }
 
@@ -212,10 +222,18 @@ public class OfflineBarController {
         if (offlineBadge == null || !expanded) return;
         expanded = false;
         cancelAutoCollapse();
-        offlineBar.animate().alpha(0f).translationX(dp(12)).setDuration(260L).setInterpolator(SMOOTH_INTERPOLATOR).start();
+
+        // إخفاء النص أولاً
+        offlineBar.animate()
+                .alpha(0f)
+                .translationX(dp(-10))
+                .setDuration(220L)
+                .setInterpolator(SMOOTH_INTERPOLATOR)
+                .start();
+
         FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) offlineBadge.getLayoutParams();
-        int startWidth = offlineBadge.getWidth();
-        if (startWidth <= 0) startWidth = dp(EXPANDED_WIDTH_DP);
+        int startWidth = offlineBadge.getWidth() > 0 ? offlineBadge.getWidth() : dp(EXPANDED_WIDTH_DP);
+
         ValueAnimator widthAnimator = ValueAnimator.ofInt(startWidth, dp(COLLAPSED_SIZE_DP));
         widthAnimator.setDuration(COLLAPSE_DURATION);
         widthAnimator.setInterpolator(SMOOTH_INTERPOLATOR);
@@ -283,22 +301,36 @@ public class OfflineBarController {
             offlineBar.animate().cancel();
             onlineMode = false;
             expanded = false;
+
             offlineBar.setText(DEFAULT_TEXT);
             offlineIcon.setImageDrawable(new LuxuryCloudDrawable(OFFLINE_COLOR));
             offlineBar.setAlpha(0f);
-            offlineBar.setTranslationX(dp(12));
+            offlineBar.setTranslationX(dp(-10));
+
+            // إعادة ضبط العرض كدائرة صغيرة أولاً
             FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) offlineBadge.getLayoutParams();
             params.width = dp(COLLAPSED_SIZE_DP);
             offlineBadge.setLayoutParams(params);
+
             applySafeAreaPosition();
             applyBadgeBackground(false);
-            offlineBadge.setScaleX(0.70f);
-            offlineBadge.setScaleY(0.70f);
+
+            // مرحلة 1: ظهور كبسولة الأيقونة بالجهـة اليمنى عبر انكماش وبروز مطاطي
+            offlineBadge.setScaleX(0.6f);
+            offlineBadge.setScaleY(0.6f);
             offlineBadge.setAlpha(0f);
             offlineBadge.setVisibility(View.VISIBLE);
-            offlineBadge.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(APPEAR_DURATION).setInterpolator(SPRING_INTERPOLATOR).withEndAction(() -> {
-                if (offlineBadge != null) expandBadge();
-            }).start();
+
+            offlineBadge.animate()
+                    .alpha(1f)
+                    .scaleX(1f)
+                    .scaleY(1f)
+                    .setDuration(450L)
+                    .setInterpolator(SPRING_INTERPOLATOR)
+                    .withEndAction(() -> {
+                        // مرحلة 2: انسدال وتمدد الشريط لإظهار النص
+                        if (offlineBadge != null) expandBadge();
+                    }).start();
         });
         notifyVisibilityChanged(true);
     }
@@ -333,7 +365,7 @@ public class OfflineBarController {
             offlineBadge.setScaleX(1f);
             offlineBadge.setScaleY(1f);
             offlineBar.setAlpha(0f);
-            offlineBar.setTranslationX(dp(12));
+            offlineBar.setTranslationX(dp(-10));
             FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) offlineBadge.getLayoutParams();
             params.width = dp(COLLAPSED_SIZE_DP);
             offlineBadge.setLayoutParams(params);
@@ -361,7 +393,7 @@ public class OfflineBarController {
                 applySafeAreaPosition();
                 applyBadgeBackground(false);
                 offlineBar.setAlpha(0f);
-                offlineBar.setTranslationX(dp(12));
+                offlineBar.setTranslationX(dp(-10));
                 offlineBadge.setScaleX(0.70f);
                 offlineBadge.setScaleY(0.70f);
                 offlineBadge.setAlpha(0f);
@@ -376,21 +408,36 @@ public class OfflineBarController {
 
     public void shake() {
         if (offlineBadge == null) return;
-        if (offlineBadge.getVisibility() != View.VISIBLE) show();
         activity.runOnUiThread(() -> {
             if (offlineBadge == null) return;
-            String originalText = offlineBar.getText().toString();
-            offlineBar.setText(WARNING_TEXT);
-            offlineBadge.animate().translationX(dp(6)).setDuration(55L).withEndAction(() ->
-                    offlineBadge.animate().translationX(dp(-6)).setDuration(55L).withEndAction(() ->
-                            offlineBadge.animate().translationX(0).setDuration(65L).start()
-                    ).start()
-            ).start();
-            mainHandler.postDelayed(() -> {
-                if (offlineBar != null && offlineBadge != null && offlineBadge.getVisibility() == View.VISIBLE) {
-                    offlineBar.setText(originalText);
+            if (offlineBadge.getVisibility() != View.VISIBLE) {
+                show();
+            } else {
+                offlineBar.setText(WARNING_TEXT);
+
+                // إعادة قياس وتوسيع العرض فوراً ليتناسب مع نص التنبيه الطويل
+                if (expanded) {
+                    expanded = false; // إعادة تعيين لتشغيل الانيميشن
                 }
-            }, 1800L);
+                expandBadge();
+
+                // اهتزاز خفيف وانيق للتنبيه
+                offlineBadge.animate().translationX(dp(-6)).setDuration(60L).withEndAction(() ->
+                        offlineBadge.animate().translationX(dp(6)).setDuration(60L).withEndAction(() ->
+                                offlineBadge.animate().translationX(0).setDuration(60L).start()
+                        ).start()
+                ).start();
+
+                mainHandler.postDelayed(() -> {
+                    if (offlineBar != null && offlineBadge != null && offlineBadge.getVisibility() == View.VISIBLE) {
+                        offlineBar.setText(DEFAULT_TEXT);
+                        if (expanded) {
+                            expanded = false;
+                            expandBadge();
+                        }
+                    }
+                }, 2400L);
+            }
         });
     }
 
@@ -404,14 +451,6 @@ public class OfflineBarController {
 
     public View getVeilView() {
         return null;
-    }
-
-    public boolean isGestureNavigation() {
-        return gestureNavigation;
-    }
-
-    public int getNavigationBottomInset() {
-        return navigationBottomInset;
     }
 
     public void setCallback(VisibilityCallback callback) {
@@ -512,4 +551,4 @@ public class OfflineBarController {
             return android.graphics.PixelFormat.TRANSLUCENT;
         }
     }
-                                                      }
+    }
