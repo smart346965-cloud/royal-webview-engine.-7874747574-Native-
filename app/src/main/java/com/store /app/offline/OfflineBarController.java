@@ -6,6 +6,7 @@ import android.app.Activity;
 import android.graphics.Color;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Handler;
+import android.animation.TimeInterpolator;
 import android.os.Looper;
 import android.view.Gravity;
 import android.view.View;
