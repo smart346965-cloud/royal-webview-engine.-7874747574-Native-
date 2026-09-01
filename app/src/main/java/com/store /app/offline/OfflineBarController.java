@@ -33,17 +33,25 @@ public class OfflineBarController {
     private static final int BAR_HEIGHT_DP = 48;
     private static final int VEIL_MAX_DP = 64;
 
-    private static final long SHOW_DURATION = 460L;
-    private static final long HIDE_DURATION = 460L;
+    // =========================================================
+    // 🎬 PREMIUM NAVIGATION MOTION ENGINE
+    // =========================================================
+
+    private static final long SHOW_DURATION = 620L;
+    private static final long HIDE_DURATION = 620L;
     private static final long RESTORE_DURATION = 260L;
-    private static final TimeInterpolator PREMIUM_INTERPOLATOR = input -> {
-        float t = input - 1f;
-        return 1f + t * t * t + t * t;
-    };
+
+    private static final TimeInterpolator PREMIUM_INTERPOLATOR =
+            input -> {
+                float t = input - 1f;
+                return 1f + t * t * t + t * t;
+            };
 
     private ValueAnimator navigationPositionAnimator;
+
+    private float lastAnimatedTranslation = Float.NaN;
+
     private int lastNavigationTarget = Integer.MIN_VALUE;
-    private boolean systemInsetsAnimationRunning = false;
 
     private final Activity activity;
     private final Handler mainHandler;
@@ -127,41 +135,125 @@ public class OfflineBarController {
     }
 
     private void installInsetsController() {
-        ViewCompat.setOnApplyWindowInsetsListener(overlayRoot, (view, insets) -> {
-            updateInsets(insets, false);
-            return insets;
-        });
-        ViewCompat.setWindowInsetsAnimationCallback(overlayRoot, new WindowInsetsAnimationCompat.Callback(WindowInsetsAnimationCompat.Callback.DISPATCH_MODE_CONTINUE_ON_SUBTREE) {
-            @Override public void onPrepare(WindowInsetsAnimationCompat animation) { systemInsetsAnimationRunning = true; }
-            @Override public WindowInsetsCompat onProgress(WindowInsetsCompat insets, List<WindowInsetsAnimationCompat> runningAnimations) {
-                updateInsets(insets, true);
-                return insets;
-            }
-            @Override public void onEnd(WindowInsetsAnimationCompat animation) {
-                systemInsetsAnimationRunning = false;
-                WindowInsetsCompat finalInsets = ViewCompat.getRootWindowInsets(overlayRoot);
-                if (finalInsets != null) updateInsets(finalInsets, true);
-            }
-        });
+
+        ViewCompat.setOnApplyWindowInsetsListener(
+                overlayRoot,
+                (view, insets) -> {
+
+                    updateInsets(
+                            insets,
+                            false
+                    );
+
+                    return insets;
+                }
+        );
+
+        ViewCompat.setWindowInsetsAnimationCallback(
+                overlayRoot,
+
+                new WindowInsetsAnimationCompat.Callback(
+                        WindowInsetsAnimationCompat
+                                .Callback
+                                .DISPATCH_MODE_CONTINUE_ON_SUBTREE
+                ) {
+
+                    @Override
+                    public void onPrepare(
+                            WindowInsetsAnimationCompat animation) {
+                    }
+
+                    @Override
+                    public WindowInsetsCompat onProgress(
+                            WindowInsetsCompat insets,
+                            List<WindowInsetsAnimationCompat>
+                                    runningAnimations) {
+
+                        updateInsets(
+                                insets,
+                                true
+                        );
+
+                        return insets;
+                    }
+
+                    @Override
+                    public void onEnd(
+                            WindowInsetsAnimationCompat animation) {
+
+                        WindowInsetsCompat finalInsets =
+                                ViewCompat.getRootWindowInsets(
+                                        overlayRoot
+                                );
+
+                        if (finalInsets != null) {
+
+                            updateInsets(
+                                    finalInsets,
+                                    true
+                            );
+                        }
+                    }
+                }
+        );
     }
 
-    private void updateInsets(WindowInsetsCompat insets, boolean animatePosition) {
-        if (insets == null || overlayRoot == null) return;
-        Insets navigation = insets.getInsets(WindowInsetsCompat.Type.navigationBars());
-        Insets gestures = insets.getInsets(WindowInsetsCompat.Type.systemGestures());
+    private void updateInsets(
+            WindowInsetsCompat insets,
+            boolean animatePosition) {
+
+        if (insets == null ||
+                overlayRoot == null) {
+            return;
+        }
+
+        Insets navigation =
+                insets.getInsets(
+                        WindowInsetsCompat.Type.navigationBars()
+                );
+
+        Insets gestures =
+                insets.getInsets(
+                        WindowInsetsCompat.Type.systemGestures()
+                );
+
         navigationBottomInset = navigation.bottom;
         gestureBottomInset = gestures.bottom;
-        navigationBarVisible = insets.isVisible(WindowInsetsCompat.Type.navigationBars());
-        gestureNavigation = navigationBottomInset == 0 && gestureBottomInset > 0;
+
+        navigationBarVisible =
+                insets.isVisible(
+                        WindowInsetsCompat.Type.navigationBars()
+                );
+
+        gestureNavigation =
+                navigationBottomInset == 0 &&
+                        gestureBottomInset > 0;
+
         applyNavigationPosition(animatePosition);
     }
 
-    private void applyInitialInsets(WindowInsetsCompat insets) {
-        updateInsets(insets, false);
+    private void applyInitialInsets(
+            WindowInsetsCompat insets) {
+
+        updateInsets(
+                insets,
+                false
+        );
+
         if (offlineBar != null) {
-            int target = calculateBarTranslation();
-            offlineBar.setTranslationY(target);
-            lastNavigationTarget = target;
+
+            int target =
+                    calculateBarTranslation();
+
+            offlineBar.setTranslationY(
+                    target
+            );
+
+            lastAnimatedTranslation =
+                    target;
+
+            lastNavigationTarget =
+                    target;
         }
     }
 
@@ -170,89 +262,255 @@ public class OfflineBarController {
         return 0;
     }
 
-    private void applyNavigationPosition(boolean animate) {
-        if (offlineBar == null || overlayRoot == null) return;
-        final int targetTranslation = calculateBarTranslation();
-        if (offlineBar.getVisibility() != View.VISIBLE) {
-            cancelNavigationPositionAnimation();
-            offlineBar.setTranslationY(targetTranslation);
-            lastNavigationTarget = targetTranslation;
-            updateVeil(targetTranslation, false);
+    private void applyNavigationPosition(
+            boolean animate) {
+
+        if (offlineBar == null ||
+                overlayRoot == null) {
             return;
         }
-        if (lastNavigationTarget == targetTranslation) return;
-        if (lastNavigationTarget == Integer.MIN_VALUE) {
+
+        final int target =
+                calculateBarTranslation();
+
+        if (offlineBar.getVisibility()
+                != View.VISIBLE) {
+
             cancelNavigationPositionAnimation();
-            offlineBar.setTranslationY(targetTranslation);
-            lastNavigationTarget = targetTranslation;
-            updateVeil(targetTranslation, false);
+
+            offlineBar.setTranslationY(target);
+
+            lastAnimatedTranslation = target;
+            lastNavigationTarget = target;
+
+            updateVeil(target, false);
+
             return;
         }
-        if (animate) animateNavigationPosition(targetTranslation);
-        else {
-            cancelNavigationPositionAnimation();
-            offlineBar.setTranslationY(targetTranslation);
-            lastNavigationTarget = targetTranslation;
-            updateVeil(targetTranslation, false);
+
+        if (lastNavigationTarget == target) {
+            return;
         }
+
+        if (!animate) {
+
+            cancelNavigationPositionAnimation();
+
+            offlineBar.setTranslationY(target);
+
+            lastAnimatedTranslation = target;
+            lastNavigationTarget = target;
+
+            updateVeil(target, false);
+
+            return;
+        }
+
+        animateNavigationPosition(target);
     }
 
-    private void animateNavigationPosition(int targetTranslation) {
-        if (offlineBar == null) return;
-        if (lastNavigationTarget == targetTranslation && navigationPositionAnimator != null && navigationPositionAnimator.isRunning()) return;
-        float current = offlineBar.getTranslationY();
+    private void animateNavigationPosition(
+            int targetTranslation) {
+
+        if (offlineBar == null) {
+            return;
+        }
+
+        final float current =
+                offlineBar.getTranslationY();
+
+        /*
+         * تجاهل التغييرات الصغيرة جداً.
+         */
+        if (Math.abs(
+                current - targetTranslation
+        ) < 1f) {
+
+            offlineBar.setTranslationY(
+                    targetTranslation
+            );
+
+            lastAnimatedTranslation =
+                    targetTranslation;
+
+            lastNavigationTarget =
+                    targetTranslation;
+
+            return;
+        }
+
         cancelNavigationPositionAnimation();
-        navigationPositionAnimator = ValueAnimator.ofFloat(current, targetTranslation);
-        navigationPositionAnimator.setDuration(targetTranslation < current ? SHOW_DURATION : HIDE_DURATION);
-        navigationPositionAnimator.setInterpolator(PREMIUM_INTERPOLATOR);
-        navigationPositionAnimator.addUpdateListener(animator -> {
-            if (offlineBar == null) return;
-            float value = (Float) animator.getAnimatedValue();
-            offlineBar.setTranslationY(value);
-            updateVeil(Math.round(value), true);
-        });
-        navigationPositionAnimator.addListener(new AnimatorListenerAdapter() {
-            @Override public void onAnimationEnd(android.animation.Animator animation) {
-                if (offlineBar == null) return;
-                offlineBar.setTranslationY(targetTranslation);
-                lastNavigationTarget = targetTranslation;
-                updateVeil(targetTranslation, false);
-                navigationPositionAnimator = null;
-            }
-            @Override public void onAnimationCancel(android.animation.Animator animation) { navigationPositionAnimator = null; }
-        });
-        lastNavigationTarget = targetTranslation;
+
+        final boolean movingUp =
+                targetTranslation < current;
+
+        final float distance =
+                Math.abs(
+                        targetTranslation - current
+                );
+
+        /*
+         * مدة ديناميكية:
+         *
+         * الحركة الكبيرة = حركة واضحة.
+         * الحركة الصغيرة = لا تصبح بطيئة.
+         */
+        long duration =
+                Math.round(
+                        Math.min(
+                                720f,
+                                Math.max(
+                                        420f,
+                                        420f +
+                                                (distance / dp(144f))
+                                                        * 180f
+                                )
+                        )
+                );
+
+        navigationPositionAnimator =
+                ValueAnimator.ofFloat(
+                        current,
+                        targetTranslation
+                );
+
+        navigationPositionAnimator.setDuration(
+                duration
+        );
+
+        navigationPositionAnimator.setInterpolator(
+                PREMIUM_INTERPOLATOR
+        );
+
+        navigationPositionAnimator.addUpdateListener(
+                animator -> {
+
+                    if (offlineBar == null) {
+                        return;
+                    }
+
+                    float value =
+                            (Float)
+                                    animator.getAnimatedValue();
+
+                    offlineBar.setTranslationY(value);
+
+                    lastAnimatedTranslation =
+                            value;
+
+                    updateVeil(
+                            Math.round(value),
+                            true
+                    );
+                }
+        );
+
+        navigationPositionAnimator.addListener(
+                new AnimatorListenerAdapter() {
+
+                    @Override
+                    public void onAnimationEnd(
+                            android.animation.Animator animation) {
+
+                        if (offlineBar == null) {
+                            return;
+                        }
+
+                        offlineBar.setTranslationY(
+                                targetTranslation
+                        );
+
+                        lastAnimatedTranslation =
+                                targetTranslation;
+
+                        lastNavigationTarget =
+                                targetTranslation;
+
+                        updateVeil(
+                                targetTranslation,
+                                false
+                        );
+
+                        navigationPositionAnimator =
+                                null;
+                    }
+
+                    @Override
+                    public void onAnimationCancel(
+                            android.animation.Animator animation) {
+
+                        navigationPositionAnimator =
+                                null;
+                    }
+                }
+        );
+
+        lastNavigationTarget =
+                targetTranslation;
+
         navigationPositionAnimator.start();
+    }
+
+    private void updateVeil(
+            int barTranslation,
+            boolean animated) {
+
+        if (bottomVeil == null) {
+            return;
+        }
+
+        if (navigationBarVisible &&
+                navigationBottomInset > 0) {
+
+            int targetHeight =
+                    Math.min(
+                            dp(VEIL_MAX_DP),
+                            Math.max(
+                                    dp(24),
+                                    navigationBottomInset
+                            )
+                    );
+
+            float targetAlpha =
+                    Math.min(
+                            1f,
+                            navigationBottomInset /
+                                    (float) dp(64)
+                    );
+
+            ViewGroup.LayoutParams lp =
+                    bottomVeil.getLayoutParams();
+
+            if (lp == null) {
+                return;
+            }
+
+            lp.height = targetHeight;
+
+            bottomVeil.setLayoutParams(lp);
+
+            bottomVeil.setVisibility(
+                    View.VISIBLE
+            );
+
+            bottomVeil.setAlpha(
+                    targetAlpha
+            );
+
+        } else {
+
+            bottomVeil.setAlpha(0f);
+
+            bottomVeil.setVisibility(
+                    View.GONE
+            );
+        }
     }
 
     private void cancelNavigationPositionAnimation() {
         if (navigationPositionAnimator != null) {
             navigationPositionAnimator.cancel();
             navigationPositionAnimator = null;
-        }
-    }
-
-    private void updateVeil(int barTranslation, boolean animated) {
-        if (bottomVeil == null) return;
-        if (navigationBarVisible && navigationBottomInset > 0) {
-            int targetHeight = Math.min(dp(VEIL_MAX_DP), Math.max(dp(24), navigationBottomInset));
-            float targetAlpha = Math.min(1f, navigationBottomInset / (float) dp(64));
-            ViewGroup.LayoutParams lp = bottomVeil.getLayoutParams();
-            if (lp == null) return;
-            if (!animated) {
-                lp.height = targetHeight;
-                bottomVeil.setLayoutParams(lp);
-                bottomVeil.setVisibility(View.VISIBLE);
-                bottomVeil.setAlpha(targetAlpha);
-                return;
-            }
-            lp.height = targetHeight;
-            bottomVeil.setLayoutParams(lp);
-            bottomVeil.setVisibility(View.VISIBLE);
-            bottomVeil.setAlpha(targetAlpha);
-        } else {
-            bottomVeil.setAlpha(0f);
-            bottomVeil.setVisibility(View.GONE);
         }
     }
 
@@ -264,7 +522,20 @@ public class OfflineBarController {
             offlineBar.animate().cancel();
             offlineBar.setText(DEFAULT_TEXT);
             applyBarBackground(BAR_TOP, BAR_BOTTOM);
-            offlineBar.setTranslationY(calculateBarTranslation());
+            cancelNavigationPositionAnimation();
+
+            int initialTranslation =
+                    calculateBarTranslation();
+
+            offlineBar.setTranslationY(
+                    initialTranslation
+            );
+
+            lastAnimatedTranslation =
+                    initialTranslation;
+
+            lastNavigationTarget =
+                    initialTranslation;
             offlineBar.setScaleX(0.96f);
             offlineBar.setScaleY(0.96f);
             offlineBar.setAlpha(0f);
@@ -279,6 +550,7 @@ public class OfflineBarController {
         if (offlineBar == null) return;
         activity.runOnUiThread(() -> {
             if (activity.isFinishing()) return;
+            cancelNavigationPositionAnimation();
             offlineBar.animate().cancel();
             applyBarBackground(RESTORED_TOP, RESTORED_BOTTOM);
             offlineBar.setText(RESTORED_TEXT);
@@ -288,7 +560,20 @@ public class OfflineBarController {
                 offlineBar.setAlpha(1f);
                 offlineBar.setScaleX(1f);
                 offlineBar.setScaleY(1f);
-                offlineBar.setTranslationY(calculateBarTranslation());
+                cancelNavigationPositionAnimation();
+
+                int initialTranslation =
+                        calculateBarTranslation();
+
+                offlineBar.setTranslationY(
+                        initialTranslation
+                );
+
+                lastAnimatedTranslation =
+                        initialTranslation;
+
+                lastNavigationTarget =
+                        initialTranslation;
                 applyBarBackground(BAR_TOP, BAR_BOTTOM);
                 offlineBar.setText(DEFAULT_TEXT);
             }).start();
@@ -304,7 +589,20 @@ public class OfflineBarController {
             offlineBar.setAlpha(1f);
             offlineBar.setScaleX(1f);
             offlineBar.setScaleY(1f);
-            offlineBar.setTranslationY(calculateBarTranslation());
+            cancelNavigationPositionAnimation();
+
+            int initialTranslation =
+                    calculateBarTranslation();
+
+            offlineBar.setTranslationY(
+                    initialTranslation
+            );
+
+            lastAnimatedTranslation =
+                    initialTranslation;
+
+            lastNavigationTarget =
+                    initialTranslation;
             applyBarBackground(BAR_TOP, BAR_BOTTOM);
             offlineBar.setText(DEFAULT_TEXT);
             if (bottomVeil != null) {
@@ -322,7 +620,20 @@ public class OfflineBarController {
             mainHandler.removeCallbacksAndMessages(null);
             applyBarBackground(RESTORED_TOP, RESTORED_BOTTOM);
             offlineBar.setText(RESTORED_TEXT);
-            offlineBar.setTranslationY(calculateBarTranslation());
+            cancelNavigationPositionAnimation();
+
+            int initialTranslation =
+                    calculateBarTranslation();
+
+            offlineBar.setTranslationY(
+                    initialTranslation
+            );
+
+            lastAnimatedTranslation =
+                    initialTranslation;
+
+            lastNavigationTarget =
+                    initialTranslation;
             if (offlineBar.getVisibility() != View.VISIBLE) {
                 offlineBar.setVisibility(View.VISIBLE);
                 offlineBar.setAlpha(0f);
