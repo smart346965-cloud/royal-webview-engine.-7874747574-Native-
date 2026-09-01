@@ -1,7 +1,7 @@
 package com.store.app.offline;
 
 import android.animation.Animator;
-import android.anim.AnimatorListenerAdapter;
+import android.animation.AnimatorListenerAdapter;
 import android.animation.TimeInterpolator;
 import android.animation.ValueAnimator;
 import android.app.Activity;
@@ -473,7 +473,7 @@ public class OfflineBarController {
 
         @Override
         public void draw(Canvas canvas) {
-            RectF bounds = getBounds();
+            RectF bounds = new RectF(getBounds());
             float w = bounds.width(), h = bounds.height();
             float sx = w / 24f, sy = h / 24f;
             canvas.save();
@@ -512,4 +512,4 @@ public class OfflineBarController {
             return android.graphics.PixelFormat.TRANSLUCENT;
         }
     }
-            }
+                                                      }
