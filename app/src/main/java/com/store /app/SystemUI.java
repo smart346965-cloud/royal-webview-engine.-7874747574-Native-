@@ -149,7 +149,7 @@ public class SystemUI {
 
                 controller.setSystemBarsBehavior(
                         WindowInsetsControllerCompat
-                                .BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                                .BEHAVIOR_SHOW_BARS_BY_SWIPE
                 );
 
                 return;
@@ -245,6 +245,48 @@ public class SystemUI {
     }
 
     // =========================================================
+    // 👑 Stable Navigation Bar Policy
+    // يمنع ظهور Navigation Bar كـ Transient Overlay
+    // ويجعل ظهورها يمر عبر Insets النظام الطبيعية.
+    // =========================================================
+
+    private static void enforceStableNavigationBarPolicy(
+            android.app.Activity activity
+    ) {
+        if (activity == null || activity.isFinishing()) {
+            return;
+        }
+
+        Window window = activity.getWindow();
+
+        if (window == null) {
+            return;
+        }
+
+        WindowInsetsControllerCompat controller =
+                WindowCompat.getInsetsController(
+                        window,
+                        window.getDecorView()
+                );
+
+        if (controller == null) {
+            return;
+        }
+
+        controller.setSystemBarsBehavior(
+                WindowInsetsControllerCompat.BEHAVIOR_SHOW_BARS_BY_SWIPE
+        );
+
+        window.setNavigationBarColor(Color.TRANSPARENT);
+
+        if (android.os.Build.VERSION.SDK_INT >=
+                android.os.Build.VERSION_CODES.Q) {
+
+            window.setNavigationBarContrastEnforced(false);
+        }
+    }
+
+    // =========================================================
     // 👑 Navigation Bar Activity Refresh
     // =========================================================
 
@@ -277,6 +319,12 @@ public class SystemUI {
             if (controller == null) {
                 return;
             }
+
+            // 👑 دائماً استخدم Navigation Bar مستقراً
+            // وليس Transient Overlay
+            controller.setSystemBarsBehavior(
+                    WindowInsetsControllerCompat.BEHAVIOR_SHOW_BARS_BY_SWIPE
+            );
 
             if (detectedNavigationMode == 2) {
 
@@ -346,12 +394,16 @@ public class SystemUI {
 
         if (controller != null) {
             controller.setSystemBarsBehavior(
-                    WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                    WindowInsetsControllerCompat.BEHAVIOR_SHOW_BARS_BY_SWIPE
             );
         }
 
         // 👑 تشغيل نظام التنقل الذكي
         initializeNavigationBarController(activity);
+
+        // 👑 منع الـ Transient Navigation Overlay
+        // وجعل ظهور شريط النظام يمر عبر Insets الطبيعية
+        enforceStableNavigationBarPolicy(activity);
 
         // تطبيق اللون الأولي المباشر
         applyHeaderColor(activity, initialColor);
@@ -785,6 +837,11 @@ public class SystemUI {
 
         if (controller != null) {
 
+            // 👑 منع ظهور Navigation Bar كطبقة Transient فوق Offline Bar
+            controller.setSystemBarsBehavior(
+                    WindowInsetsControllerCompat.BEHAVIOR_SHOW_BARS_BY_SWIPE
+            );
+
             // إظهار الشريط فوراً
             controller.show(
                     androidx.core.view.WindowInsetsCompat.Type.navigationBars()
@@ -827,4 +884,4 @@ public class SystemUI {
             scheduleNavigationBarHide(activity);
         }
     }
-    }
+        }
