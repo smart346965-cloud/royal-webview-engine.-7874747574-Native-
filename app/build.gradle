@@ -46,6 +46,9 @@ dependencies {
     implementation libs.activity
     implementation libs.constraintlayout
     
+    // 🛡️ AndroidX Core Engine (سحب الشاشة والـ Insets)
+    implementation libs.androidx.core
+    
     // 🌐 WebKit
     implementation libs.androidx.webkit
     
