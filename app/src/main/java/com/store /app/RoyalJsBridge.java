@@ -83,6 +83,15 @@ public class RoyalJsBridge {
         webView.post(() -> {
             try {
                 RoyalPanopticon.pulse("JS-BridgeChannel");
+
+                // 📴 حماية الأوفلاين: اهتزاز الشريط السفلي فوراً ومنع فتح الـ Custom Tab في الأوفلاين
+                if (!NetworkMonitor.isInternetAvailable(webView.getContext())) {
+                    OfflineStateManager.getInstance().notifyOfflineClickAttempt();
+                    Log.i(TAG, "📴 OAuth blocked by native offline guard.");
+                    return;
+                }
+
+                // 🌐 في الأونلاين: إطلاق الـ Custom Tab كالمعتاد
                 Log.i(TAG, "🚀 Native Auto-OAuth Intercepted: " + authUrl);
                 webEngineManager.launchSensitiveFlow(android.net.Uri.parse(authUrl));
             } catch (Exception e) {
@@ -179,4 +188,4 @@ public class RoyalJsBridge {
         if (webView == null) return;
         webView.post(() -> webView.evaluateJavascript(script, null));
     }
-            }
+                                   }
