@@ -36,7 +36,7 @@ public class WebEngineManager {
     private static final String TAG = "RoyalEngine";
 
     // =========================================================
-    // 🛡️ السكربت الاحترافي الخفي للحقن الآلي - يعترض كافة مزودي OAuth تلقائياً
+    // 🛡️ السكربت الاحترافي الخفي للحقن الآلي - يعترض كافة مزودي OAuth تلقائياً مع حماية الأوفلاين الصارمة
     // =========================================================
     private static final String OAUTH_AUTO_INJECTOR_JS =
         "(function() {" +
@@ -67,25 +67,39 @@ public class WebEngineManager {
         "    }" +
         "  }" +
         "" +
-        "  /* 1. اعتراض النقر المباشر على الأزرار والروابط التي تحتوي رابط OAuth صريح */" +
+        "  function handleOAuthAction(url, e) {" +
+        "    if (!navigator.onLine) {" +
+        "      if (e) { e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation(); }" +
+        "      if (window.RoyalJsBridge && window.RoyalJsBridge.notifyOfflineClick) {" +
+        "        window.RoyalJsBridge.notifyOfflineClick();" +
+        "      }" +
+        "      return true;" +
+        "    }" +
+        "    if (window.RoyalJsBridge) {" +
+        "      if (e) { e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation(); }" +
+        "      window.RoyalJsBridge.startOAuth(url);" +
+        "      return true;" +
+        "    }" +
+        "    return false;" +
+        "  }" +
+        "" +
+        "  /* 1. اعتراض النقر المباشر على الأزرار والروابط */" +
         "  document.addEventListener('click', function(e) {" +
         "    var target = e.target.closest('a, button, [role=\"button\"], input[type=\"submit\"], form');" +
         "    if (!target) return;" +
         "    var url = getValidUrl(target);" +
-        "    if (url && isOAuthUrl(url) && window.RoyalJsBridge) {" +
-        "      e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();" +
-        "      window.RoyalJsBridge.startOAuth(url);" +
+        "    if (url && isOAuthUrl(url)) {" +
+        "      handleOAuthAction(url, e);" +
         "    }" +
         "  }, true);" +
         "" +
-        "  /* 2. اعتراض التحويل البرمجي لـ Client-side SDKs (مثل Firebase signInWithRedirect) */" +
+        "  /* 2. اعتراض التحويل البرمجي لـ Client-side SDKs */" +
         "  try {" +
         "    var originalAssign = window.location.assign;" +
         "    if (typeof originalAssign === 'function') {" +
         "      window.location.assign = function(url) {" +
-        "        if (isOAuthUrl(url) && window.RoyalJsBridge) {" +
-        "          window.RoyalJsBridge.startOAuth(url);" +
-        "          return;" +
+        "        if (isOAuthUrl(url)) {" +
+        "          if (handleOAuthAction(url, null)) return;" +
         "        }" +
         "        return originalAssign.apply(this, arguments);" +
         "      };" +
@@ -93,9 +107,8 @@ public class WebEngineManager {
         "    var originalReplace = window.location.replace;" +
         "    if (typeof originalReplace === 'function') {" +
         "      window.location.replace = function(url) {" +
-        "        if (isOAuthUrl(url) && window.RoyalJsBridge) {" +
-        "          window.RoyalJsBridge.startOAuth(url);" +
-        "          return;" +
+        "        if (isOAuthUrl(url)) {" +
+        "          if (handleOAuthAction(url, null)) return;" +
         "        }" +
         "        return originalReplace.apply(this, arguments);" +
         "      };" +
@@ -106,9 +119,8 @@ public class WebEngineManager {
         "      var origSet = descriptor.set;" +
         "      Object.defineProperty(window.location, 'href', {" +
         "        set: function(val) {" +
-        "          if (isOAuthUrl(val) && window.RoyalJsBridge) {" +
-        "            window.RoyalJsBridge.startOAuth(val);" +
-        "            return;" +
+        "          if (isOAuthUrl(val)) {" +
+        "            if (handleOAuthAction(val, null)) return;" +
         "          }" +
         "          origSet.call(window.location, val);" +
         "        }" +
@@ -613,7 +625,7 @@ public class WebEngineManager {
             }
 
             // =========================================================
-            // 🔥 [تعديل 10] shouldInterceptRequest المبسَّط
+            // 🔥 [تعديل 10] shouldInterceptRequest المبسَّط مع HTTP 204 للأوفلاين
             // =========================================================
             @Override
             public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
@@ -647,14 +659,25 @@ public class WebEngineManager {
                     }
                 }
 
-                // ✅ الكود الجديد: حماية السجل وتفعيل الأوفلاين النيتيف
+                // ✅ الكود المحصن: حماية السجل ومنع الصفحة البيضاء عبر إرجاع HTTP 204 No Content
                 if (!NetworkMonitor.isInternetAvailable(context) && request.isForMainFrame()) {
-                    Log.i(TAG, "📴 Offline main-frame request intercepted. Triggering Native Offline UI.");
+                    Uri reqUri = request.getUrl();
+                    
+                    // إذا كان الطلب لمسار مصادقة حساس أو كنا على صفحة صالحة أصلاً
+                    if (isSensitiveNavigation(reqUri) || OfflineStateManager.getInstance().isPageValid()) {
+                        Log.i(TAG, "📴 Offline main-frame request blocked safely. Shaking bar without page clear.");
+                        
+                        // هز الشريط السفلي
+                        OfflineStateManager.getInstance().notifyOfflineClickAttempt();
+                        
+                        // إرجاع استجابة 204 No Content تمنع محرك Chromium من مسح الشاشة الحالية أو تحويلها لصفحة بيضاء
+                        InputStream emptyStream = new ByteArrayInputStream(new byte[0]);
+                        return new WebResourceResponse("text/plain", "UTF-8", 204, "No Content", null, emptyStream);
+                    }
 
-                    // إبلاغ مدير الأوفلاين لإظهار الواجهة النيتيف فوراً (OfflineUIController)
-                    OfflineStateManager.getInstance().setErrorPage(true, request.getUrl().toString());
+                    Log.i(TAG, "📴 Offline main-frame error request intercepted. Triggering Native Offline UI.");
+                    OfflineStateManager.getInstance().setErrorPage(true, reqUri.toString());
 
-                    // إرجاع استجابة هيكلية سليمة لمنع Chromium من التحول إلى about:blank أو chromewebdata
                     String cleanStub = "<!DOCTYPE html><html><head><meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\"></head><body style=\"background-color:transparent;\"></body></html>";
                     InputStream stubStream = new ByteArrayInputStream(cleanStub.getBytes(java.nio.charset.StandardCharsets.UTF_8));
                     return new WebResourceResponse("text/html", "UTF-8", 200, "OK", null, stubStream);
@@ -672,39 +695,37 @@ public class WebEngineManager {
                 return null; // ❌ لا نستخدم super.shouldInterceptRequest
             }
 
-            // =========================================================  
-            // 🔥 [تعديل 4] shouldOverrideUrlLoading (الإصدار الجديد)  
-            // =========================================================  
-            @Override  
-            public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {  
-                if (request == null || request.getUrl() == null) return false;  
-                Uri uri = request.getUrl();  
+            // =========================================================
+            // 🔥 [تعديل 4] shouldOverrideUrlLoading (الإصدار الجديد)
+            // =========================================================
+            @Override
+            public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
+                if (request == null || request.getUrl() == null) return false;
+                Uri uri = request.getUrl();
 
-                // 📴 حماية الأوفلاين الشاملة: حظر كافة النقرات والملاحة عند انقطاع الشبكة لمنع الصفحة البيضاء واهتزاز الشريط
-                if (!NetworkMonitor.isInternetAvailable(context)) {  
-                    OfflineStateManager.getInstance().notifyOfflineClickAttempt();  
-                    return true; // حظر الملاحة تماماً في وضع الأوفلاين
-                }  
-                
-                // 🌐 عند وجود إنترنت: يعمل منطقك الأصلي 100% دون أي تعديل
-                return handleUriLogic(uri, request.isForMainFrame());  
-            }  
+                // 📴 حماية الأوفلاين: حظر كافة الملاحة عند غياب الإنترنت واهتزاز الشريط
+                if (!NetworkMonitor.isInternetAvailable(context)) {
+                    OfflineStateManager.getInstance().notifyOfflineClickAttempt();
+                    return true; // حظر الملاحة تماماً
+                }
+                return handleUriLogic(uri, request.isForMainFrame());
+            }
 
-            // =========================================================  
-            // 🔥 [تعديل 5] shouldOverrideUrlLoading (الإصدار القديم)  
-            // =========================================================  
-            @SuppressWarnings("deprecation")  
-            @Override  
-            public boolean shouldOverrideUrlLoading(WebView view, String url) {  
-                if (url == null) return false;  
-                Uri uri = Uri.parse(url);  
+            // =========================================================
+            // 🔥 [تعديل 5] shouldOverrideUrlLoading (الإصدار القديم)
+            // =========================================================
+            @SuppressWarnings("deprecation")
+            @Override
+            public boolean shouldOverrideUrlLoading(WebView view, String url) {
+                if (url == null) return false;
+                Uri uri = Uri.parse(url);
 
-                // 📴 حماية الأوفلاين الشاملة
-                if (!NetworkMonitor.isInternetAvailable(context)) {  
-                    OfflineStateManager.getInstance().notifyOfflineClickAttempt();  
-                    return true; // حظر الملاحة تماماً في وضع الأوفلاين
-                }  
-                return handleUriLogic(uri, true);  
+                // 📴 حماية الأوفلاين
+                if (!NetworkMonitor.isInternetAvailable(context)) {
+                    OfflineStateManager.getInstance().notifyOfflineClickAttempt();
+                    return true; // حظر الملاحة تماماً
+                }
+                return handleUriLogic(uri, true);
             }
         });
 
