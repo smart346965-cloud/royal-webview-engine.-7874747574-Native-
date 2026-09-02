@@ -83,8 +83,20 @@ public class RoyalJsBridge {
         webView.post(() -> {
             try {
                 RoyalPanopticon.pulse("JS-BridgeChannel");
+
+                // 📴 بوابة الأوفلاين المركزية لمسار OAuth
+                if (!NetworkMonitor.isInternetAvailable(webView.getContext())) {
+                    OfflineStateManager.getInstance().notifyOfflineClickAttempt();
+                    Log.i(TAG, "📴 OAuth blocked by native offline guard.");
+                    return;
+                }
+
                 Log.i(TAG, "🚀 Native Auto-OAuth Intercepted: " + authUrl);
-                webEngineManager.launchSensitiveFlow(android.net.Uri.parse(authUrl));
+
+                webEngineManager.launchSensitiveFlow(
+                        android.net.Uri.parse(authUrl)
+                );
+
             } catch (Exception e) {
                 Log.e(TAG, "startOAuth dispatch failed.", e);
             }
