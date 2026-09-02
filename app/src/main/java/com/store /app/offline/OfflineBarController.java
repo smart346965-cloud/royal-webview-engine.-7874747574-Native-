@@ -30,13 +30,17 @@ import androidx.core.view.WindowInsetsCompat;
 
 public class OfflineBarController {
     private static final String DEFAULT_TEXT = "أنت تعمل حالياً دون اتصال", RESTORED_TEXT = "تم استعادة الاتصال بنجاح", WARNING_TEXT = "⚠️ لا يمكن التحميل، تحقق من الاتصال";
-    private static final int GLASS_BG = Color.argb(209, 18, 20, 26), GLASS_EXPANDED_BG = Color.argb(240, 22, 25, 33), GLASS_BORDER = Color.argb(31, 255, 255, 255), OFFLINE_COLOR = Color.rgb(125, 146, 176), OFFLINE_BORDER = Color.argb(89, 125, 146, 176), ONLINE_COLOR = Color.rgb(0, 230, 118), ONLINE_BORDER = Color.argb(115, 0, 230, 118), TEXT_COLOR = Color.rgb(249, 249, 251);
+    private static final int GLASS_BG = Color.argb(209, 18, 20, 26), GLASS_EXPANDED_BG = Color.argb(240, 22, 25, 33), GLASS_BORDER = Color.argb(31, 255, 255, 255), OFFLINE_COLOR = Color.rgb(125, 146, 176);
+    // [تعديل 1.1] زيادة بريق ألوان الحدود
+    private static final int OFFLINE_BORDER = Color.argb(160, 125, 146, 176), ONLINE_BORDER = Color.argb(220, 0, 230, 118);
+    private static final int ONLINE_COLOR = Color.rgb(0, 230, 118), TEXT_COLOR = Color.rgb(249, 249, 251);
     private static final int COLLAPSED_SIZE_DP = 50, EXPANDED_WIDTH_DP = 230, BADGE_BOTTOM_MARGIN_DP = 20, BADGE_HORIZONTAL_MARGIN_DP = 20;
     private static final long APPEAR_DURATION = 700L, EXPAND_DURATION = 650L, COLLAPSE_DURATION = 650L, TEXT_DURATION = 350L;
     private static final Interpolator SPRING_INTERPOLATOR = new PathInterpolator(0.34f, 1.56f, 0.64f, 1f), SMOOTH_INTERPOLATOR = new PathInterpolator(0.25f, 1f, 0.5f, 1f);
     private final Activity activity; private final Handler mainHandler; private FrameLayout overlayRoot, offlineBadge, iconContainer; private ImageView offlineIcon; private TextView offlineBar; private View auraView;
     private int navigationBottomInset = 0; private boolean gestureNavigation = false, initialized = false, expanded = false, onlineMode = false;
-    private Runnable autoCollapseRunnable, autoHideRunnable; private VisibilityCallback callback;
+    private Runnable autoCollapseRunnable, autoHideRunnable, shakeResetRunnable; // إضافة متغير shakeResetRunnable
+    private VisibilityCallback callback;
     public interface VisibilityCallback { void onVisibilityChanged(boolean visible); }
     public OfflineBarController(Activity activity) { this.activity = activity; this.mainHandler = new Handler(Looper.getMainLooper()); }
     public void init() { if (activity == null || activity.isFinishing() || initialized) return; initialized = true; createOverlay(); installInsetsController(); overlayRoot.post(() -> { WindowInsetsCompat insets = ViewCompat.getRootWindowInsets(overlayRoot); if (insets != null) { Insets navigation = insets.getInsets(WindowInsetsCompat.Type.navigationBars()); navigationBottomInset = navigation.bottom; gestureNavigation = navigationBottomInset == 0; applySafeAreaPosition(); } }); }
@@ -127,7 +131,26 @@ public class OfflineBarController {
         return Math.max(dp(EXPANDED_WIDTH_DP), calculatedWidth);
     }
 
-    private void applyBadgeBackground(boolean expandedState) { GradientDrawable bg = new GradientDrawable(); bg.setColor(expandedState ? GLASS_EXPANDED_BG : GLASS_BG); bg.setCornerRadius(dp(25)); int borderColor = onlineMode ? ONLINE_BORDER : (expandedState ? OFFLINE_BORDER : GLASS_BORDER); bg.setStroke(dp(1), borderColor); offlineBadge.setBackground(bg); offlineBadge.setElevation(dp(14)); }
+    // [تعديل 1.2] دالة الخلفية مع وهج ملون للحدود والظل
+    private void applyBadgeBackground(boolean expandedState) { 
+        GradientDrawable bg = new GradientDrawable(); 
+        bg.setColor(expandedState ? GLASS_EXPANDED_BG : GLASS_BG); 
+        bg.setCornerRadius(dp(25)); 
+        
+        int borderColor = onlineMode ? ONLINE_BORDER : (expandedState ? OFFLINE_BORDER : GLASS_BORDER); 
+        int strokeWidth = onlineMode ? dp(1.8f) : (expandedState ? dp(1.5f) : dp(1.2f));
+        
+        bg.setStroke(strokeWidth, borderColor); 
+        offlineBadge.setBackground(bg); 
+        offlineBadge.setElevation(dp(16)); 
+
+        // رسم وهج ملون محيط بالشريط متناسق مع لون الحالة (أوفلاين أو أونلاين)
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+            int shadowColor = onlineMode ? Color.argb(160, 0, 230, 118) : Color.argb(140, 125, 146, 176);
+            offlineBadge.setOutlineAmbientShadowColor(shadowColor);
+            offlineBadge.setOutlineSpotShadowColor(shadowColor);
+        }
+    }
 
     // [تعديل 3] جلب أقصى أبعاد للمنطقة الآمنة بما فيها إيماءات السحب
     private void installInsetsController() { 
@@ -208,7 +231,33 @@ public class OfflineBarController {
         scheduleAutoCollapse(3800L); 
     }
 
-    private void collapseBadge() { if (offlineBadge == null || !expanded) return; expanded = false; cancelAutoCollapse(); offlineBar.animate().cancel(); offlineBar.animate().alpha(0f).translationX(dp(12)).setDuration(260L).setInterpolator(SMOOTH_INTERPOLATOR).start(); FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) offlineBadge.getLayoutParams(); int startWidth = offlineBadge.getWidth(); if (startWidth <= 0) startWidth = dp(EXPANDED_WIDTH_DP); ValueAnimator animator = ValueAnimator.ofInt(startWidth, dp(COLLAPSED_SIZE_DP)); animator.setDuration(COLLAPSE_DURATION); animator.setInterpolator(SPRING_INTERPOLATOR); animator.addUpdateListener(animation -> { if (offlineBadge == null) return; params.width = (Integer) animation.getAnimatedValue(); offlineBadge.setLayoutParams(params); }); animator.start(); applyBadgeBackground(false); }
+    // [تعديل 2] انكماش سلس يمنع بروز السحابة نهائياً
+    private void collapseBadge() { 
+        if (offlineBadge == null || !expanded) return; 
+        expanded = false; 
+        cancelAutoCollapse(); 
+        
+        offlineBar.animate().cancel(); 
+        offlineBar.animate().alpha(0f).translationX(dp(12)).setDuration(220L).setInterpolator(SMOOTH_INTERPOLATOR).start(); 
+        
+        FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) offlineBadge.getLayoutParams(); 
+        int startWidth = offlineBadge.getWidth(); 
+        if (startWidth <= 0) startWidth = dp(EXPANDED_WIDTH_DP); 
+        
+        ValueAnimator animator = ValueAnimator.ofInt(startWidth, dp(COLLAPSED_SIZE_DP)); 
+        animator.setDuration(COLLAPSE_DURATION); 
+        animator.setInterpolator(SMOOTH_INTERPOLATOR); // استخدام الانكماش الناعم لمنع الارتداد الزائد
+        animator.addUpdateListener(animation -> { 
+            if (offlineBadge == null) return; 
+            int animatedVal = (Integer) animation.getAnimatedValue();
+            // ضمان ألا يقل العرض عن 50dp نهائياً لتظل السحابة داخل الحدود
+            params.width = Math.max(dp(COLLAPSED_SIZE_DP), animatedVal); 
+            offlineBadge.setLayoutParams(params); 
+        }); 
+        animator.start(); 
+        applyBadgeBackground(false); 
+    }
+
     private void scheduleAutoCollapse(long delay) { cancelAutoCollapse(); autoCollapseRunnable = () -> { if (offlineBadge != null && expanded) collapseBadge(); }; mainHandler.postDelayed(autoCollapseRunnable, delay); }
     private void cancelAutoCollapse() { if (autoCollapseRunnable != null) { mainHandler.removeCallbacks(autoCollapseRunnable); autoCollapseRunnable = null; } }
     public void show() { if (offlineBadge == null) return; activity.runOnUiThread(() -> { if (activity.isFinishing()) return; cancelAutoCollapse(); if (autoHideRunnable != null) { mainHandler.removeCallbacks(autoHideRunnable); autoHideRunnable = null; } offlineBadge.animate().cancel(); offlineBar.animate().cancel(); onlineMode = false; expanded = false; offlineBar.setText(DEFAULT_TEXT); offlineIcon.setImageDrawable(new LuxuryCloudDrawable(OFFLINE_COLOR, true)); offlineBar.setAlpha(0f); offlineBar.setTranslationX(dp(12)); FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) offlineBadge.getLayoutParams(); params.width = dp(COLLAPSED_SIZE_DP); offlineBadge.setLayoutParams(params); applySafeAreaPosition(); applyBadgeBackground(false); offlineBadge.setScaleX(0.70f); offlineBadge.setScaleY(0.70f); offlineBadge.setTranslationY(dp(30)); offlineBadge.setAlpha(0f); offlineBadge.setVisibility(View.VISIBLE); offlineBadge.animate().alpha(1f).scaleX(1f).scaleY(1f).translationY(0f).setDuration(APPEAR_DURATION).setInterpolator(SPRING_INTERPOLATOR).withEndAction(() -> { if (offlineBadge == null) return; expandBadge(); }).start(); }); notifyVisibilityChanged(true); }
@@ -216,7 +265,7 @@ public class OfflineBarController {
     public void showOnlineTransition() { if (offlineBadge == null) return; activity.runOnUiThread(() -> { if (activity.isFinishing()) return; cancelAutoCollapse(); if (autoHideRunnable != null) { mainHandler.removeCallbacks(autoHideRunnable); autoHideRunnable = null; } onlineMode = true; offlineBar.setText(RESTORED_TEXT); offlineIcon.setImageDrawable(new LuxuryCloudDrawable(ONLINE_COLOR, false)); if (auraView != null) { auraView.animate().cancel(); auraView.setAlpha(0f); } if (offlineBadge.getVisibility() != View.VISIBLE) { expanded = false; FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) offlineBadge.getLayoutParams(); params.width = dp(COLLAPSED_SIZE_DP); offlineBadge.setLayoutParams(params); applySafeAreaPosition(); applyBadgeBackground(false); offlineBar.setAlpha(0f); offlineBar.setTranslationX(dp(12)); offlineBadge.setScaleX(0.70f); offlineBadge.setScaleY(0.70f); offlineBadge.setTranslationY(dp(30)); offlineBadge.setAlpha(0f); offlineBadge.setVisibility(View.VISIBLE); offlineBadge.animate().alpha(1f).scaleX(1f).scaleY(1f).translationY(0f).setDuration(700L).setInterpolator(SPRING_INTERPOLATOR).withEndAction(() -> { if (offlineBadge != null) expandBadge(); }).start(); } else { if (!expanded) expandBadge(); } autoHideRunnable = () -> { if (offlineBadge == null) return; if (expanded) collapseBadge(); mainHandler.postDelayed(() -> { if (offlineBadge == null) return; offlineBadge.animate().alpha(0f).scaleX(0.70f).scaleY(0.70f).setDuration(550L).setInterpolator(SMOOTH_INTERPOLATOR).withEndAction(() -> { if (offlineBadge == null) return; offlineBadge.setVisibility(View.GONE); offlineBadge.setAlpha(1f); offlineBadge.setScaleX(1f); offlineBadge.setScaleY(1f); offlineBadge.setTranslationY(0f); onlineMode = false; expanded = false; applyBadgeBackground(false); }).start(); }, 550L); }; mainHandler.postDelayed(autoHideRunnable, 2800L); }); }
     public void hideImmediately() { if (offlineBadge == null) return; activity.runOnUiThread(() -> { cancelAutoCollapse(); if (autoHideRunnable != null) { mainHandler.removeCallbacks(autoHideRunnable); autoHideRunnable = null; } offlineBadge.animate().cancel(); offlineBar.animate().cancel(); if (auraView != null) { auraView.animate().cancel(); auraView.setAlpha(0f); } offlineBadge.setVisibility(View.GONE); offlineBadge.setAlpha(1f); offlineBadge.setScaleX(1f); offlineBadge.setScaleY(1f); offlineBadge.setTranslationY(0f); offlineBar.setAlpha(0f); offlineBar.setTranslationX(dp(12)); FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) offlineBadge.getLayoutParams(); params.width = dp(COLLAPSED_SIZE_DP); offlineBadge.setLayoutParams(params); expanded = false; onlineMode = false; applySafeAreaPosition(); applyBadgeBackground(false); }); notifyVisibilityChanged(false); }
 
-    // [تعديل رابع] تعديل shake() لتوسيع الشريط ديناميكياً
+    // [تعديل 3] تجديد توقيت تحذير الرابط وإعادة ضبطه بذكاء مع كل نقرة
     public void shake() { 
         if (offlineBadge == null) return; 
         if (offlineBadge.getVisibility() != View.VISIBLE) { 
@@ -225,10 +274,16 @@ public class OfflineBarController {
         } 
         activity.runOnUiThread(() -> { 
             if (offlineBadge == null) return; 
-            String originalText = offlineBar.getText().toString(); 
+            
+            // 1. إلغاء أي مؤقت سابق لمنع اختفاء الرسالة المفاجئ عند النقرات المتتالية
+            if (shakeResetRunnable != null) {
+                mainHandler.removeCallbacks(shakeResetRunnable);
+                shakeResetRunnable = null;
+            }
+
             offlineBar.setText(WARNING_TEXT); 
             
-            // إعادة توسيع الشريط ليتناسب مع نص التحذير الجديد
+            // إعادة حساب العرض وتوسيعه ديناميكياً
             if (expanded) {
                 FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) offlineBadge.getLayoutParams();
                 params.width = calculateExpandedWidth(WARNING_TEXT);
@@ -237,22 +292,26 @@ public class OfflineBarController {
                 expandBadge(); 
             }
 
+            // اهتزاز لطيف للإنذار
             offlineBadge.animate().translationX(dp(5)).setDuration(55L).withEndAction(() -> 
                 offlineBadge.animate().translationX(dp(-5)).setDuration(55L).withEndAction(() -> 
                     offlineBadge.animate().translationX(0).setDuration(70L).start()
                 ).start()
             ).start(); 
             
-            mainHandler.postDelayed(() -> { 
+            // 2. توقيت جديد ومدروس (2.5 ثانية) يجدد نفسه مع كل نقرة
+            shakeResetRunnable = () -> { 
                 if (offlineBar != null && offlineBadge != null && offlineBadge.getVisibility() == View.VISIBLE) { 
-                    offlineBar.setText(originalText); 
+                    offlineBar.setText(DEFAULT_TEXT); 
                     if (expanded) {
                         FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) offlineBadge.getLayoutParams();
-                        params.width = calculateExpandedWidth(originalText);
+                        params.width = calculateExpandedWidth(DEFAULT_TEXT);
                         offlineBadge.setLayoutParams(params);
                     }
                 } 
-            }, 1800L); 
+                shakeResetRunnable = null;
+            }; 
+            mainHandler.postDelayed(shakeResetRunnable, 2500L); 
         }); 
     }
 
@@ -263,7 +322,35 @@ public class OfflineBarController {
     public int getNavigationBottomInset() { return navigationBottomInset; }
     public void setCallback(VisibilityCallback callback) { this.callback = callback; }
     private void notifyVisibilityChanged(boolean visible) { if (callback != null) callback.onVisibilityChanged(visible); }
-    public void destroy() { cancelAutoCollapse(); if (autoHideRunnable != null) { mainHandler.removeCallbacks(autoHideRunnable); autoHideRunnable = null; } if (offlineBadge != null) offlineBadge.animate().cancel(); if (offlineBar != null) offlineBar.animate().cancel(); if (auraView != null) auraView.animate().cancel(); if (overlayRoot != null) { ViewGroup parent = (ViewGroup) overlayRoot.getParent(); if (parent != null) parent.removeView(overlayRoot); } auraView = null; iconContainer = null; offlineBadge = null; offlineIcon = null; offlineBar = null; overlayRoot = null; callback = null; expanded = false; onlineMode = false; initialized = false; }
+    public void destroy() { 
+        cancelAutoCollapse(); 
+        if (autoHideRunnable != null) { 
+            mainHandler.removeCallbacks(autoHideRunnable); 
+            autoHideRunnable = null; 
+        }
+        // إلغاء مؤقت الـ shake عند تدمير الكائن
+        if (shakeResetRunnable != null) {
+            mainHandler.removeCallbacks(shakeResetRunnable);
+            shakeResetRunnable = null;
+        }
+        if (offlineBadge != null) offlineBadge.animate().cancel(); 
+        if (offlineBar != null) offlineBar.animate().cancel(); 
+        if (auraView != null) auraView.animate().cancel(); 
+        if (overlayRoot != null) { 
+            ViewGroup parent = (ViewGroup) overlayRoot.getParent(); 
+            if (parent != null) parent.removeView(overlayRoot); 
+        } 
+        auraView = null; 
+        iconContainer = null; 
+        offlineBadge = null; 
+        offlineIcon = null; 
+        offlineBar = null; 
+        overlayRoot = null; 
+        callback = null; 
+        expanded = false; 
+        onlineMode = false; 
+        initialized = false; 
+    }
     private int dp(float value) { return Math.round(value * activity.getResources().getDisplayMetrics().density); }
 
     private static final class LuxuryCloudDrawable extends Drawable {
@@ -284,4 +371,4 @@ public class OfflineBarController {
         @Override public void setColorFilter(android.graphics.ColorFilter filter) { paint.setColorFilter(filter); }
         @Override public int getOpacity() { return android.graphics.PixelFormat.TRANSLUCENT; }
     }
-                }
+    }
