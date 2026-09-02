@@ -4,9 +4,10 @@ import android.util.Log;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebView;
 
+import com.store.app.offline.OfflineStateManager;
+
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import com.store.app.offline.OfflineStateManager;
 
 public class RoyalJsBridge {
 
@@ -63,6 +64,23 @@ public class RoyalJsBridge {
                         "Prediction dispatch failed.",
                         e
                 );
+            }
+        });
+    }
+
+    /**
+     * 📴 إشعار الأوفلاين المباشر من الجافاسكربت
+     */
+    @JavascriptInterface
+    public void notifyOfflineClick() {
+        if (webView == null) return;
+        webView.post(() -> {
+            try {
+                RoyalPanopticon.pulse("JS-BridgeChannel");
+                OfflineStateManager.getInstance().notifyOfflineClickAttempt();
+                Log.i(TAG, "📴 Offline click notification triggered via JS Bridge.");
+            } catch (Exception e) {
+                Log.e(TAG, "notifyOfflineClick error", e);
             }
         });
     }
@@ -189,4 +207,4 @@ public class RoyalJsBridge {
         if (webView == null) return;
         webView.post(() -> webView.evaluateJavascript(script, null));
     }
-                                   }
+                    }
