@@ -6,6 +6,7 @@ import android.webkit.WebView;
 
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import com.store.app.offline.OfflineStateManager;
 
 public class RoyalJsBridge {
 
