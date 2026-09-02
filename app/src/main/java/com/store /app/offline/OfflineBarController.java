@@ -381,4 +381,4 @@ public class OfflineBarController {
         @Override public void setColorFilter(android.graphics.ColorFilter filter) { paint.setColorFilter(filter); }
         @Override public int getOpacity() { return android.graphics.PixelFormat.TRANSLUCENT; }
     }
-                                                   }
+}
