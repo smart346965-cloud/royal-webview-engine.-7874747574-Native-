@@ -231,31 +231,40 @@ public class OfflineBarController {
         scheduleAutoCollapse(3800L); 
     }
 
-    // [تعديل 2] انكماش سلس يمنع بروز السحابة نهائياً
+    // [تعديل 1] انكماش سينمائي: تلاشي النص كلياً أولاً ثم تقلص الشريط
     private void collapseBadge() { 
         if (offlineBadge == null || !expanded) return; 
         expanded = false; 
         cancelAutoCollapse(); 
         
         offlineBar.animate().cancel(); 
-        offlineBar.animate().alpha(0f).translationX(dp(12)).setDuration(220L).setInterpolator(SMOOTH_INTERPOLATOR).start(); 
         
-        FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) offlineBadge.getLayoutParams(); 
-        int startWidth = offlineBadge.getWidth(); 
-        if (startWidth <= 0) startWidth = dp(EXPANDED_WIDTH_DP); 
-        
-        ValueAnimator animator = ValueAnimator.ofInt(startWidth, dp(COLLAPSED_SIZE_DP)); 
-        animator.setDuration(COLLAPSE_DURATION); 
-        animator.setInterpolator(SMOOTH_INTERPOLATOR); // استخدام الانكماش الناعم لمنع الارتداد الزائد
-        animator.addUpdateListener(animation -> { 
-            if (offlineBadge == null) return; 
-            int animatedVal = (Integer) animation.getAnimatedValue();
-            // ضمان ألا يقل العرض عن 50dp نهائياً لتظل السحابة داخل الحدود
-            params.width = Math.max(dp(COLLAPSED_SIZE_DP), animatedVal); 
-            offlineBadge.setLayoutParams(params); 
-        }); 
-        animator.start(); 
-        applyBadgeBackground(false); 
+        // المرحلة الأولى: اختفاء وتلاشي النص سينمائياً كلياً
+        offlineBar.animate()
+            .alpha(0f)
+            .translationX(dp(12))
+            .setDuration(160L)
+            .setInterpolator(SMOOTH_INTERPOLATOR)
+            .withEndAction(() -> {
+                // المرحلة الثانية: ينكمش الشريط فقط بعد أن أصبح النص مخفياً تماماً (Alpha = 0)
+                if (offlineBadge == null) return; 
+                
+                FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) offlineBadge.getLayoutParams(); 
+                int startWidth = offlineBadge.getWidth(); 
+                if (startWidth <= 0) startWidth = dp(EXPANDED_WIDTH_DP); 
+                
+                ValueAnimator animator = ValueAnimator.ofInt(startWidth, dp(COLLAPSED_SIZE_DP)); 
+                animator.setDuration(350L); 
+                animator.setInterpolator(SMOOTH_INTERPOLATOR); 
+                animator.addUpdateListener(animation -> { 
+                    if (offlineBadge == null) return; 
+                    int animatedVal = (Integer) animation.getAnimatedValue();
+                    params.width = Math.max(dp(COLLAPSED_SIZE_DP), animatedVal); 
+                    offlineBadge.setLayoutParams(params); 
+                }); 
+                animator.start(); 
+                applyBadgeBackground(false); 
+            }).start(); 
     }
 
     private void scheduleAutoCollapse(long delay) { cancelAutoCollapse(); autoCollapseRunnable = () -> { if (offlineBadge != null && expanded) collapseBadge(); }; mainHandler.postDelayed(autoCollapseRunnable, delay); }
@@ -265,7 +274,7 @@ public class OfflineBarController {
     public void showOnlineTransition() { if (offlineBadge == null) return; activity.runOnUiThread(() -> { if (activity.isFinishing()) return; cancelAutoCollapse(); if (autoHideRunnable != null) { mainHandler.removeCallbacks(autoHideRunnable); autoHideRunnable = null; } onlineMode = true; offlineBar.setText(RESTORED_TEXT); offlineIcon.setImageDrawable(new LuxuryCloudDrawable(ONLINE_COLOR, false)); if (auraView != null) { auraView.animate().cancel(); auraView.setAlpha(0f); } if (offlineBadge.getVisibility() != View.VISIBLE) { expanded = false; FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) offlineBadge.getLayoutParams(); params.width = dp(COLLAPSED_SIZE_DP); offlineBadge.setLayoutParams(params); applySafeAreaPosition(); applyBadgeBackground(false); offlineBar.setAlpha(0f); offlineBar.setTranslationX(dp(12)); offlineBadge.setScaleX(0.70f); offlineBadge.setScaleY(0.70f); offlineBadge.setTranslationY(dp(30)); offlineBadge.setAlpha(0f); offlineBadge.setVisibility(View.VISIBLE); offlineBadge.animate().alpha(1f).scaleX(1f).scaleY(1f).translationY(0f).setDuration(700L).setInterpolator(SPRING_INTERPOLATOR).withEndAction(() -> { if (offlineBadge != null) expandBadge(); }).start(); } else { if (!expanded) expandBadge(); } autoHideRunnable = () -> { if (offlineBadge == null) return; if (expanded) collapseBadge(); mainHandler.postDelayed(() -> { if (offlineBadge == null) return; offlineBadge.animate().alpha(0f).scaleX(0.70f).scaleY(0.70f).setDuration(550L).setInterpolator(SMOOTH_INTERPOLATOR).withEndAction(() -> { if (offlineBadge == null) return; offlineBadge.setVisibility(View.GONE); offlineBadge.setAlpha(1f); offlineBadge.setScaleX(1f); offlineBadge.setScaleY(1f); offlineBadge.setTranslationY(0f); onlineMode = false; expanded = false; applyBadgeBackground(false); }).start(); }, 550L); }; mainHandler.postDelayed(autoHideRunnable, 2800L); }); }
     public void hideImmediately() { if (offlineBadge == null) return; activity.runOnUiThread(() -> { cancelAutoCollapse(); if (autoHideRunnable != null) { mainHandler.removeCallbacks(autoHideRunnable); autoHideRunnable = null; } offlineBadge.animate().cancel(); offlineBar.animate().cancel(); if (auraView != null) { auraView.animate().cancel(); auraView.setAlpha(0f); } offlineBadge.setVisibility(View.GONE); offlineBadge.setAlpha(1f); offlineBadge.setScaleX(1f); offlineBadge.setScaleY(1f); offlineBadge.setTranslationY(0f); offlineBar.setAlpha(0f); offlineBar.setTranslationX(dp(12)); FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) offlineBadge.getLayoutParams(); params.width = dp(COLLAPSED_SIZE_DP); offlineBadge.setLayoutParams(params); expanded = false; onlineMode = false; applySafeAreaPosition(); applyBadgeBackground(false); }); notifyVisibilityChanged(false); }
 
-    // [تعديل 3] تجديد توقيت تحذير الرابط وإعادة ضبطه بذكاء مع كل نقرة
+    // [تعديل 2] اهتزاز وانكماش ناعم للتحذير دون تبديل النص أمام العين
     public void shake() { 
         if (offlineBadge == null) return; 
         if (offlineBadge.getVisibility() != View.VISIBLE) { 
@@ -275,7 +284,7 @@ public class OfflineBarController {
         activity.runOnUiThread(() -> { 
             if (offlineBadge == null) return; 
             
-            // 1. إلغاء أي مؤقت سابق لمنع اختفاء الرسالة المفاجئ عند النقرات المتتالية
+            // 1. تجديد المؤقت عند كل نقرة رابط جديدة
             if (shakeResetRunnable != null) {
                 mainHandler.removeCallbacks(shakeResetRunnable);
                 shakeResetRunnable = null;
@@ -283,7 +292,6 @@ public class OfflineBarController {
 
             offlineBar.setText(WARNING_TEXT); 
             
-            // إعادة حساب العرض وتوسيعه ديناميكياً
             if (expanded) {
                 FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) offlineBadge.getLayoutParams();
                 params.width = calculateExpandedWidth(WARNING_TEXT);
@@ -292,22 +300,24 @@ public class OfflineBarController {
                 expandBadge(); 
             }
 
-            // اهتزاز لطيف للإنذار
+            // اهتزاز خاطف للإنذار
             offlineBadge.animate().translationX(dp(5)).setDuration(55L).withEndAction(() -> 
                 offlineBadge.animate().translationX(dp(-5)).setDuration(55L).withEndAction(() -> 
                     offlineBadge.animate().translationX(0).setDuration(70L).start()
                 ).start()
             ).start(); 
             
-            // 2. توقيت جديد ومدروس (2.5 ثانية) يجدد نفسه مع كل نقرة
+            // 2. انتهاء وقت التحذير (2.5 ثانية) -> انكماش الشريط أولاً ثم استعادة النص الافتراضي خلف الكواليس
             shakeResetRunnable = () -> { 
-                if (offlineBar != null && offlineBadge != null && offlineBadge.getVisibility() == View.VISIBLE) { 
-                    offlineBar.setText(DEFAULT_TEXT); 
-                    if (expanded) {
-                        FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) offlineBadge.getLayoutParams();
-                        params.width = calculateExpandedWidth(DEFAULT_TEXT);
-                        offlineBadge.setLayoutParams(params);
-                    }
+                if (offlineBadge != null && offlineBadge.getVisibility() == View.VISIBLE && expanded) { 
+                    collapseBadge(); // انكماش الشريط بسلاسة وبشكل كامل أولاً
+                    
+                    // إعادة الجملة الافتراضية في الخلفية بعد انغلاق الشريط بـ 400ms
+                    mainHandler.postDelayed(() -> {
+                        if (offlineBar != null) {
+                            offlineBar.setText(DEFAULT_TEXT);
+                        }
+                    }, 400L);
                 } 
                 shakeResetRunnable = null;
             }; 
@@ -371,4 +381,4 @@ public class OfflineBarController {
         @Override public void setColorFilter(android.graphics.ColorFilter filter) { paint.setColorFilter(filter); }
         @Override public int getOpacity() { return android.graphics.PixelFormat.TRANSLUCENT; }
     }
-    }
+                                                   }
