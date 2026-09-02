@@ -51,11 +51,15 @@ public class OfflineBarController {
         offlineBadge.setFocusable(true); 
         offlineBadge.setVisibility(View.GONE);
         
-        // 1. تحويل جهة ظهور الشريط للجهة المقابلة (Gravity.BOTTOM | Gravity.START)
+        // [تعديل 1] تحديد المسافة الجانبية الآمنة (16dp) لمنع الالتصاق بالحافة
         FrameLayout.LayoutParams badgeParams = new FrameLayout.LayoutParams(dp(COLLAPSED_SIZE_DP), dp(COLLAPSED_SIZE_DP)); 
-        badgeParams.gravity = Gravity.BOTTOM | Gravity.START; // تغيير الجهة للجهة الأُخرى
-        badgeParams.leftMargin = dp(BADGE_HORIZONTAL_MARGIN_DP); 
+        badgeParams.gravity = Gravity.BOTTOM | Gravity.START; 
+
+        int horizontalSafeMargin = dp(16); // مسافة جانبية آمنة ومدروسة معيارياً (16dp)
+        badgeParams.leftMargin = horizontalSafeMargin; 
+        badgeParams.rightMargin = horizontalSafeMargin; 
         badgeParams.bottomMargin = dp(BADGE_BOTTOM_MARGIN_DP);
+
         overlayRoot.addView(offlineBadge, badgeParams); 
         applyBadgeBackground(false);
 
@@ -124,25 +128,47 @@ public class OfflineBarController {
     }
 
     private void applyBadgeBackground(boolean expandedState) { GradientDrawable bg = new GradientDrawable(); bg.setColor(expandedState ? GLASS_EXPANDED_BG : GLASS_BG); bg.setCornerRadius(dp(25)); int borderColor = onlineMode ? ONLINE_BORDER : (expandedState ? OFFLINE_BORDER : GLASS_BORDER); bg.setStroke(dp(1), borderColor); offlineBadge.setBackground(bg); offlineBadge.setElevation(dp(14)); }
-    private void installInsetsController() { ViewCompat.setOnApplyWindowInsetsListener(overlayRoot, (view, insets) -> { Insets navigation = insets.getInsets(WindowInsetsCompat.Type.navigationBars()); navigationBottomInset = navigation.bottom; gestureNavigation = navigationBottomInset == 0; applySafeAreaPosition(); return insets; }); ViewCompat.requestApplyInsets(overlayRoot); }
 
-    // [تعديل ثالث] applySafeAreaPosition مع تنعيم الانتقال
+    // [تعديل 3] جلب أقصى أبعاد للمنطقة الآمنة بما فيها إيماءات السحب
+    private void installInsetsController() { 
+        ViewCompat.setOnApplyWindowInsetsListener(overlayRoot, (view, insets) -> { 
+            // نجمع بين شريط التنقل وإيماءات النظام للحصول على أدق مساحة آمنة
+            Insets navigation = insets.getInsets(WindowInsetsCompat.Type.systemBars() | WindowInsetsCompat.Type.systemGestures()); 
+            navigationBottomInset = navigation.bottom; 
+            gestureNavigation = navigationBottomInset == 0; 
+            applySafeAreaPosition(); 
+            return insets; 
+        }); 
+        ViewCompat.requestApplyInsets(overlayRoot); 
+    }
+
+    // [تعديل 2] تثبيت المنطقة الآمنة السفلى والجانبية بامتياز دقيق
     private void applySafeAreaPosition() { 
         if (offlineBadge == null) return; 
         FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) offlineBadge.getLayoutParams(); 
         if (params == null) return; 
         
-        params.gravity = Gravity.BOTTOM | Gravity.START; // تثبيت الجهة
-        params.leftMargin = dp(BADGE_HORIZONTAL_MARGIN_DP); 
+        params.gravity = Gravity.BOTTOM | Gravity.START; 
         
-        int targetBottomMargin = navigationBottomInset + dp(BADGE_BOTTOM_MARGIN_DP);
+        // 1. تثبيت المسافة الجانبية الآمنة عن حافة الهاتف (16dp)
+        int horizontalMargin = dp(16);
+        params.leftMargin = horizontalMargin; 
+        params.rightMargin = horizontalMargin; 
+        
+        // 2. حساب الهامش السفلي الآمن: نضمن ألا يقل ارتفاع الأيقونة عن (24dp) فوق الحافة السفلى مطلقاً
+        int minBaseSafeInset = dp(24); // حد أمان سفلي ثابت حتى لو اختفى شريط التنقل
+        int targetBottomMargin = Math.max(navigationBottomInset, minBaseSafeInset) + dp(18);
         
         if (params.bottomMargin != targetBottomMargin && params.bottomMargin > 0) {
             ValueAnimator marginAnimator = ValueAnimator.ofInt(params.bottomMargin, targetBottomMargin);
-            marginAnimator.setDuration(200L);
+            marginAnimator.setDuration(220L);
+            marginAnimator.setInterpolator(SMOOTH_INTERPOLATOR);
             marginAnimator.addUpdateListener(anim -> {
                 if (offlineBadge != null && offlineBadge.getLayoutParams() != null) {
-                    ((FrameLayout.LayoutParams) offlineBadge.getLayoutParams()).bottomMargin = (Integer) anim.getAnimatedValue();
+                    FrameLayout.LayoutParams p = (FrameLayout.LayoutParams) offlineBadge.getLayoutParams();
+                    p.bottomMargin = (Integer) anim.getAnimatedValue();
+                    p.leftMargin = horizontalMargin;
+                    p.rightMargin = horizontalMargin;
                     offlineBadge.requestLayout();
                 }
             });
@@ -258,4 +284,4 @@ public class OfflineBarController {
         @Override public void setColorFilter(android.graphics.ColorFilter filter) { paint.setColorFilter(filter); }
         @Override public int getOpacity() { return android.graphics.PixelFormat.TRANSLUCENT; }
     }
-                                                                                                                                                }
+                }
