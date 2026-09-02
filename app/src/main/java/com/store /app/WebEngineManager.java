@@ -672,42 +672,39 @@ public class WebEngineManager {
                 return null; // ❌ لا نستخدم super.shouldInterceptRequest
             }
 
-            // =========================================================
-            // 🔥 [تعديل 4] shouldOverrideUrlLoading (الإصدار الجديد)
-            // =========================================================
-            @Override
-            public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
-                if (request == null || request.getUrl() == null) return false;
-                Uri uri = request.getUrl();
+            // =========================================================  
+            // 🔥 [تعديل 4] shouldOverrideUrlLoading (الإصدار الجديد)  
+            // =========================================================  
+            @Override  
+            public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {  
+                if (request == null || request.getUrl() == null) return false;  
+                Uri uri = request.getUrl();  
 
-                if (!NetworkMonitor.isInternetAvailable(context)) {
-                    if (webEngineConfig.isSameOrigin(uri)) {
-                        // ❌ لا تحفظ الرابط ولا توقف التحميل
-                        // ✅ فقط اهتز الشريط وأهمل النقر
-                        OfflineStateManager.getInstance().notifyOfflineClickAttempt();
-                        return true; // تجاهل النقر تماماً
-                    }
-                }
-                return handleUriLogic(uri, request.isForMainFrame());
-            }
+                // 📴 حماية الأوفلاين الشاملة: حظر كافة النقرات والملاحة عند انقطاع الشبكة لمنع الصفحة البيضاء واهتزاز الشريط
+                if (!NetworkMonitor.isInternetAvailable(context)) {  
+                    OfflineStateManager.getInstance().notifyOfflineClickAttempt();  
+                    return true; // حظر الملاحة تماماً في وضع الأوفلاين
+                }  
+                
+                // 🌐 عند وجود إنترنت: يعمل منطقك الأصلي 100% دون أي تعديل
+                return handleUriLogic(uri, request.isForMainFrame());  
+            }  
 
-            // =========================================================
-            // 🔥 [تعديل 5] shouldOverrideUrlLoading (الإصدار القديم)
-            // =========================================================
-            @SuppressWarnings("deprecation")
-            @Override
-            public boolean shouldOverrideUrlLoading(WebView view, String url) {
-                if (url == null) return false;
-                Uri uri = Uri.parse(url);
+            // =========================================================  
+            // 🔥 [تعديل 5] shouldOverrideUrlLoading (الإصدار القديم)  
+            // =========================================================  
+            @SuppressWarnings("deprecation")  
+            @Override  
+            public boolean shouldOverrideUrlLoading(WebView view, String url) {  
+                if (url == null) return false;  
+                Uri uri = Uri.parse(url);  
 
-                if (!NetworkMonitor.isInternetAvailable(context)
-                        && webEngineConfig.isSameOrigin(uri)) {
-                    // ❌ لا تحفظ الرابط ولا توقف التحميل
-                    // ✅ فقط اهتز الشريط وأهمل النقر
-                    OfflineStateManager.getInstance().notifyOfflineClickAttempt();
-                    return true; // تجاهل النقر تماماً
-                }
-                return handleUriLogic(uri, true);
+                // 📴 حماية الأوفلاين الشاملة
+                if (!NetworkMonitor.isInternetAvailable(context)) {  
+                    OfflineStateManager.getInstance().notifyOfflineClickAttempt();  
+                    return true; // حظر الملاحة تماماً في وضع الأوفلاين
+                }  
+                return handleUriLogic(uri, true);  
             }
         });
 
