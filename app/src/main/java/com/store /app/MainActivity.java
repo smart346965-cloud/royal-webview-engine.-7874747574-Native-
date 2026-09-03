@@ -46,7 +46,7 @@ import com.store.app.RoyalJsBridge;
 public class MainActivity extends AppCompatActivity {
 
     private static final String TAG = "RoyalMainActivity";
-    private static final long FIXED_SPLASH_TIME = 5000; // قيمة ثابتة 5 ثوانٍ بالتمام والكمال
+    private static final long FIXED_SPLASH_TIME = 6000; // قيمة ثابتة 5 ثوانٍ بالتمام والكمال
 
     private boolean splashRemoved = false;
     private boolean isPageLoaded = false; // لمنع إعادة تحميل الصفحة في onResume
