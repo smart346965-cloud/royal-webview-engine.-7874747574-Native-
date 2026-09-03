@@ -22,7 +22,6 @@ jobs:
         with:
           java-version: '17'
           distribution: 'temurin'
-          cache: gradle
 
       - name: Setup Android SDK 36 👑
         uses: android-actions/setup-android@v4
@@ -186,7 +185,7 @@ jobs:
 
           echo "🔥 Injecting Target URL: $INJECTED_URL | Plan: $PLAN_TYPE"
 
-          ./gradlew clean assembleRelease bundleRelease \
+          ./gradlew clean assembleRelease bundleRelease --no-build-cache \
             -Pandroid.injected.signing.store.file=$(pwd)/release-key.jks \
             -Pandroid.injected.signing.store.password=${{ env.KEYSTORE_PASSWORD }} \
             -Pandroid.injected.signing.key.alias=${{ env.KEY_ALIAS }} \
