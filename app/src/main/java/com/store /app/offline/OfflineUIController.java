@@ -230,11 +230,25 @@ public class OfflineUIController {
                 boolean internetAvailable = NetworkMonitor.isInternetAvailable(activity);
                 boolean pageValid = false;
                 try { pageValid = OfflineStateManager.getInstance().isPageValid(); } catch (Exception e) { Log.e(TAG, "Retry page validation failed.", e); }
+
                 if (internetAvailable && pageValid) {
                     Log.i(TAG, "✅ Retry successful after 4-second hold.");
                     stopRetryLoader(dotsLoader);
-                    hideOfflineUI();
-                    if (webView != null) webView.setVisibility(View.VISIBLE);
+
+                    // 👑 المرحلة الأولى: إعادة تحميل الصفحة أولاً
+                    if (webView != null) {
+                        if (webView.getUrl() == null || webView.getUrl().equals("about:blank")) {
+                            webView.loadUrl(BuildConfig.CLIENT_URL);
+                        } else {
+                            webView.reload();
+                        }
+                    }
+
+                    // 👑 المرحلة الثانية: إخفاء الواجهة بعد 3 ثوانٍ (بدلاً من الفورية)
+                    retryHandler.postDelayed(() -> {
+                        hideOfflineUI();
+                    }, 3000);
+
                     retryInProgress = false;
                     return;
                 }
@@ -397,8 +411,77 @@ public class OfflineUIController {
                 card.setTranslationY(dp(0));
                 card.setTranslationZ(dp(16));
             }
-            pureOfflineUI.animate().alpha(0f).setDuration(220).withEndAction(() -> { pureOfflineUI.setVisibility(View.GONE); pureOfflineUI.setAlpha(1f); SystemUI.scheduleStatusBarSync(activity, webView); }).start();
-            if (webView != null) webView.setVisibility(View.VISIBLE);
+
+            // 👑 تعديل بداية hideOfflineUI() لجعل الخروج فاخرًا
+            pureOfflineUI.animate()
+                    .alpha(0f)
+                    .scaleX(0.985f)
+                    .scaleY(0.985f)
+                    .setDuration(420)
+                    .setInterpolator(
+                            new android.view.animation.PathInterpolator(
+                                    0.22f,
+                                    1f,
+                                    0.36f,
+                                    1f
+                            )
+                    )
+                    .withEndAction(() -> {
+
+                        pureOfflineUI.setVisibility(
+                                View.GONE
+                        );
+
+                        pureOfflineUI.setAlpha(
+                                1f
+                        );
+
+                        pureOfflineUI.setScaleX(
+                                1f
+                        );
+
+                        pureOfflineUI.setScaleY(
+                                1f
+                        );
+
+                        /*
+                         * 👑 WebView يظهر فقط بعد اختفاء
+                         * واجهة الأوفلاين بالكامل.
+                         */
+                        if (webView != null) {
+
+                            webView.setAlpha(
+                                    0f
+                            );
+
+                            webView.setVisibility(
+                                    View.VISIBLE
+                            );
+
+                            webView.animate()
+                                    .alpha(1f)
+                                    .setDuration(420)
+                                    .setInterpolator(
+                                            new android.view.animation.PathInterpolator(
+                                                    0.16f,
+                                                    1f,
+                                                    0.3f,
+                                                    1f
+                                            )
+                                    )
+                                    .start();
+                        }
+
+                        /*
+                         * 👑 إعادة ملكية Status Bar للـ WebView
+                         * بعد اكتمال الانتقال البصري.
+                         */
+                        SystemUI.scheduleStatusBarSync(
+                                activity,
+                                webView
+                        );
+                    })
+                    .start();
         });
         if (callback != null) callback.onOfflineUIVisibilityChanged(false);
         Log.d(TAG, "🟢 Offline UI hidden.");
@@ -423,7 +506,7 @@ public class OfflineUIController {
                 if (insets != null) bottomInset = insets.getInsets(WindowInsets.Type.systemBars()).bottom;
             } else if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
                 WindowInsets insets = pureOfflineUI.getRootWindowInsets();
-                if (insets != null) bottomInset = insets.getSystemWindowInsetBottom();
+                if (insets != null) bottomInset = insets.getSystemWindowInsetBottom;
             }
             FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) card.getLayoutParams();
             params.bottomMargin = bottomInset + dp(16);
@@ -433,4 +516,4 @@ public class OfflineUIController {
 
     public void shakeOfflineBar() { if (offlineBarController != null) offlineBarController.shake(); }
     private int dp(float value) { return Math.round(value * activity.getResources().getDisplayMetrics().density); }
-            }
+}
