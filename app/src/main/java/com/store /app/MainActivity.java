@@ -403,7 +403,7 @@ public class MainActivity extends AppCompatActivity {
                     BuildConfig.CLIENT_URL
             );
 
-            // 👑 المزامنة الشاملة وتعديل الأيقونات عند انتهاء مدة الـ Splash
+            // 👑 المزامنة الشاملة وتعديل الأيقونات بعد انتهاء مدة الـ Splash + 500ms
             mainHandler.postDelayed(() -> {
                 if (!isFinishing() && activeWebView != null) {
                     SystemUI.syncStatusBarWithWeb(
@@ -411,7 +411,7 @@ public class MainActivity extends AppCompatActivity {
                             activeWebView
                     );
                 }
-            }, FIXED_SPLASH_TIME);
+            }, FIXED_SPLASH_TIME + 500L);
 
             isPageLoaded = true;
 
@@ -762,4 +762,4 @@ public class MainActivity extends AppCompatActivity {
             Log.e(TAG, "⚠️ Failed to initialize Native Modules.", t);
         }
     }
-        }
+    }
