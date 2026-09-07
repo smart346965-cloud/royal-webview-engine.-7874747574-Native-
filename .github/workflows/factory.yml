@@ -34,10 +34,10 @@ jobs:
 
       - name: Prepare Production Keystore 🔐
         env:
-          KEYSTORE_FILE_B64: ${{ secrets.KEYSTORE_FILE }}
-          KEYSTORE_PASSWORD_SECRET: ${{ secrets.KEYSTORE_PASSWORD }}
-          KEY_ALIAS_SECRET: ${{ secrets.KEY_ALIAS }}
-          KEY_PASSWORD_SECRET: ${{ secrets.KEY_PASSWORD }}
+          KEYSTORE_FILE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD_SECRET: ${{ secrets.RELEASE_STORE_PASSWORD }}
+          KEY_ALIAS_SECRET: ${{ secrets.RELEASE_KEY_ALIAS }}
+          KEY_PASSWORD_SECRET: ${{ secrets.RELEASE_KEY_PASSWORD }}
         run: |
           set -euo pipefail
 
@@ -92,7 +92,7 @@ jobs:
       #     IS_LIGHT_BG=true
       #     EOF
 
-      - name: Generate & Deploy config.json (Native Engine Only) 👑
+      - name: Generate config.json (Native Engine Only) 👑
         if: github.event.client_payload.plan == 'native_engine'
         run: |
           echo "🔥 Creating runtime config.json for Premium App..."
@@ -104,21 +104,6 @@ jobs:
 
           echo "✅ Config JSON Generated Successfully:"
           cat output_config/config.json
-
-          # 🌐 [رفع الملف إلى Cloudflare CDN / R2 Storage]
-          echo "🚀 Deploying config.json to Cloudflare CDN..."
-          
-          # ⚙️ المتغيرات (استبدل القيم الوهمية بالبيانات الحقيقية لاحقاً من Cloudflare)
-          CF_ACCOUNT_ID="YOUR_CLOUDFLARE_ACCOUNT_ID_HERE"
-          CF_R2_BUCKET="nexus-configs"
-          CF_API_TOKEN="${{ secrets.CLOUDFLARE_API_TOKEN }}"
-          APP_ID="${{ github.event.client_payload.appId }}"
-
-          # أمر الرفع الصريح التلقائي إلى السحابة
-          curl -X PUT "https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/r2/buckets/${CF_R2_BUCKET}/objects/${APP_ID}.json" \
-            -H "Authorization: Bearer ${CF_API_TOKEN}" \
-            -H "Content-Type: application/json" \
-            --data-binary @output_config/config.json || echo "⚠️ Warning: Cloudflare upload skipped (Check API Credentials)."
 
       # 🧩 1. سحب موديول العميل الفاخر من المستودع الخاص
       - name: Fetch VIP Client Modules 🧩
@@ -231,6 +216,39 @@ jobs:
           echo "🔥 الف مبروك! البصمة الحقيقية للتطبيق هي: $SHA256_HEX"
           echo "========================================================"
 
+      # 🚀 الرفع التلقائي إلى المستودع العام nexus-downloads
+      - name: 🚀 Publish Build Artifacts to GitHub Releases
+        env:
+          GH_TOKEN: ${{ secrets.DOWNLOADS_REPO_TOKEN }}
+          PUBLIC_REPO: "${{ github.repository_owner }}/nexus-downloads"
+        run: |
+          APP_ID="${{ github.event.client_payload.appId || 'default' }}"
+          BUILD_UID="${{ github.event.client_payload.uid || 'manual' }}"
+          TAG_NAME="v${APP_ID}-${GITHUB_RUN_ID}"
+
+          # البحث عن ملفات APK و AAB الناتجة
+          APK_FILE=$(find app/build/outputs/apk/release/ -name "*.apk" | head -n 1)
+          AAB_FILE=$(find app/build/outputs/bundle/release/ -name "*.aab" | head -n 1)
+
+          echo "📦 Uploading $APK_FILE and $AAB_FILE to $PUBLIC_REPO..."
+
+          # إنشاء الاصدار في المستودع العام ورفع الملفات
+          gh release create "$TAG_NAME" \
+            --repo "$PUBLIC_REPO" \
+            --title "Build: ${APP_ID} (${BUILD_UID})" \
+            --notes "Automated build assets for App ID: ${APP_ID}" \
+            "$APK_FILE#app-release.apk" \
+            "$AAB_FILE#app-release.aab"
+
+          REPO_OWNER="${{ github.repository_owner }}"
+          
+          # إعداد روابط التحميل المباشرة والعمومية
+          FINAL_APK_URL="https://github.com/${REPO_OWNER}/nexus-downloads/releases/download/${TAG_NAME}/app-release.apk"
+          FINAL_AAB_URL="https://github.com/${REPO_OWNER}/nexus-downloads/releases/download/${TAG_NAME}/app-release.aab"
+
+          echo "BUILD_APK_PUBLIC_URL=${FINAL_APK_URL}" >> $GITHUB_ENV
+          echo "BUILD_AAB_PUBLIC_URL=${FINAL_AAB_URL}" >> $GITHUB_ENV
+
       - name: Upload Finished APK
         uses: actions/upload-artifact@v4
         with:
@@ -262,8 +280,8 @@ jobs:
           BUILD_APP_ID: ${{ github.event.client_payload.appId }}
           BUILD_SHA256: ${{ env.PROP_SHA256 }}
           BUILD_STATUS: completed
-          BUILD_APK_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          BUILD_AAB_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          BUILD_APK_URL: ${{ env.BUILD_APK_PUBLIC_URL }}
+          BUILD_AAB_URL: ${{ env.BUILD_AAB_PUBLIC_URL }}
           BUILD_BOOST_SCRIPT: <script src="https://cdn.nexusui.engine/v2/boost.js" data-app-id="NX-${{ github.event.client_payload.uid }}"></script>
 
         run: |
