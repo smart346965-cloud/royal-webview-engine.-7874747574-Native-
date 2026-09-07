@@ -32,30 +32,54 @@ jobs:
       - name: Grant execute permission
         run: chmod +x gradlew
 
-      - name: Prepare Keystore 👑
+      - name: Prepare Production Keystore 🔐
+        env:
+          KEYSTORE_FILE_B64: ${{ secrets.KEYSTORE_FILE }}
+          KEYSTORE_PASSWORD_SECRET: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS_SECRET: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD_SECRET: ${{ secrets.KEY_PASSWORD }}
         run: |
-          # 1. محاولة فك التشفير
-          echo "${{ secrets.KEYSTORE_FILE }}" | base64 --decode > release-key.jks || true
-          
-          # 2. التحقق من الملف: إذا كان حجمه صغيراً جداً أو تالفاً، نولد مفتاحاً جديداً فورياً (Automatic Fallback)
-          if [ ! -f "release-key.jks" ] || [ $(stat -c%s "release-key.jks") -lt 100 ]; then
-            echo "⚠️ Keystone file corrupted or missing! Generating auto-key for build..."
-            
-            # 🔥 الحل هنا: نحذف الملف الفارغ أو المعطوب قبل توليد الجديد حتى لا تعترض أداة الجافا
-            rm -f release-key.jks 
-            
-            keytool -genkeypair -v -keystore release-key.jks -storepass android -alias key0 -keypass android -keyalg RSA -keysize 2048 -validity 1000 -dname "CN=Royal, OU=Engine, O=Factory, L=City, S=State, C=US"
-            
-            # تحديث المتغيرات لاستخدام مفتاحنا الجديد المولّد تلقائياً
-            echo "KEYSTORE_PASSWORD=android" >> $GITHUB_ENV
-            echo "KEY_ALIAS=key0" >> $GITHUB_ENV
-            echo "KEY_PASSWORD=android" >> $GITHUB_ENV
-          else
-            echo "✅ Keystore verified!"
-            echo "KEYSTORE_PASSWORD=${{ secrets.KEYSTORE_PASSWORD }}" >> $GITHUB_ENV
-            echo "KEY_ALIAS=${{ secrets.KEY_ALIAS }}" >> $GITHUB_ENV
-            echo "KEY_PASSWORD=${{ secrets.KEY_PASSWORD }}" >> $GITHUB_ENV
+          set -euo pipefail
+
+          if [ -z "$KEYSTORE_FILE_B64" ]; then
+            echo "❌ KEYSTORE_FILE secret is missing."
+            exit 1
           fi
+
+          if [ -z "$KEYSTORE_PASSWORD_SECRET" ]; then
+            echo "❌ KEYSTORE_PASSWORD secret is missing."
+            exit 1
+          fi
+
+          if [ -z "$KEY_ALIAS_SECRET" ]; then
+            echo "❌ KEY_ALIAS secret is missing."
+            exit 1
+          fi
+
+          if [ -z "$KEY_PASSWORD_SECRET" ]; then
+            echo "❌ KEY_PASSWORD secret is missing."
+            exit 1
+          fi
+
+          echo "$KEYSTORE_FILE_B64" | base64 --decode > release-key.jks
+
+          if [ ! -s release-key.jks ]; then
+            echo "❌ Decoded keystore is empty."
+            rm -f release-key.jks
+            exit 1
+          fi
+
+          keytool -list \
+            -keystore release-key.jks \
+            -storepass "$KEYSTORE_PASSWORD_SECRET" \
+            -alias "$KEY_ALIAS_SECRET" \
+            >/dev/null
+
+          echo "KEYSTORE_PASSWORD=$KEYSTORE_PASSWORD_SECRET" >> "$GITHUB_ENV"
+          echo "KEY_ALIAS=$KEY_ALIAS_SECRET" >> "$GITHUB_ENV"
+          echo "KEY_PASSWORD=$KEY_PASSWORD_SECRET" >> "$GITHUB_ENV"
+
+          echo "✅ Production keystore verified successfully."
 
       # 👑 تعطيل مؤقت لأننا نختبر يدويًا بدون سيرفر/وركر
       # - name: Generate Client Config 👑
@@ -227,17 +251,43 @@ jobs:
           name: Royal-Wasm-Assets-Verification
           path: app/src/main/assets/public/js/
 
+      # ============================================================
+      # 🔐 Notify Nexus Worker with verified build result
+      # ============================================================
       - name: Notify Nexus Worker with Real Data 🔔
-        if: success()
+        if: ${{ success() && github.event_name == 'repository_dispatch' }}
+        env:
+          WEBHOOK_SECRET: ${{ secrets.BUILD_WEBHOOK_SECRET }}
+          BUILD_UID: ${{ github.event.client_payload.uid }}
+          BUILD_APP_ID: ${{ github.event.client_payload.appId }}
+          BUILD_SHA256: ${{ env.PROP_SHA256 }}
+          BUILD_STATUS: completed
+          BUILD_APK_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          BUILD_AAB_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          BUILD_BOOST_SCRIPT: <script src="https://cdn.nexusui.engine/v2/boost.js" data-app-id="NX-${{ github.event.client_payload.uid }}"></script>
+
         run: |
-          # إرسال البيانات الحقيقية المستخرجة (الحالة، البصمة، وروابط الـ Artifacts التخيلية) إلى الوركر
-          curl -X POST "https://nexus-auth-manager.smart346965.workers.dev/build-webhook" \
-          -H "Content-Type: application/json" \
-          -d '{
-            "uid": "${{ github.event.client_payload.uid }}",
-            "status": "completed",
-            "sha256": "${{ env.PROP_SHA256 }}",
-            "apkUrl": "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}",
-            "aabUrl": "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}",
-            "boostScript": "<script src=\"https://cdn.nexusui.engine/v2/boost.js\" data-app-id=\"NX-${{ github.event.client_payload.uid }}\"></script>"
-          }'
+          set -euo pipefail
+
+          echo "🔔 Sending verified build result to Nexus Worker..."
+          echo "App ID: $BUILD_APP_ID"
+          echo "Status: $BUILD_STATUS"
+
+          curl --fail-with-body \
+            -X POST \
+            "https://nexus-auth-manager.smart346965.workers.dev/build-webhook" \
+            -H "Content-Type: application/json" \
+            -H "X-Nexus-Build-Secret: $WEBHOOK_SECRET" \
+            --data-binary @- <<EOF
+          {
+            "uid": "$BUILD_UID",
+            "appId": "$BUILD_APP_ID",
+            "status": "$BUILD_STATUS",
+            "sha256": "$BUILD_SHA256",
+            "apkUrl": "$BUILD_APK_URL",
+            "aabUrl": "$BUILD_AAB_URL",
+            "boostScript": "$BUILD_BOOST_SCRIPT"
+          }
+          EOF
+
+          echo "✅ Nexus Worker accepted build result."
