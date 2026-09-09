@@ -506,7 +506,7 @@ public class OfflineUIController {
                 if (insets != null) bottomInset = insets.getInsets(WindowInsets.Type.systemBars()).bottom;
             } else if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
                 WindowInsets insets = pureOfflineUI.getRootWindowInsets();
-                if (insets != null) bottomInset = insets.getSystemWindowInsetBottom;
+                if (insets != null) bottomInset = insets.getSystemWindowInsetBottom();
             }
             FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) card.getLayoutParams();
             params.bottomMargin = bottomInset + dp(16);
@@ -516,4 +516,4 @@ public class OfflineUIController {
 
     public void shakeOfflineBar() { if (offlineBarController != null) offlineBarController.shake(); }
     private int dp(float value) { return Math.round(value * activity.getResources().getDisplayMetrics().density); }
-}
+                }
