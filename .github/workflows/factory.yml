@@ -174,8 +174,10 @@ jobs:
 
           for icon in $ICONS; do
             if [ -n "$icon" ]; then
-              echo "📥 Fetching Lucide Icon: $icon"
-              curl -sL "https://raw.githubusercontent.com/lucide-icons/lucide/main/icons/${icon}.svg" -o "app/src/main/res/drawable/ic_lucide_${icon}.svg" || true
+              # تحويل الاسم إلى حروف صغيرة تلقائياً لمنع أخطاء 404
+              icon_lower=$(echo "$icon" | tr '[:upper:]' '[:lower:]')
+              echo "📥 Fetching Lucide Icon: $icon_lower"
+              curl -sL "https://raw.githubusercontent.com/lucide-icons/lucide/main/icons/${icon_lower}.svg" -o "app/src/main/res/drawable/ic_lucide_${icon_lower}.svg" || true
             fi
           done
 
@@ -216,7 +218,7 @@ jobs:
           echo "🔥 الف مبروك! البصمة الحقيقية للتطبيق هي: $SHA256_HEX"
           echo "========================================================"
 
-      # 🚀 الرفع التلقائي إلى المستودع العام nexus-downloads
+      # 🚀 الرفع التلقائي إلى المستودع العام nexus-downloads (مع معالجة الملفات الاختيارية)
       - name: 🚀 Publish Build Artifacts to GitHub Releases
         env:
           GH_TOKEN: ${{ secrets.DOWNLOADS_REPO_TOKEN }}
@@ -225,28 +227,35 @@ jobs:
           APP_ID="${{ github.event.client_payload.appId || 'default' }}"
           BUILD_UID="${{ github.event.client_payload.uid || 'manual' }}"
           TAG_NAME="v${APP_ID}-${GITHUB_RUN_ID}"
+          REPO_OWNER="${{ github.repository_owner }}"
 
           # البحث عن ملفات APK و AAB الناتجة
           APK_FILE=$(find app/build/outputs/apk/release/ -name "*.apk" | head -n 1)
           AAB_FILE=$(find app/build/outputs/bundle/release/ -name "*.aab" | head -n 1)
 
-          echo "📦 Uploading $APK_FILE and $AAB_FILE to $PUBLIC_REPO..."
+          # تجهيز قائمة الملفات المخصصة للرفع
+          FILES_TO_UPLOAD=("$APK_FILE#${APP_ID}-release.apk" "$AAB_FILE#${APP_ID}-release.aab")
 
-          # إنشاء الاصدار في المستودع العام ورفع الملفات
+          # فحص وجود ملف الإعدادات قبل إضافته للرفع لضمان عدم حدوث خطأ في الباقات العادية
+          if [ -f "output_config/config.json" ]; then
+            FILES_TO_UPLOAD+=("output_config/config.json#config-${APP_ID}.json")
+            BUILD_CONFIG_PUBLIC_URL="https://github.com/${REPO_OWNER}/nexus-downloads/releases/download/${TAG_NAME}/config-${APP_ID}.json"
+          else
+            BUILD_CONFIG_PUBLIC_URL=""
+          fi
+
+          echo "📦 Uploading assets to $PUBLIC_REPO..."
+
+          # إنشاء الإصدار الموحد ورفع الملفات المتوفرة
           gh release create "$TAG_NAME" \
             --repo "$PUBLIC_REPO" \
             --title "Build: ${APP_ID} (${BUILD_UID})" \
             --notes "Automated build assets for App ID: ${APP_ID} | UID: ${BUILD_UID}" \
-            "$APK_FILE#${APP_ID}-release.apk" \
-            "$AAB_FILE#${APP_ID}-release.aab" \
-            "output_config/config.json#config-${APP_ID}.json"
+            "${FILES_TO_UPLOAD[@]}"
 
-          REPO_OWNER="${{ github.repository_owner }}"
-          
-          # إعداد روابط التحميل المباشرة والعمومية
+          # إعداد تصدير الروابط إلى بيئة GitHub Actions
           FINAL_APK_URL="https://github.com/${REPO_OWNER}/nexus-downloads/releases/download/${TAG_NAME}/${APP_ID}-release.apk"
           FINAL_AAB_URL="https://github.com/${REPO_OWNER}/nexus-downloads/releases/download/${TAG_NAME}/${APP_ID}-release.aab"
-          BUILD_CONFIG_PUBLIC_URL="https://github.com/${REPO_OWNER}/nexus-downloads/releases/download/${TAG_NAME}/config-${APP_ID}.json"
 
           echo "BUILD_APK_PUBLIC_URL=${FINAL_APK_URL}" >> $GITHUB_ENV
           echo "BUILD_AAB_PUBLIC_URL=${FINAL_AAB_URL}" >> $GITHUB_ENV
