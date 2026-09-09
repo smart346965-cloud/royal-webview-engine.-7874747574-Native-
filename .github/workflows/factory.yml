@@ -236,18 +236,21 @@ jobs:
           gh release create "$TAG_NAME" \
             --repo "$PUBLIC_REPO" \
             --title "Build: ${APP_ID} (${BUILD_UID})" \
-            --notes "Automated build assets for App ID: ${APP_ID}" \
-            "$APK_FILE#app-release.apk" \
-            "$AAB_FILE#app-release.aab"
+            --notes "Automated build assets for App ID: ${APP_ID} | UID: ${BUILD_UID}" \
+            "$APK_FILE#${APP_ID}-release.apk" \
+            "$AAB_FILE#${APP_ID}-release.aab" \
+            "output_config/config.json#config-${APP_ID}.json"
 
           REPO_OWNER="${{ github.repository_owner }}"
           
           # إعداد روابط التحميل المباشرة والعمومية
-          FINAL_APK_URL="https://github.com/${REPO_OWNER}/nexus-downloads/releases/download/${TAG_NAME}/app-release.apk"
-          FINAL_AAB_URL="https://github.com/${REPO_OWNER}/nexus-downloads/releases/download/${TAG_NAME}/app-release.aab"
+          FINAL_APK_URL="https://github.com/${REPO_OWNER}/nexus-downloads/releases/download/${TAG_NAME}/${APP_ID}-release.apk"
+          FINAL_AAB_URL="https://github.com/${REPO_OWNER}/nexus-downloads/releases/download/${TAG_NAME}/${APP_ID}-release.aab"
+          BUILD_CONFIG_PUBLIC_URL="https://github.com/${REPO_OWNER}/nexus-downloads/releases/download/${TAG_NAME}/config-${APP_ID}.json"
 
           echo "BUILD_APK_PUBLIC_URL=${FINAL_APK_URL}" >> $GITHUB_ENV
           echo "BUILD_AAB_PUBLIC_URL=${FINAL_AAB_URL}" >> $GITHUB_ENV
+          echo "BUILD_CONFIG_URL=${BUILD_CONFIG_PUBLIC_URL}" >> $GITHUB_ENV
 
       - name: Upload Finished APK
         uses: actions/upload-artifact@v4
@@ -282,6 +285,7 @@ jobs:
           BUILD_STATUS: completed
           BUILD_APK_URL: ${{ env.BUILD_APK_PUBLIC_URL }}
           BUILD_AAB_URL: ${{ env.BUILD_AAB_PUBLIC_URL }}
+          BUILD_CONFIG_URL: ${{ env.BUILD_CONFIG_URL }}
           BUILD_BOOST_SCRIPT: <script src="https://cdn.nexusui.engine/v2/boost.js" data-app-id="NX-${{ github.event.client_payload.uid }}"></script>
 
         run: |
@@ -304,6 +308,7 @@ jobs:
             "sha256": "$BUILD_SHA256",
             "apkUrl": "$BUILD_APK_URL",
             "aabUrl": "$BUILD_AAB_URL",
+            "configUrl": "$BUILD_CONFIG_URL",
             "boostScript": "$BUILD_BOOST_SCRIPT"
           }
           EOF
