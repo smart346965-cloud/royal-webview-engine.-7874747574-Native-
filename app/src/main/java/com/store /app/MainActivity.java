@@ -488,12 +488,24 @@ public class MainActivity extends AppCompatActivity {
 
             activeWebView.onResume();
 
-            // 👑 إعادة تقييم Navigation Mode
+            // 👑 إعادة تقييم Navigation Mode — لا علاقة له بقرار Status Bar
             SystemUI.refreshNavigationBar(this);
 
-            SystemUI.restoreHeaderOnResume(this);
-
+            /*
+             * 👑 حماية انتقال Splash → WebView
+             *
+             * خلال مدة الـSplash والـ500ms الخاصة بخروجها:
+             * لا نسمح لـ restoreHeaderOnResume() بإعادة كتابة
+             * حالة أيقونات Status Bar من currentHeaderColor القديم.
+             *
+             * بعد انتهاء الـSplash تصبح المزامنة الطبيعية مسموحة،
+             * ثم تتولى scheduleStatusBarSync() مزامنة اللون الحقيقي
+             * من صفحة الويب.
+             */
             if (System.currentTimeMillis() - splashStartTime >= FIXED_SPLASH_TIME) {
+
+                SystemUI.restoreHeaderOnResume(this);
+
                 SystemUI.scheduleStatusBarSync(
                         this,
                         activeWebView
@@ -725,15 +737,26 @@ public class MainActivity extends AppCompatActivity {
     @Override
     public void onWindowFocusChanged(boolean hasFocus) {
         super.onWindowFocusChanged(hasFocus);
+
         if (hasFocus) {
 
             // 👑 إعادة تقييم Navigation Mode عند استعادة التركيز
             SystemUI.refreshNavigationBar(this);
 
-            SystemUI.restoreHeaderOnResume(this);
-
+            /*
+             * 👑 حماية Status Bar أثناء Splash → WebView
+             *
+             * لا نسمح لـ restoreHeaderOnResume() بلمس
+             * أيقونات Status Bar قبل انتهاء نافذة الـSplash.
+             *
+             * بعد انتهاء الـSplash:
+             * 1. نستعيد اللون الحالي.
+             * 2. نطلب المزامنة الفعلية من WebView.
+             */
             if (System.currentTimeMillis() - splashStartTime >= FIXED_SPLASH_TIME
                     && activeWebView != null) {
+
+                SystemUI.restoreHeaderOnResume(this);
 
                 SystemUI.scheduleStatusBarSync(
                         this,
@@ -762,4 +785,4 @@ public class MainActivity extends AppCompatActivity {
             Log.e(TAG, "⚠️ Failed to initialize Native Modules.", t);
         }
     }
-    }
+                              }
