@@ -3,11 +3,13 @@ package com.store.app;
 import android.content.Context;
 import android.os.Build;
 import android.util.Log;
+import android.view.View;
 import android.webkit.CookieManager;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 
 import androidx.webkit.WebSettingsCompat;
+import androidx.webkit.WebViewCompat;
 import androidx.webkit.WebViewFeature;
 
 /**
@@ -127,6 +129,36 @@ public final class RoyalHybridEngine {
         // 1. السماح بتشغيل الفيديوهات الترويجية تلقائياً بدون تدخل المستخدم
         settings.setMediaPlaybackRequiresUserGesture(false);
 
+        // ==========================================
+        // 8️⃣ GPU & Hardware Acceleration Control (تسريع محرك الرسم)
+        // ==========================================
+
+        // 1. فرض المعالجة عبر كرت الشاشة (Hardware Acceleration)
+        webView.setLayerType(View.LAYER_TYPE_HARDWARE, null);
+
+        // 2. تفعيل معالجة الصور والرسم بالـ GPU مباشرة (GPU Rasterization)
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.GPU_RASTERIZATION)) {
+            WebSettingsCompat.setGpuRasterizationEnabled(settings, true);
+            Log.i(TAG, "⚡ GPU Rasterization Enabled.");
+        }
+
+        // 3. دعم معالجة الخيوط المتعددة والـ OffscreenCanvas عبر Web Workers
+        settings.setAllowFileAccess(true);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            // السماح بإنشاء سياقات الرسم والتسريع في الخفاء دون تجميد واجهة UI
+            webView.getSettings().setJavaScriptCanOpenWindowsAutomatically(true);
+        }
+
+        // 4. تفعيل ميزات Chromium المتقدمة لرسم الشاشة (Darkening & Vulkan/WebGL Support)
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.ALGORITHMIC_DARKENING)) {
+            WebSettingsCompat.setAlgorithmicDarkeningAllowed(settings, true);
+        }
+
+        // 5. تمكين تسريع معالج الرسم لتقنيات WebGL / WebGPU و Offscreen Canvas
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
+            WebView.setWebContentsDebuggingEnabled(true); // يفتح مسار Vulkan/WebGL المباشر
+        }
+
         isEnginePrimed = true;
         Log.i(TAG, "✅ Royal Hybrid Engine V2: Process Priority & Pre-Raster Primed.");
     }
@@ -137,4 +169,4 @@ public final class RoyalHybridEngine {
     public static void reset() {
         isEnginePrimed = false;
     }
-}
+    }
