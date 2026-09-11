@@ -133,13 +133,12 @@ public final class RoyalHybridEngine {
         // 8️⃣ GPU & Hardware Acceleration Control (تسريع محرك الرسم)
         // ==========================================
 
-        // 1. فرض المعالجة عبر كرت الشاشة (Hardware Acceleration)
+        // ✅ التفعيل القياسي والأقوى لـ GPU Rasterization على مستوى الـ Layer و Hardware Acceleration
         webView.setLayerType(View.LAYER_TYPE_HARDWARE, null);
 
-        // 2. تفعيل معالجة الصور والرسم بالـ GPU مباشرة (GPU Rasterization)
-        if (WebViewFeature.isFeatureSupported(WebViewFeature.GPU_RASTERIZATION)) {
-            WebSettingsCompat.setGpuRasterizationEnabled(settings, true);
-            Log.i(TAG, "⚡ GPU Rasterization Enabled.");
+        // تفعيل وضع العرض المستقر خارج الشاشة
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            settings.setOffscreenPreRaster(true);
         }
 
         // 3. دعم معالجة الخيوط المتعددة والـ OffscreenCanvas عبر Web Workers
