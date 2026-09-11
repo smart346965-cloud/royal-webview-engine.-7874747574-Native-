@@ -129,35 +129,6 @@ public class WebEngineManager {
         "  } catch(e) {}" +
         "})();";
 
-    // =========================================================
-    // ⚡ SKIA CANVASKIT WASM GPU ACCELERATOR
-    // =========================================================
-    private static final String SKIA_CANVASKIT_INJECTOR_JS =
-        "(function() {" +
-        "  if (window.__royalSkiaInjected) return;" +
-        "  window.__royalSkiaInjected = true;" +
-        "" +
-        "  var CDN_BASE = 'https://unpkg.com/canvaskit-wasm@0.39.1/bin/';" +
-        "  var script = document.createElement('script');" +
-        "  script.src = CDN_BASE + 'canvaskit.js';" +
-        "  script.async = true;" +
-        "" +
-        "  script.onload = function() {" +
-        "    if (typeof CanvasKitInit === 'function') {" +
-        "      CanvasKitInit({" +
-        "        locateFile: function(file) { return CDN_BASE + file; }" +
-        "      }).then(function(CK) {" +
-        "        window.__NEXUS_SKIA__ = CK;" +
-        "        console.log('⚡ [NEXUS ENGINE] Skia CanvasKit WASM GPU Bridge Ready via CDN.');" +
-        "      }).catch(function(err) {" +
-        "        console.warn('[NEXUS ENGINE] Skia Init Error:', err);" +
-        "      });" +
-        "    }" +
-        "  };" +
-        "" +
-        "  (document.head || document.documentElement).appendChild(script);" +
-        "})();";
-
     private final Context context;
     private final android.app.Activity activity;
     private final WebView webView;
@@ -482,11 +453,6 @@ public class WebEngineManager {
             public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
                 super.onPageStarted(view, url, favicon);
                 RoyalPanopticon.recordRequestSent();
-
-                // ⚡ حقن محرك Skia CanvasKit في أول لحظة إشعال للصفحة لتسريع الـ GPU مبكراً
-                if (view != null && url != null && !url.startsWith("data:") && !url.startsWith("about:")) {
-                    view.evaluateJavascript(SKIA_CANVASKIT_INJECTOR_JS, null);
-                }
             }
 
             // =========================================================
@@ -1093,4 +1059,4 @@ public class WebEngineManager {
 
         return launchExternal(uri);
     }
-            }
+    }
