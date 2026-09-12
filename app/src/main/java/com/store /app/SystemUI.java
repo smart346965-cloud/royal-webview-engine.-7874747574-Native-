@@ -50,9 +50,6 @@ public class SystemUI {
 
     private static boolean navigationBarControllerReady = false;
 
-    // 👑 [جديد] حالة الأيقونات الأخيرة لمنع إعادة تطبيقها (يمنع الومض)
-    private static int lastAppliedIconState = Integer.MIN_VALUE;
-
     // =========================================================
     // 👑 Navigation Mode Detector
     // =========================================================
@@ -422,14 +419,6 @@ public class SystemUI {
         applyHeaderColorInternal(activity, targetColor, true);
     }
 
-    // 👑 [جديد] تطبيق اللون بدون لمس الأيقونات — يُستخدم في onResume/onWindowFocus
-    public static void applyHeaderColorSilent(
-            android.app.Activity activity,
-            int targetColor
-    ) {
-        applyHeaderColorInternal(activity, targetColor, false);
-    }
-
     /**
      * دالة داخلية تتيح تلوين الشريط الناتيف مع خيار التحكم في تحديث الأيقونات
      */
@@ -462,32 +451,24 @@ public class SystemUI {
                 boolean isLightHeader =
                         isColorLight(solidColor);
 
-                // 👑 [جديد] منع إعادة تطبيق نفس حالة الأيقونات لمنع الومض
-                int desiredIconState = isLightHeader ? 1 : 0;
+                // 👑 Status Bar Icons
+                setStatusBarIconsInternal(
+                        window,
+                        isLightHeader
+                );
 
-                if (desiredIconState != lastAppliedIconState) {
+                // 👑 Navigation Bar Icons / Gesture Handle
+                WindowInsetsControllerCompat navigationController =
+                        WindowCompat.getInsetsController(
+                                window,
+                                window.getDecorView()
+                        );
 
-                    // 👑 Status Bar Icons
-                    setStatusBarIconsInternal(
-                            window,
+                if (navigationController != null) {
+
+                    navigationController.setAppearanceLightNavigationBars(
                             isLightHeader
                     );
-
-                    // 👑 Navigation Bar Icons / Gesture Handle
-                    WindowInsetsControllerCompat navigationController =
-                            WindowCompat.getInsetsController(
-                                    window,
-                                    window.getDecorView()
-                            );
-
-                    if (navigationController != null) {
-
-                        navigationController.setAppearanceLightNavigationBars(
-                                isLightHeader
-                        );
-                    }
-
-                    lastAppliedIconState = desiredIconState;
                 }
             }
 
@@ -569,15 +550,6 @@ public class SystemUI {
             applyHeaderColor(activity, currentHeaderColor);
         } else {
             applyHeaderColor(activity, getDefaultSystemColor(activity));
-        }
-    }
-
-    // 👑 [جديد] استعادة اللون بدون لمس الأيقونات — يمنع الومض عند onResume
-    public static void restoreHeaderOnResumeSilent(android.app.Activity activity) {
-        if (currentHeaderColor != Integer.MIN_VALUE) {
-            applyHeaderColorSilent(activity, currentHeaderColor);
-        } else {
-            applyHeaderColorSilent(activity, getDefaultSystemColor(activity));
         }
     }
 
@@ -762,15 +734,6 @@ public class SystemUI {
         });
     }
 
-    // 👑 [جديد] نسخة آمنة من المزامنة المبكرة تُستدعى في VISUAL_STATE_CALLBACK
-    // تُحدّث الشريط فقط بدون لمس الأيقونات (لمنع الومض المبكر)
-    public static void syncStatusBarWithWebEarlySafe(
-            android.app.Activity activity,
-            WebView webView
-    ) {
-        syncStatusBarWithWebEarly(activity, webView);
-    }
-
     public static void scheduleStatusBarSync(
             android.app.Activity activity,
             WebView webView
@@ -790,7 +753,7 @@ public class SystemUI {
             syncStatusBarWithWeb(activity, webView);
         };
 
-        // 👑 [تعديل] زيادة المهلة من 80ms إلى 400ms لإتاحة وقت كافٍ لصفحات SPA
+        // 👑 مهلة موسّعة لصفحات SPA حتى يستقر الـ DOM والـ CSS بالكامل
         SYNC_HANDLER.postDelayed(syncTask, 400L);
     }
 
@@ -802,102 +765,27 @@ public class SystemUI {
     }
 
     // =========================================================
-    // 👑 7-C. [جديد] مراقب لون الهيدر الحي عبر MutationObserver
+    // 👑 7-C. استقبال اللون الحيّ من طبقة الجافاسكريبت (MutationObserver)
+    // يُستدعى من RoyalJsBridge عند تغيّر meta theme-color أو خلفية الهيدر.
     // =========================================================
+    public static void onHeaderColorChanged(
+            android.app.Activity activity,
+            String colorStr
+    ) {
+        if (activity == null || colorStr == null) return;
 
-    /**
-     * يُحقن داخل صفحة الويب لمراقبة أي تغيير في لون الهيدر وإبلاغ الجسر النيتيف فوراً.
-     * يُستدعى مرة واحدة بعد تحميل الصفحة (onPageFinished).
-     */
-    public static void attachHeaderColorObserver(WebView webView) {
-        if (webView == null) return;
+        // 👑 تجاهل القيم الفارغة أو غير الصالحة
+        final String trimmed = colorStr.replace("\"", "").trim();
+        if (trimmed.isEmpty() || trimmed.equalsIgnoreCase("null")) return;
 
-        String jsScript =
-                "(function() {" +
-                "  if (window.__royalHeaderObserverAttached) return 'already_attached';" +
-                "  window.__royalHeaderObserverAttached = true;" +
-                "  function normalizeColor(colorStr) {" +
-                "    if (!colorStr) return null;" +
-                "    try {" +
-                "      var canvas = document.createElement('canvas');" +
-                "      canvas.width = 1; canvas.height = 1;" +
-                "      var ctx = canvas.getContext('2d');" +
-                "      ctx.fillStyle = colorStr;" +
-                "      return ctx.fillStyle;" +
-                "    } catch(e) { return colorStr; }" +
-                "  }" +
-                "  function isBlackOrTransparent(colorStr) {" +
-                "    if (!colorStr) return true;" +
-                "    var c = colorStr.toLowerCase().replace(/\\s+/g, '');" +
-                "    return c === 'transparent' || c === 'rgba(0,0,0,0)' || c === '#000000' || c === '#000' || c === 'rgb(0,0,0)';" +
-                "  }" +
-                "  function extractColor() {" +
-                "    var metas = document.querySelectorAll('meta[name=\"theme-color\"]');" +
-                "    for (var i = 0; i < metas.length; i++) {" +
-                "      var m = metas[i];" +
-                "      if (!m.media || window.matchMedia(m.media).matches) {" +
-                "        if (m.content) {" +
-                "          var normalized = normalizeColor(m.content);" +
-                "          if (normalized && !isBlackOrTransparent(normalized)) return normalized;" +
-                "        }" +
-                "      }" +
-                "    }" +
-                "    var el = document.elementFromPoint(window.innerWidth / 2, 20);" +
-                "    if (!el) el = document.querySelector('header') || document.querySelector('nav') || document.body;" +
-                "    while (el && el !== document.documentElement) {" +
-                "      var st = window.getComputedStyle(el);" +
-                "      var bg = st.backgroundColor;" +
-                "      if (bg && !isBlackOrTransparent(bg)) {" +
-                "        return normalizeColor(bg);" +
-                "      }" +
-                "      el = el.parentElement;" +
-                "    }" +
-                "    var bodyBg = window.getComputedStyle(document.body).backgroundColor;" +
-                "    if (bodyBg && !isBlackOrTransparent(bodyBg)) {" +
-                "      return normalizeColor(bodyBg);" +
-                "    }" +
-                "    return null;" +
-                "  }" +
-                "  function reportColor() {" +
-                "    var color = extractColor();" +
-                "    if (color && window.RoyalJsBridge && window.RoyalJsBridge.onHeaderColorChanged) {" +
-                "      try { window.RoyalJsBridge.onHeaderColorChanged(color); } catch(e) {}" +
-                "    }" +
-                "  }" +
-                "  try {" +
-                "    var headObserver = new MutationObserver(reportColor);" +
-                "    headObserver.observe(document.head, { childList: true, subtree: true, attributes: true });" +
-                "    var header = document.querySelector('header') || document.querySelector('nav');" +
-                "    if (header) {" +
-                "      var headerObserver = new MutationObserver(reportColor);" +
-                "      headerObserver.observe(header, { attributes: true, attributeFilter: ['style', 'class'] });" +
-                "    }" +
-                "    window.addEventListener('scroll', reportColor, { passive: true });" +
-                "    reportColor();" +
-                "  } catch(e) {}" +
-                "  return 'attached';" +
-                "})();";
-
-        webView.evaluateJavascript(jsScript, value -> {
-            Log.i(TAG, "🎯 Header color observer: " + value);
+        activity.runOnUiThread(() -> {
+            try {
+                int parsedColor = parseColorString(activity, trimmed);
+                applyHeaderColor(activity, parsedColor);
+            } catch (Throwable t) {
+                Log.w(TAG, "onHeaderColorChanged failed for: " + trimmed, t);
+            }
         });
-    }
-
-    /**
-     * إزالة المراقب عند تدمير الصفحة (اختياري — يُستدعى من MainActivity.onDestroy)
-     */
-    public static void detachHeaderColorObserver(WebView webView) {
-        if (webView == null) return;
-
-        String jsScript =
-                "(function() {" +
-                "  window.__royalHeaderObserverAttached = false;" +
-                "  return 'detached';" +
-                "})();";
-
-        try {
-            webView.evaluateJavascript(jsScript, null);
-        } catch (Throwable ignored) {}
     }
 
     // =========================================================
@@ -913,3 +801,90 @@ public class SystemUI {
             } else if (colorStr.startsWith("rgb")) {
                 String[] parts = colorStr.substring(colorStr.indexOf("(") + 1, colorStr.indexOf(")")).split(",");
                 int r = Integer.parseInt(parts[0].trim());
+                int g = Integer.parseInt(parts[1].trim());
+                int b = Integer.parseInt(parts[2].trim());
+
+                if (parts.length >= 4) {
+                    float a = Float.parseFloat(parts[3].trim());
+                    int alphaInt = Math.round(a * 255);
+                    return Color.argb(alphaInt, r, g, b);
+                }
+                return Color.rgb(r, g, b);
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "Color parsing fallback triggered for: " + colorStr, e);
+        }
+        return defaultColor;
+    }
+
+    // =========================================================
+    // 👑 9. استشعار ثيم النظام الافتراضي (Dark / Light)
+    // =========================================================
+    public static boolean isDarkMode(android.content.Context context) {
+        if (context == null) return false;
+        int nightModeFlags = context.getResources().getConfiguration().uiMode
+                & android.content.res.Configuration.UI_MODE_NIGHT_MASK;
+        return nightModeFlags == android.content.res.Configuration.UI_MODE_NIGHT_YES;
+    }
+
+    public static int getDefaultSystemColor(android.content.Context context) {
+        return isDarkMode(context) ? Color.parseColor("#12141C") : Color.WHITE;
+    }
+
+    // =========================================================
+    // 👑 إعادة تشغيل مؤقت Navigation Bar عند النقر أو زر الرجوع
+    // =========================================================
+    public static void notifyNavigationUserInteraction(
+            android.app.Activity activity
+    ) {
+        if (activity == null ||
+                activity.isFinishing()) {
+            return;
+        }
+
+        activity.runOnUiThread(() -> {
+            // إعادة جدولة وقت الإخفاء من جديد عند التفاعل أو الرجوع
+            scheduleNavigationBarHide(activity);
+        });
+    }
+
+    // =========================================================
+    // 👑 Navigation Bar Visibility Monitor
+    // =========================================================
+
+    public static void onNavigationBarVisibilityChanged(
+            android.app.Activity activity,
+            boolean visible
+    ) {
+        if (activity == null ||
+                activity.isFinishing()) {
+            return;
+        }
+
+        if (visible) {
+
+            Window window = activity.getWindow();
+
+            if (window != null) {
+
+                WindowInsetsControllerCompat controller =
+                        WindowCompat.getInsetsController(
+                                window,
+                                window.getDecorView()
+                        );
+
+                if (controller != null) {
+                    controller.show(
+                            androidx.core.view.WindowInsetsCompat.Type.navigationBars()
+                    );
+                }
+            }
+
+            scheduleNavigationBarHide(activity);
+
+        } else {
+
+            cancelNavigationBarHide();
+        }
+    }
+            }
