@@ -93,7 +93,7 @@ public class SystemUI {
     }
 
     // =========================================================
-    // 👑 إخفاء الشريطين واقتصار إظهارهما على إيماءة السحب الخاصة بكل شريط
+    // 👑 إخفاء الشريطين مع تفعيل أشرطة النظام الصلبة الأصلية لكل سحبة
     // =========================================================
     public static void hideSystemBars(android.app.Activity activity) {
         if (activity == null || activity.isFinishing()) {
@@ -109,12 +109,13 @@ public class SystemUI {
 
             if (controller == null) return;
 
-            // تفعيل سلوك السحب الشفاف الافتراضي للنظام (Swipe to Show)
+            // 👑 تفعيل السلوك الأصلي للنظام (BEHAVIOR_SHOW_BARS_BY_SWIPE)
+            // هذا الوضع يُظهر الشريط الصلب المخصص للحافة المسحوبة فقط دون الشفافية الداكنة
             controller.setSystemBarsBehavior(
-                    WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                    WindowInsetsControllerCompat.BEHAVIOR_SHOW_BARS_BY_SWIPE
             );
 
-            // إخفاء الشريط العلوي والسفلي معاً في الوضع الخامل
+            // إخفاء الشريطين في الحالة الخاملة
             controller.hide(
                     androidx.core.view.WindowInsetsCompat.Type.statusBars()
                             | androidx.core.view.WindowInsetsCompat.Type.navigationBars()
@@ -229,10 +230,10 @@ public class SystemUI {
     }
 
     // =========================================================
-    // 👑 5 Second Navigation Bar Auto-Hide
+    // 👑 5 Second Navigation Bar Auto-Hide & Reset
     // =========================================================
 
-    private static void scheduleNavigationBarHide(
+    public static void scheduleNavigationBarHide(
             android.app.Activity activity
     ) {
 
@@ -244,18 +245,9 @@ public class SystemUI {
             return;
         }
 
-        // 👑 Gesture Navigation لا يتم إخفاؤه
-        if (detectedNavigationMode == 2) {
-            return;
-        }
-
         navigationHideTask = () -> {
 
             if (activity.isFinishing()) {
-                return;
-            }
-
-            if (detectNavigationMode(activity) == 2) {
                 return;
             }
 
@@ -273,7 +265,7 @@ public class SystemUI {
 
             if (controller != null) {
 
-                // 👑 إخفاء شريط النظام الحقيقي
+                // إخفاء شريط التنقل السفلي فقط بعد انتهاء الـ Delay
                 controller.hide(
                         androidx.core.view.WindowInsetsCompat.Type.navigationBars()
                 );
@@ -822,18 +814,20 @@ public class SystemUI {
     }
 
     // =========================================================
-    // 👑 إعادة تشغيل مؤقت Navigation Bar عند تفاعل المستخدم
+    // 👑 إعادة تشغيل مؤقت Navigation Bar عند النقر أو زر الرجوع
     // =========================================================
     public static void notifyNavigationUserInteraction(
             android.app.Activity activity
     ) {
         if (activity == null ||
-                activity.isFinishing() ||
-                !navigationBarControllerReady) {
+                activity.isFinishing()) {
             return;
         }
 
-        showSystemBarsOnInteraction(activity);
+        activity.runOnUiThread(() -> {
+            // إعادة جدولة وقت الإخفاء من جديد عند التفاعل أو الرجوع
+            scheduleNavigationBarHide(activity);
+        });
     }
 
     // =========================================================
@@ -849,10 +843,11 @@ public class SystemUI {
             return;
         }
 
-        if (!navigationBarControllerReady) {
-            return;
+        if (visible) {
+            // عند ظهور الشريط السفلي نتيجة السحب، يبدأ مؤقت الإخفاء التلقائي فوراً
+            scheduleNavigationBarHide(activity);
+        } else {
+            cancelNavigationBarHide();
         }
-
-        // 👑 النظام الموحد هو المسؤول عن إظهار/إخفاء الشريطين.
     }
-    }
+                                                        }
