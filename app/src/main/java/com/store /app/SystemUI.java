@@ -93,40 +93,28 @@ public class SystemUI {
     }
 
     // =========================================================
-    // 👑 Unified System Bars Controller
-    // Status Bar + Navigation Bar
+    // 👑 إخفاء الشريطين واقتصار إظهارهما على إيماءة السحب الخاصة بكل شريط
     // =========================================================
-
-    public static void hideSystemBars(
-            android.app.Activity activity
-    ) {
+    public static void hideSystemBars(android.app.Activity activity) {
         if (activity == null || activity.isFinishing()) {
             return;
         }
 
         activity.runOnUiThread(() -> {
-
             Window window = activity.getWindow();
-
-            if (window == null) {
-                return;
-            }
+            if (window == null) return;
 
             WindowInsetsControllerCompat controller =
-                    WindowCompat.getInsetsController(
-                            window,
-                            window.getDecorView()
-                    );
+                    WindowCompat.getInsetsController(window, window.getDecorView());
 
-            if (controller == null) {
-                return;
-            }
+            if (controller == null) return;
 
+            // تفعيل سلوك السحب الشفاف الافتراضي للنظام (Swipe to Show)
             controller.setSystemBarsBehavior(
-                    WindowInsetsControllerCompat
-                            .BEHAVIOR_SHOW_BARS_BY_SWIPE
+                    WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
             );
 
+            // إخفاء الشريط العلوي والسفلي معاً في الوضع الخامل
             controller.hide(
                     androidx.core.view.WindowInsetsCompat.Type.statusBars()
                             | androidx.core.view.WindowInsetsCompat.Type.navigationBars()
@@ -139,43 +127,8 @@ public class SystemUI {
     // 👑 إظهار الشريطين عند تفاعل المستخدم
     // =========================================================
 
-    public static void showSystemBarsOnInteraction(
-            android.app.Activity activity
-    ) {
-        if (activity == null || activity.isFinishing()) {
-            return;
-        }
-
-        activity.runOnUiThread(() -> {
-
-            Window window = activity.getWindow();
-
-            if (window == null) {
-                return;
-            }
-
-            WindowInsetsControllerCompat controller =
-                    WindowCompat.getInsetsController(
-                            window,
-                            window.getDecorView()
-                    );
-
-            if (controller == null) {
-                return;
-            }
-
-            controller.setSystemBarsBehavior(
-                    WindowInsetsControllerCompat
-                            .BEHAVIOR_SHOW_BARS_BY_SWIPE
-            );
-
-            controller.show(
-                    androidx.core.view.WindowInsetsCompat.Type.statusBars()
-                            | androidx.core.view.WindowInsetsCompat.Type.navigationBars()
-            );
-
-            scheduleSystemBarsHide(activity);
-        });
+    public static void showSystemBarsOnInteraction(android.app.Activity activity) {
+        // تم تفريغ الدالة لمنع ظهور الشريطين عند اللمس العادي داخل الشاشة
     }
 
 
@@ -183,28 +136,8 @@ public class SystemUI {
     // 👑 إخفاء الشريطين بعد 3 ثوانٍ
     // =========================================================
 
-    private static void scheduleSystemBarsHide(
-            android.app.Activity activity
-    ) {
-        cancelSystemBarsHide();
-
-        if (activity == null || activity.isFinishing()) {
-            return;
-        }
-
-        systemBarsHideTask = () -> {
-
-            if (activity.isFinishing()) {
-                return;
-            }
-
-            hideSystemBars(activity);
-        };
-
-        NAV_HANDLER.postDelayed(
-                systemBarsHideTask,
-                SYSTEM_BARS_HIDE_DELAY
-        );
+    private static void scheduleSystemBarsHide(android.app.Activity activity) {
+        // تم تفريغ الدالة لمنع تضارب المؤقتات عند التفاعل
     }
 
 
@@ -412,63 +345,18 @@ public class SystemUI {
     }
 
     // =========================================================
-    // 👑 Navigation Bar Activity Refresh
+    // 👑 Navigation Bar Activity Refresh (تحديث بدون تضارب أو ومضات)
     // =========================================================
-
-    public static void refreshNavigationBar(
-            android.app.Activity activity
-    ) {
-
-        if (activity == null ||
-                activity.isFinishing()) {
+    public static void refreshNavigationBar(android.app.Activity activity) {
+        if (activity == null || activity.isFinishing()) {
             return;
         }
 
         activity.runOnUiThread(() -> {
-
-            detectedNavigationMode =
-                    detectNavigationMode(activity);
-
-            Window window = activity.getWindow();
-
-            if (window == null) {
-                return;
-            }
-
-            WindowInsetsControllerCompat controller =
-                    WindowCompat.getInsetsController(
-                            window,
-                            window.getDecorView()
-                    );
-
-            if (controller == null) {
-                return;
-            }
-
-            // 👑 السلوك الحقيقي لشريط النظام
-            controller.setSystemBarsBehavior(
-                    WindowInsetsControllerCompat
-                            .BEHAVIOR_SHOW_BARS_BY_SWIPE
-            );
-
-            // 👑 Gesture Navigation
-            if (detectedNavigationMode == 2) {
-
-                cancelNavigationBarHide();
-
-                controller.show(
-                        androidx.core.view.WindowInsetsCompat.Type.navigationBars()
-                );
-
-                return;
-            }
-
-            // 👑 Button Navigation
-            controller.show(
-                    androidx.core.view.WindowInsetsCompat.Type.navigationBars()
-            );
-
-            scheduleNavigationBarHide(activity);
+            detectedNavigationMode = detectNavigationMode(activity);
+            
+            // إعادة تأكيد حالة الإخفاء المستقرة وتجنب إطلاق مؤقتات متعارضة
+            hideSystemBars(activity);
         });
     }
 
@@ -967,4 +855,4 @@ public class SystemUI {
 
         // 👑 النظام الموحد هو المسؤول عن إظهار/إخفاء الشريطين.
     }
-                    }
+    }
