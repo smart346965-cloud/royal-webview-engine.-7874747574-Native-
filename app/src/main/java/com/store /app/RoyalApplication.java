@@ -6,7 +6,6 @@ import android.os.Process;
 import android.util.Log;
 import android.webkit.CookieManager;
 import android.webkit.WebStorage;
-import android.webkit.WebView;
 
 import androidx.webkit.WebViewCompat;
 import androidx.webkit.WebViewOutcomeReceiver;
@@ -72,19 +71,20 @@ public class RoyalApplication extends Application {
                         @Override
                         public void onResult(WebViewStartUpResult result) {
 
-                            Log.i(TAG,
+                            Log.i(
+                                    TAG,
                                     "✅ Chromium startup completed. "
-                                            + "UI is now safe to create WebView.");
-
-                            // 🟢 تسخين الـ GPU Context، ومحرك V8، وقواعد البيانات فور جاهزية المحرك
-                            executeDeepEngineWarmup();
+                                            + "WebView creation path is now warmed."
+                            );
 
                             /*
-                             * هذا callback يأتي على Main Looper.
-                             * من هذه النقطة فقط نسمح للـ WebView
-                             * بالدخول في دورة حياته.
+                             * لا تنشئ WebView وهمياً هنا.
+                             * لا loadUrl("about:blank").
+                             * لا destroy().
+                             *
+                             * الـ WebView الحقيقي في MainActivity هو الذي يجب
+                             * أن يستفيد من Chromium startup الذي تم تجهيزه.
                              */
-
                             RoyalWebViewHost.onWebViewStartupReady(
                                     getApplicationContext()
                             );
@@ -126,45 +126,39 @@ public class RoyalApplication extends Application {
      * وسحب مكتبات C++ إلى ذاكرة الـ RAM تلقائياً في الخلفية.
      */
     private void prewarmWebViewPageCache() {
-        Executors.newSingleThreadExecutor().execute(() -> {
+        STARTUP_EXECUTOR.execute(() -> {
             try {
-                Process.setThreadPriority(Process.THREAD_PRIORITY_BACKGROUND);
-                PackageInfo webViewPackage = WebViewCompat.getCurrentWebViewPackage(this);
-                if (webViewPackage != null && webViewPackage.applicationInfo != null) {
-                    String apkPath = webViewPackage.applicationInfo.publicSourceDir;
+                Process.setThreadPriority(
+                        Process.THREAD_PRIORITY_BACKGROUND
+                );
+
+                PackageInfo webViewPackage =
+                        WebViewCompat.getCurrentWebViewPackage(this);
+
+                if (webViewPackage != null
+                        && webViewPackage.applicationInfo != null) {
+
+                    String apkPath =
+                            webViewPackage.applicationInfo.publicSourceDir;
+
                     if (apkPath != null) {
-                        try (InputStream is = new FileInputStream(apkPath)) {
-                            byte[] buffer = new byte[64 * 1024];
+
+                        try (InputStream is =
+                                     new FileInputStream(apkPath)) {
+
+                            byte[] buffer =
+                                    new byte[64 * 1024];
+
                             while (is.read(buffer) != -1) {
-                                // I/O صامت لملء الـ RAM Page Cache
+                                // Page-cache prewarm only.
                             }
                         }
                     }
                 }
+
             } catch (Throwable ignored) {
-                // صمام أمان محكم لمنع أي تأثير على التطبيق
+                // Never interfere with WebView startup.
             }
         });
     }
-
-    /**
-     * 2, 3, 4. تسخين بيئة الرسومات (EGL/GPU) + محرك V8 + قواعد البيانات (SQLite)
-     * يتم استدعاؤها حصراً بعد نجاح startUpWebView لضمان عدم التعارض.
-     */
-    private void executeDeepEngineWarmup() {
-        try {
-            // تسخين قواعد البيانات وفتح قنوات الـ IPC للـ Cookies والـ Storage
-            CookieManager.getInstance().flush();
-            WebStorage.getInstance();
-
-            // تسخين سياق الـ GPU (EGL Context) وتجهيز V8 Isolate Heap عبر كائن وهمي صامت
-            WebView dummyWebView = new WebView(this);
-            dummyWebView.loadUrl("about:blank");
-            dummyWebView.destroy();
-
-            Log.i("RoyalEngine", "🔥 Deep Engine Warmup (EGL + V8 + IPC + Cache) Executed!");
-        } catch (Throwable t) {
-            Log.w("RoyalEngine", "Safe deep warmup bypass: " + t.getMessage());
-        }
-    }
-        }
+}
