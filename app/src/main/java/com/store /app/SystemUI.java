@@ -364,7 +364,7 @@ public class SystemUI {
     }
 
     // =========================================================
-    // 1. تفعيل وضع "الملك" الناتيف (Edge-to-Edge بصفاء تام)
+    // 1. تفعيل وضع "الملك" الناتيف (مع تثبيت مساحة الشريط ومنع القفزات)
     // =========================================================
     public static void applyKingMode(
             FragmentActivity activity,
@@ -375,12 +375,11 @@ public class SystemUI {
 
         Window window = activity.getWindow();
 
-        // تمديد النافذة ملء الشاشة مع تثبيت الشفافية لأندرويد 15
+        // تمديد النافذة ملء الشاشة
         WindowCompat.setDecorFitsSystemWindows(window, false);
         window.setStatusBarColor(Color.TRANSPARENT);
         window.setNavigationBarColor(Color.TRANSPARENT);
 
-        // 👑 كسر تدخل النظام التلقائي وحظر التباين القسري
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
             window.setNavigationBarContrastEnforced(false);
             window.setStatusBarContrastEnforced(false);
@@ -388,10 +387,18 @@ public class SystemUI {
 
         window.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS);
 
+        // 👑 تثبيت مساحة Status Bar كـ Padding دائم لعدم إزاحة الموقع عند اختفاء الأيقونات
         View content = activity.findViewById(android.R.id.content);
         if (content != null) {
-            ViewCompat.setOnApplyWindowInsetsListener(content, null);
-            content.setPadding(0, 0, 0, 0);
+            ViewCompat.setOnApplyWindowInsetsListener(content, (v, insets) -> {
+                int statusBarHeight = insets.getInsets(
+                        androidx.core.view.WindowInsetsCompat.Type.statusBars()
+                ).top;
+                
+                // تثبيت الهامش العلوي دائماً بفرك مساحة الشريط
+                v.setPadding(0, statusBarHeight, 0, 0);
+                return insets;
+            });
         }
 
         WindowInsetsControllerCompat controller =
@@ -403,16 +410,9 @@ public class SystemUI {
             );
         }
 
-        // 👑 تشغيل نظام التنقل الذكي
         initializeNavigationBarController(activity);
-
-        // 👑 منع الـ Transient Navigation Overlay
         enforceStableNavigationBarPolicy(activity);
-
-        // 👑 إخفاء الشريطين مباشرة عند بدء التطبيق
         hideSystemBars(activity);
-
-        // تطبيق اللون الأولي المباشر
         applyHeaderColor(activity, initialColor);
     }
 
@@ -814,40 +814,84 @@ public class SystemUI {
     }
 
     // =========================================================
-    // 👑 إعادة تشغيل مؤقت Navigation Bar عند النقر أو زر الرجوع
+    // 👑 5 Second Navigation Bar Auto-Hide & Reset
     // =========================================================
-    public static void notifyNavigationUserInteraction(
-            android.app.Activity activity
-    ) {
-        if (activity == null ||
-                activity.isFinishing()) {
+    private static Runnable statusBarHideTask;
+    private static final long STATUS_BAR_HIDE_DELAY = 3000L; // 3 ثوانٍ لإخفاء شريط الحالة
+
+    // =========================================================
+    // 👑 Cancel Status Bar Hide
+    // =========================================================
+    public static void cancelStatusBarHide() {
+        if (statusBarHideTask != null) {
+            NAV_HANDLER.removeCallbacks(statusBarHideTask);
+            statusBarHideTask = null;
+        }
+    }
+
+    // =========================================================
+    // 👑 3 Second Status Bar Auto-Hide
+    // =========================================================
+    public static void scheduleStatusBarHide(android.app.Activity activity) {
+        cancelStatusBarHide();
+
+        if (activity == null || activity.isFinishing()) {
+            return;
+        }
+
+        statusBarHideTask = () -> {
+            if (activity.isFinishing()) return;
+
+            Window window = activity.getWindow();
+            if (window == null) return;
+
+            WindowInsetsControllerCompat controller =
+                    WindowCompat.getInsetsController(window, window.getDecorView());
+
+            if (controller != null) {
+                // إخفاء أيقونات شريط الحالة العلوي فقط بعد انتهاء الـ Delay
+                controller.hide(
+                        androidx.core.view.WindowInsetsCompat.Type.statusBars()
+                );
+            }
+        };
+
+        NAV_HANDLER.postDelayed(statusBarHideTask, STATUS_BAR_HIDE_DELAY);
+    }
+
+    // =========================================================
+    // 👑 إعادة تشغيل مؤشرات الإخفاء عند تفاعل المستخدم أو الرجوع
+    // =========================================================
+    public static void notifyNavigationUserInteraction(android.app.Activity activity) {
+        if (activity == null || activity.isFinishing()) {
             return;
         }
 
         activity.runOnUiThread(() -> {
-            // إعادة جدولة وقت الإخفاء من جديد عند التفاعل أو الرجوع
+            // إعادة جدولة الإخفاء التلقائي للشريطين
             scheduleNavigationBarHide(activity);
+            scheduleStatusBarHide(activity);
         });
     }
 
     // =========================================================
-    // 👑 Navigation Bar Visibility Monitor
+    // 👑 System Bars Visibility Monitor
     // =========================================================
-
     public static void onNavigationBarVisibilityChanged(
             android.app.Activity activity,
             boolean visible
     ) {
-        if (activity == null ||
-                activity.isFinishing()) {
+        if (activity == null || activity.isFinishing()) {
             return;
         }
 
         if (visible) {
-            // عند ظهور الشريط السفلي نتيجة السحب، يبدأ مؤقت الإخفاء التلقائي فوراً
+            // عند سحب أي شريط وظهوره يتم إطلاق مؤقت الإخفاء المخصص له
             scheduleNavigationBarHide(activity);
+            scheduleStatusBarHide(activity);
         } else {
             cancelNavigationBarHide();
+            cancelStatusBarHide();
         }
     }
-                                                        }
+        }
