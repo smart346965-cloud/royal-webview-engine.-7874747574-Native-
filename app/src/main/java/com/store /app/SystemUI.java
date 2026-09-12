@@ -105,20 +105,21 @@ public class SystemUI {
             if (window == null) return;
 
             WindowInsetsControllerCompat controller =
-                    WindowCompat.getInsetsController(window, window.getDecorView());
+                    WindowCompat.getInsetsController(
+                            window,
+                            window.getDecorView()
+                    );
 
             if (controller == null) return;
 
-            // 👑 تفعيل السلوك الأصلي للنظام (BEHAVIOR_SHOW_BARS_BY_SWIPE)
-            // هذا الوضع يُظهر الشريط الصلب المخصص للحافة المسحوبة فقط دون الشفافية الداكنة
             controller.setSystemBarsBehavior(
                     WindowInsetsControllerCompat.BEHAVIOR_SHOW_BARS_BY_SWIPE
             );
 
-            // إخفاء الشريطين في الحالة الخاملة
+            // 👑 Status Bar تبقى موجودة بمساحتها
+            // 👑 الإخفاء التلقائي يخص Navigation Bar فقط
             controller.hide(
-                    androidx.core.view.WindowInsetsCompat.Type.statusBars()
-                            | androidx.core.view.WindowInsetsCompat.Type.navigationBars()
+                    androidx.core.view.WindowInsetsCompat.Type.navigationBars()
             );
         });
     }
@@ -265,10 +266,8 @@ public class SystemUI {
 
             if (controller != null) {
 
-                // 👑 إخفاء الأيقونات فقط دون مساس بحجم ومساحة الرؤية
                 controller.hide(
                         androidx.core.view.WindowInsetsCompat.Type.navigationBars()
-                                | androidx.core.view.WindowInsetsCompat.Type.statusBars()
                 );
             }
         };
@@ -387,25 +386,6 @@ public class SystemUI {
         }
 
         window.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS);
-
-        // 👑 تثبيت مساحة Status Bar الحقيقية بشكل دائم وغير متأثر بإخفاء الأيقونات
-        View content = activity.findViewById(android.R.id.content);
-        if (content != null) {
-            ViewCompat.setOnApplyWindowInsetsListener(content, (v, insets) -> {
-                // نأخذ الـ Inset الأولي المستقر من النظام
-                int statusBarHeight = insets.getInsetsIgnoringVisibility(
-                        androidx.core.view.WindowInsetsCompat.Type.statusBars()
-                ).top;
-
-                // تطبيق Padding ثابت لا يتغير حتى لو اختفت الأيقونات
-                v.setPadding(0, statusBarHeight, 0, 0);
-
-                // إرجاع Insets بدون الاستهلاك حتى لا يحدث تضارب مع الحاويات الداخلية
-                return insets;
-            });
-
-            ViewCompat.requestApplyInsets(content);
-        }
 
         WindowInsetsControllerCompat controller =
                 WindowCompat.getInsetsController(window, window.getDecorView());
@@ -870,8 +850,7 @@ public class SystemUI {
 
                 if (controller != null) {
                     controller.show(
-                            androidx.core.view.WindowInsetsCompat.Type.statusBars()
-                                    | androidx.core.view.WindowInsetsCompat.Type.navigationBars()
+                            androidx.core.view.WindowInsetsCompat.Type.navigationBars()
                     );
                 }
             }
@@ -883,4 +862,4 @@ public class SystemUI {
             cancelNavigationBarHide();
         }
     }
-                    }
+                }
