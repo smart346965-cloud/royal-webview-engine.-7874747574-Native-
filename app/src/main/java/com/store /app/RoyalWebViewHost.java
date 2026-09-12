@@ -156,11 +156,15 @@ public final class RoyalWebViewHost {
 
     public static synchronized void create(Activity activity) {
         if (Looper.myLooper() != Looper.getMainLooper()) {
-            throw new IllegalStateException("RoyalWebViewHost.create() must run on Main Looper.");
+            throw new IllegalStateException(
+                    "RoyalWebViewHost.create() must run on Main Looper."
+            );
         }
 
         if (!webViewStartupReady) {
-            throw new IllegalStateException("WebView startup is not complete yet.");
+            throw new IllegalStateException(
+                    "WebView startup is not complete yet."
+            );
         }
 
         if (webViewInstance != null && isInitialized) {
@@ -181,32 +185,61 @@ public final class RoyalWebViewHost {
             WebView webView = new WebView(contextWrapper);
             webViewInstance = webView;
 
-            webView.setBackgroundColor(Color.parseColor("#F3F4F6"));
+            /*
+             * WebView يبقى INVISIBLE أثناء تجهيز الصفحة.
+             * لا يتم كشفه من هنا.
+             */
+            webView.setVisibility(View.INVISIBLE);
+
+            /*
+             * نفس لون الجذر لمنع أي White Flash.
+             */
+            webView.setBackgroundColor(Color.TRANSPARENT);
+
             WebView.setWebContentsDebuggingEnabled(BuildConfig.DEBUG);
 
             android.webkit.WebSettings settings = webView.getSettings();
             settings.setCacheMode(android.webkit.WebSettings.LOAD_DEFAULT);
             settings.setDomStorageEnabled(true);
 
+            /*
+             * WebView مخفي لكنه attached.
+             * السماح بالرسم المسبق مهم حتى يكون أول Frame جاهزاً
+             * قبل كشف WebView.
+             */
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                settings.setOffscreenPreRaster(false);
+                settings.setOffscreenPreRaster(true);
             }
 
-            RoyalHybridEngine.prime(webView, activity.getApplicationContext());
-            RoyalNetworkEngine.install(activity.getApplicationContext());
+            RoyalHybridEngine.prime(
+                    webView,
+                    activity.getApplicationContext()
+            );
 
-            // 👑 تم إزالة إنشاء RoyalJsBridge من هنا، سيتم ربطه لاحقاً عبر bindEngineManager
+            RoyalNetworkEngine.install(
+                    activity.getApplicationContext()
+            );
 
             webViewInstance = webView;
             isInitialized = true;
 
-            Log.i(TAG, "✅ Production WebView created and ready.");
+            Log.i(
+                    TAG,
+                    "✅ Production WebView created, attached-hidden, ready for rendering."
+            );
 
         } catch (Throwable t) {
+
             isInitialized = false;
             webViewInstance = null;
             jsBridgeInstance = null;
-            Log.e(TAG, "❌ WebView creation failed.", t);
+
+            Log.e(
+                    TAG,
+                    "❌ WebView creation failed.",
+                    t
+            );
+
             throw t;
         }
     }
@@ -277,13 +310,72 @@ public final class RoyalWebViewHost {
 
         safeRemoveFromParent();
 
-        webViewInstance.setVisibility(View.VISIBLE);
+        webViewInstance.setVisibility(View.INVISIBLE);
 
         webViewInstance.onResume();
         webViewInstance.resumeTimers();
 
-        Log.i(TAG, "🔗 WebView attached to " + activity.getClass().getSimpleName());
+        Log.i(
+                TAG,
+                "🔗 WebView attached hidden; rendering may proceed."
+        );
+
         return webViewInstance;
+    }
+
+    // =========================================================
+    // 🎨 Reveal WebView when Visual State Ready
+    // =========================================================
+
+    public static void revealWhenVisualStateReady(
+            WebView webView,
+            long requestId,
+            Runnable onReady
+    ) {
+        if (webView == null) {
+            return;
+        }
+
+        if (!WebViewFeature.isFeatureSupported(
+                WebViewFeature.VISUAL_STATE_CALLBACK
+        )) {
+            webView.setVisibility(View.VISIBLE);
+
+            if (onReady != null) {
+                onReady.run();
+            }
+
+            return;
+        }
+
+        WebViewCompat.postVisualStateCallback(
+                webView,
+                requestId,
+                new WebViewCompat.VisualStateCallback() {
+                    @Override
+                    public void onComplete(
+                            long callbackRequestId
+                    ) {
+                        webView.post(() -> {
+
+                            if (webView.getParent() == null) {
+                                return;
+                            }
+
+                            webView.setVisibility(View.VISIBLE);
+
+                            if (onReady != null) {
+                                onReady.run();
+                            }
+
+                            Log.i(
+                                    TAG,
+                                    "🎨 Visual state ready → WebView revealed."
+                            );
+                        });
+                    }
+                }
+        );
     }
 
     public static synchronized void detach() {
@@ -353,4 +445,4 @@ public final class RoyalWebViewHost {
     public static WebView getWebView() {
         return webViewInstance;
     }
-        }
+                 }
