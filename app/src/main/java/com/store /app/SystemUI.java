@@ -265,7 +265,7 @@ public class SystemUI {
 
             if (controller != null) {
 
-                // 👑 إخفاء الشريط السفلي + أيقونات Status Bar معاً
+                // 👑 إخفاء الأيقونات فقط دون مساس بحجم ومساحة الرؤية
                 controller.hide(
                         androidx.core.view.WindowInsetsCompat.Type.navigationBars()
                                 | androidx.core.view.WindowInsetsCompat.Type.statusBars()
@@ -365,7 +365,7 @@ public class SystemUI {
     }
 
     // =========================================================
-    // 1. تفعيل وضع "الملك" الناتيف (Edge-to-Edge بصفاء تام)
+    // 1. تفعيل وضع "الملك" الناتيف (ثبات دائم ومطلق للموقع منعاً للقفزات)
     // =========================================================
     public static void applyKingMode(
             FragmentActivity activity,
@@ -376,12 +376,11 @@ public class SystemUI {
 
         Window window = activity.getWindow();
 
-        // تمديد النافذة ملء الشاشة مع تثبيت الشفافية لأندرويد 15
+        // تمديد النافذة ملء الشاشة مع تثبيت الشفافية
         WindowCompat.setDecorFitsSystemWindows(window, false);
         window.setStatusBarColor(Color.TRANSPARENT);
         window.setNavigationBarColor(Color.TRANSPARENT);
 
-        // 👑 كسر تدخل النظام التلقائي وحظر التباين القسري
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
             window.setNavigationBarContrastEnforced(false);
             window.setStatusBarContrastEnforced(false);
@@ -389,38 +388,21 @@ public class SystemUI {
 
         window.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS);
 
+        // 👑 تثبيت مساحة Status Bar الحقيقية بشكل دائم وغير متأثر بإخفاء الأيقونات
         View content = activity.findViewById(android.R.id.content);
         if (content != null) {
+            ViewCompat.setOnApplyWindowInsetsListener(content, (v, insets) -> {
+                // نأخذ الـ Inset الأولي المستقر من النظام
+                int statusBarHeight = insets.getInsetsIgnoringVisibility(
+                        androidx.core.view.WindowInsetsCompat.Type.statusBars()
+                ).top;
 
-            final int[] stableStatusBarInset = {0};
+                // تطبيق Padding ثابت لا يتغير حتى لو اختفت الأيقونات
+                v.setPadding(0, statusBarHeight, 0, 0);
 
-            ViewCompat.setOnApplyWindowInsetsListener(
-                    content,
-                    (view, insets) -> {
-
-                        int currentTopInset =
-                                insets.getInsets(
-                                        androidx.core.view.WindowInsetsCompat.Type.statusBars()
-                                ).top;
-
-                        // التقاط مساحة Status Bar الحقيقية مرة واحدة
-                        if (currentTopInset > 0 && stableStatusBarInset[0] == 0) {
-                            stableStatusBarInset[0] = currentTopInset;
-                        }
-
-                        // تثبيت مساحة Status Bar مهما اختفت أو ظهرت الأيقونات
-                        int stableTop = stableStatusBarInset[0];
-
-                        view.setPadding(
-                                0,
-                                stableTop,
-                                0,
-                                0
-                        );
-
-                        return insets;
-                    }
-            );
+                // إرجاع Insets بدون الاستهلاك حتى لا يحدث تضارب مع الحاويات الداخلية
+                return insets;
+            });
 
             ViewCompat.requestApplyInsets(content);
         }
@@ -901,4 +883,4 @@ public class SystemUI {
             cancelNavigationBarHide();
         }
     }
-        }
+                    }
