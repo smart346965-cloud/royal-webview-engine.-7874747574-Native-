@@ -35,7 +35,7 @@ public class SystemUI {
     // 1 = 2 Buttons
     // 2 = Gestural
     // =========================================================
-    private static final long NAVIGATION_BAR_HIDE_DELAY = 5000L;
+    private static final long NAVIGATION_BAR_HIDE_DELAY = 3500L;
 
     private static final Handler NAV_HANDLER =
             new Handler(Looper.getMainLooper());
@@ -125,7 +125,7 @@ public class SystemUI {
                 return;
             }
 
-            // 👑 النظام لا يفرض خلفية على شريط التنقل
+            // 👑 الشريط الحقيقي للنظام — بدون طبقة داكنة أو Overlay
             window.setNavigationBarColor(Color.TRANSPARENT);
 
             if (android.os.Build.VERSION.SDK_INT >=
@@ -136,7 +136,6 @@ public class SystemUI {
 
             // =====================================================
             // 👑 GESTURE NAVIGATION
-            // لا نلمس Navigation Bars إطلاقاً
             // =====================================================
 
             if (detectedNavigationMode == 2) {
@@ -157,7 +156,6 @@ public class SystemUI {
 
             // =====================================================
             // 👑 BUTTON NAVIGATION
-            // إظهار أولاً ثم بدء عداد 5 ثوانٍ
             // =====================================================
 
             controller.show(
@@ -184,7 +182,7 @@ public class SystemUI {
             return;
         }
 
-        // Gesture Navigation لا يتم إخفاؤه أبداً
+        // 👑 Gesture Navigation لا يتم إخفاؤه
         if (detectedNavigationMode == 2) {
             return;
         }
@@ -195,7 +193,6 @@ public class SystemUI {
                 return;
             }
 
-            // 👑 حماية إضافية: إعادة التحقق قبل الإخفاء
             if (detectNavigationMode(activity) == 2) {
                 return;
             }
@@ -214,8 +211,7 @@ public class SystemUI {
 
             if (controller != null) {
 
-                // 👑 الإخفاء يتم بواسطة System UI نفسه
-                // وبالتالي يأخذ Animation النظام الطبيعي
+                // 👑 إخفاء شريط النظام الحقيقي
                 controller.hide(
                         androidx.core.view.WindowInsetsCompat.Type.navigationBars()
                 );
@@ -320,30 +316,30 @@ public class SystemUI {
                 return;
             }
 
-            // 👑 دائماً استخدم Navigation Bar مستقراً
-            // وليس Transient Overlay
+            // 👑 السلوك الحقيقي لشريط النظام
             controller.setSystemBarsBehavior(
-                    WindowInsetsControllerCompat.BEHAVIOR_SHOW_BARS_BY_SWIPE
+                    WindowInsetsControllerCompat
+                            .BEHAVIOR_SHOW_BARS_BY_SWIPE
             );
 
+            // 👑 Gesture Navigation
             if (detectedNavigationMode == 2) {
 
-                // 👑 Gesture = ظاهر دائماً
                 cancelNavigationBarHide();
 
                 controller.show(
                         androidx.core.view.WindowInsetsCompat.Type.navigationBars()
                 );
 
-            } else {
-
-                // 👑 Buttons = يظهر ثم يبدأ 5 ثوانٍ
-                controller.show(
-                        androidx.core.view.WindowInsetsCompat.Type.navigationBars()
-                );
-
-                scheduleNavigationBarHide(activity);
+                return;
             }
+
+            // 👑 Button Navigation
+            controller.show(
+                    androidx.core.view.WindowInsetsCompat.Type.navigationBars()
+            );
+
+            scheduleNavigationBarHide(activity);
         });
     }
 
@@ -884,4 +880,4 @@ public class SystemUI {
             scheduleNavigationBarHide(activity);
         }
     }
-        }
+    }
