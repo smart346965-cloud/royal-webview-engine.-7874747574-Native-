@@ -517,20 +517,12 @@ public class MainActivity extends AppCompatActivity {
     }
 
     // =========================================================
-    // 🚀 Touch Interaction → Reveal System Bars
+    // 🚀 Touch Interaction (تمرير اللمس طبيعياً للـ WebView دون الاستجابة للأشرطة)
     // =========================================================
 
     @Override
-    public boolean dispatchTouchEvent(
-            android.view.MotionEvent event
-    ) {
-
-        if (event.getActionMasked() ==
-                android.view.MotionEvent.ACTION_DOWN) {
-
-            SystemUI.showSystemBarsOnInteraction(this);
-        }
-
+    public boolean dispatchTouchEvent(android.view.MotionEvent event) {
+        // تمرير الأحداث للواجهة دون استدعاء showSystemBarsOnInteraction
         return super.dispatchTouchEvent(event);
     }
 
@@ -550,19 +542,14 @@ public class MainActivity extends AppCompatActivity {
 
     @Override
     protected void onResume() {
-
         super.onResume();
 
         if (activeWebView != null) {
-
             activeWebView.onResume();
 
-            // 👑 إعادة تقييم Navigation Mode
-            SystemUI.refreshNavigationBar(this);
-
-            SystemUI.restoreHeaderOnResume(this);
-
+            // 👑 إخفاء وتثبيت وضع الأشرطة مباشرة دون تضارب
             SystemUI.hideSystemBars(this);
+            SystemUI.restoreHeaderOnResume(this);
 
             if (System.currentTimeMillis() - splashStartTime >= FIXED_SPLASH_TIME) {
                 SystemUI.scheduleStatusBarSync(
@@ -823,13 +810,9 @@ public class MainActivity extends AppCompatActivity {
     public void onWindowFocusChanged(boolean hasFocus) {
         super.onWindowFocusChanged(hasFocus);
         if (hasFocus) {
-
-            // 👑 إعادة تقييم Navigation Mode عند استعادة التركيز
-            SystemUI.refreshNavigationBar(this);
-
-            SystemUI.restoreHeaderOnResume(this);
-
+            // 👑 إعادة تطبيق الإخفاء الموحد والأنيق بدلاً من refreshNavigationBar المسببة للومضة
             SystemUI.hideSystemBars(this);
+            SystemUI.restoreHeaderOnResume(this);
 
             if (System.currentTimeMillis() - splashStartTime >= FIXED_SPLASH_TIME
                     && activeWebView != null) {
@@ -861,4 +844,4 @@ public class MainActivity extends AppCompatActivity {
             Log.e(TAG, "⚠️ Failed to initialize Native Modules.", t);
         }
     }
-}
+                       }
