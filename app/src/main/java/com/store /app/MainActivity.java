@@ -542,9 +542,13 @@ public class MainActivity extends AppCompatActivity {
             // 👑 إعادة تقييم Navigation Mode
             SystemUI.refreshNavigationBar(this);
 
-            SystemUI.restoreHeaderOnResume(this);
-
+            /*
+             * 👑 حماية انتقال Splash → WebView
+             */
             if (System.currentTimeMillis() - splashStartTime >= FIXED_SPLASH_TIME) {
+
+                SystemUI.restoreHeaderOnResume(this);
+
                 SystemUI.scheduleStatusBarSync(
                         this,
                         activeWebView
@@ -800,16 +804,23 @@ public class MainActivity extends AppCompatActivity {
     // =========================================================
     @Override
     public void onWindowFocusChanged(boolean hasFocus) {
+
         super.onWindowFocusChanged(hasFocus);
+
         if (hasFocus) {
 
             // 👑 إعادة تقييم Navigation Mode عند استعادة التركيز
             SystemUI.refreshNavigationBar(this);
 
-            SystemUI.restoreHeaderOnResume(this);
-
+            /*
+             * 👑 حماية انتقال Splash → WebView
+             *
+             * لا يتم لمس Status Bar قبل انتهاء نافذة الـSplash.
+             */
             if (System.currentTimeMillis() - splashStartTime >= FIXED_SPLASH_TIME
                     && activeWebView != null) {
+
+                SystemUI.restoreHeaderOnResume(this);
 
                 SystemUI.scheduleStatusBarSync(
                         this,
@@ -838,4 +849,4 @@ public class MainActivity extends AppCompatActivity {
             Log.e(TAG, "⚠️ Failed to initialize Native Modules.", t);
         }
     }
-                    }
+        }
