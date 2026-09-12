@@ -51,7 +51,7 @@
 # تضمن حماية كافة الكلاسات، الدوال، والمجالات تحت الحزمةcom.store.app
 -keep class com.store.app.** { *; }
 -keepclassmembers class com.store.app.** { *; }
--keepclasswithmembers class com.store.app.** { *; }
+-keepclasseswithmembers class com.store.app.** { *; }
 
 # 2. حماية كاملة لـ JavaScript Interfaces & Dynamic Bridges
 # حماية جميع الدوال المربوطة بالجافاسكريبت منعاً لانهيار الاتصال بالـ Web Engine
