@@ -48,7 +48,7 @@ import com.store.app.RoyalJsBridge;
 public class MainActivity extends AppCompatActivity {
 
     private static final String TAG = "RoyalMainActivity";
-    private static final long FIXED_SPLASH_TIME = 4500L; // قيمة ثابتة 5 ثوانٍ بالتمام والكمال
+    private static final long FIXED_SPLASH_TIME = 3000L; // قيمة ثابتة 5 ثوانٍ بالتمام والكمال
 
     private boolean splashRemoved = false;
     private boolean isPageLoaded = false; // لمنع إعادة تحميل الصفحة في onResume
@@ -517,6 +517,24 @@ public class MainActivity extends AppCompatActivity {
     }
 
     // =========================================================
+    // 🚀 Touch Interaction → Reveal System Bars
+    // =========================================================
+
+    @Override
+    public boolean dispatchTouchEvent(
+            android.view.MotionEvent event
+    ) {
+
+        if (event.getActionMasked() ==
+                android.view.MotionEvent.ACTION_DOWN) {
+
+            SystemUI.showSystemBarsOnInteraction(this);
+        }
+
+        return super.dispatchTouchEvent(event);
+    }
+
+    // =========================================================
     // 🔄 دورة الحياة المحدّثة
     // =========================================================
 
@@ -542,13 +560,11 @@ public class MainActivity extends AppCompatActivity {
             // 👑 إعادة تقييم Navigation Mode
             SystemUI.refreshNavigationBar(this);
 
-            /*
-             * 👑 حماية انتقال Splash → WebView
-             */
+            SystemUI.restoreHeaderOnResume(this);
+
+            SystemUI.hideSystemBars(this);
+
             if (System.currentTimeMillis() - splashStartTime >= FIXED_SPLASH_TIME) {
-
-                SystemUI.restoreHeaderOnResume(this);
-
                 SystemUI.scheduleStatusBarSync(
                         this,
                         activeWebView
@@ -598,6 +614,7 @@ public class MainActivity extends AppCompatActivity {
 
         SystemUI.cancelStatusBarSync();
         SystemUI.cancelNavigationBarHide();
+        SystemUI.cancelSystemBarsHide();
 
         // ✅ إضافة التدمير للمحرك كأولوية
         if (capabilitiesEngine != null) {
@@ -804,23 +821,18 @@ public class MainActivity extends AppCompatActivity {
     // =========================================================
     @Override
     public void onWindowFocusChanged(boolean hasFocus) {
-
         super.onWindowFocusChanged(hasFocus);
-
         if (hasFocus) {
 
             // 👑 إعادة تقييم Navigation Mode عند استعادة التركيز
             SystemUI.refreshNavigationBar(this);
 
-            /*
-             * 👑 حماية انتقال Splash → WebView
-             *
-             * لا يتم لمس Status Bar قبل انتهاء نافذة الـSplash.
-             */
+            SystemUI.restoreHeaderOnResume(this);
+
+            SystemUI.hideSystemBars(this);
+
             if (System.currentTimeMillis() - splashStartTime >= FIXED_SPLASH_TIME
                     && activeWebView != null) {
-
-                SystemUI.restoreHeaderOnResume(this);
 
                 SystemUI.scheduleStatusBarSync(
                         this,
@@ -849,4 +861,4 @@ public class MainActivity extends AppCompatActivity {
             Log.e(TAG, "⚠️ Failed to initialize Native Modules.", t);
         }
     }
-        }
+}
