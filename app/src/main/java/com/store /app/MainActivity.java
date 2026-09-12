@@ -48,7 +48,7 @@ import com.store.app.RoyalJsBridge;
 public class MainActivity extends AppCompatActivity {
 
     private static final String TAG = "RoyalMainActivity";
-    private static final long FIXED_SPLASH_TIME = 4500L; // قيمة ثابتة 5 ثوانٍ بالتمام والكمال
+    private static final long FIXED_SPLASH_TIME = 2000L; // قيمة ثابتة 5 ثوانٍ بالتمام والكمال
 
     private boolean splashRemoved = false;
     private boolean isPageLoaded = false; // لمنع إعادة تحميل الصفحة في onResume
@@ -377,6 +377,12 @@ public class MainActivity extends AppCompatActivity {
                         () -> {
                             visualStateReady = true;
                             webViewRevealed = true;
+
+                            // 👑 مزامنة خفية بعد الاستعادة (بدون لمس الأيقونات مباشرة)
+                            SystemUI.syncStatusBarWithWebEarly(
+                                    MainActivity.this,
+                                    activeWebView
+                            );
                         }
                 );
 
@@ -417,6 +423,12 @@ public class MainActivity extends AppCompatActivity {
                         () -> {
                             visualStateReady = true;
                             webViewRevealed = true;
+
+                            // 👑 مزامنة خفية بعد الإحياء
+                            SystemUI.syncStatusBarWithWebEarly(
+                                    MainActivity.this,
+                                    activeWebView
+                            );
                         }
                 );
 
@@ -456,7 +468,16 @@ public class MainActivity extends AppCompatActivity {
                                     "🎨 First visual state rendered."
                             );
 
-                            SystemUI.syncStatusBarWithWeb(
+                            // 👑 المزامنة الخفية أولاً (لون الشريط فقط دون لمس الأيقونات)
+                            // تمنع الومض بين السبلاش الأبيض والهيدر
+                            SystemUI.syncStatusBarWithWebEarly(
+                                    MainActivity.this,
+                                    activeWebView
+                            );
+
+                            // 👑 ثم جدولة المزامنة الكاملة (تحدّث الأيقونات أيضاً)
+                            // بمهلة موسّعة لصفحات SPA
+                            SystemUI.scheduleStatusBarSync(
                                     MainActivity.this,
                                     activeWebView
                             );
@@ -550,6 +571,12 @@ public class MainActivity extends AppCompatActivity {
             // 👑 إخفاء وتثبيت وضع الأشرطة مباشرة دون تضارب
             SystemUI.hideSystemBars(this);
             SystemUI.restoreHeaderOnResume(this);
+
+            // 👑 المزامنة الخفية ثم الكاملة بمهلة موسّعة لصفحات SPA
+            SystemUI.syncStatusBarWithWebEarly(
+                    this,
+                    activeWebView
+            );
 
             if (System.currentTimeMillis() - splashStartTime >= FIXED_SPLASH_TIME) {
                 SystemUI.scheduleStatusBarSync(
@@ -824,13 +851,19 @@ public class MainActivity extends AppCompatActivity {
             SystemUI.hideSystemBars(this);
             SystemUI.restoreHeaderOnResume(this);
 
-            if (System.currentTimeMillis() - splashStartTime >= FIXED_SPLASH_TIME
-                    && activeWebView != null) {
-
-                SystemUI.scheduleStatusBarSync(
+            // 👑 المزامنة الخفية الفورية (لون فقط) ثم الكاملة بمهلة موسّعة
+            if (activeWebView != null) {
+                SystemUI.syncStatusBarWithWebEarly(
                         this,
                         activeWebView
                 );
+
+                if (System.currentTimeMillis() - splashStartTime >= FIXED_SPLASH_TIME) {
+                    SystemUI.scheduleStatusBarSync(
+                            this,
+                            activeWebView
+                    );
+                }
             }
         }
     }
@@ -854,4 +887,4 @@ public class MainActivity extends AppCompatActivity {
             Log.e(TAG, "⚠️ Failed to initialize Native Modules.", t);
         }
     }
-            }
+    }
