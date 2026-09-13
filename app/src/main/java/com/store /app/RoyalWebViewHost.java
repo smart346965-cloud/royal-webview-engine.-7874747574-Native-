@@ -186,10 +186,9 @@ public final class RoyalWebViewHost {
             webViewInstance = webView;
 
             /*
-             * WebView يبقى INVISIBLE أثناء تجهيز الصفحة.
-             * لا يتم كشفه من هنا.
+             * WebView يبقى VISIBLE أثناء تجهيز الصفحة.
              */
-            webView.setVisibility(View.INVISIBLE);
+            webView.setVisibility(View.VISIBLE);
 
             /*
              * نفس لون الجذر لمنع أي White Flash.
@@ -203,9 +202,8 @@ public final class RoyalWebViewHost {
             settings.setDomStorageEnabled(true);
 
             /*
-             * WebView مخفي لكنه attached.
-             * السماح بالرسم المسبق مهم حتى يكون أول Frame جاهزاً
-             * قبل كشف WebView.
+             * WebView ظاهر لكنه attached.
+             * السماح بالرسم المسبق مهم حتى يكون أول Frame جاهزاً.
              */
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                 settings.setOffscreenPreRaster(true);
@@ -225,7 +223,7 @@ public final class RoyalWebViewHost {
 
             Log.i(
                     TAG,
-                    "✅ Production WebView created, attached-hidden, ready for rendering."
+                    "✅ Production WebView created, attached-visible, ready for rendering."
             );
 
         } catch (Throwable t) {
@@ -310,14 +308,14 @@ public final class RoyalWebViewHost {
 
         safeRemoveFromParent();
 
-        webViewInstance.setVisibility(View.INVISIBLE);
+        webViewInstance.setVisibility(View.VISIBLE);
 
         webViewInstance.onResume();
         webViewInstance.resumeTimers();
 
         Log.i(
                 TAG,
-                "🔗 WebView attached hidden; rendering may proceed."
+                "🔗 WebView attached visible; rendering may proceed."
         );
 
         return webViewInstance;
@@ -339,8 +337,6 @@ public final class RoyalWebViewHost {
         if (!WebViewFeature.isFeatureSupported(
                 WebViewFeature.VISUAL_STATE_CALLBACK
         )) {
-            webView.setVisibility(View.VISIBLE);
-
             if (onReady != null) {
                 onReady.run();
             }
@@ -362,15 +358,13 @@ public final class RoyalWebViewHost {
                                 return;
                             }
 
-                            webView.setVisibility(View.VISIBLE);
-
                             if (onReady != null) {
                                 onReady.run();
                             }
 
                             Log.i(
                                     TAG,
-                                    "🎨 Visual state ready → WebView revealed."
+                                    "🎨 Visual state ready."
                             );
                         });
                     }
@@ -445,4 +439,4 @@ public final class RoyalWebViewHost {
     public static WebView getWebView() {
         return webViewInstance;
     }
-                 }
+                                    }
