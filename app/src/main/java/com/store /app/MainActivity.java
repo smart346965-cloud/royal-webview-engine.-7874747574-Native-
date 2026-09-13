@@ -249,7 +249,7 @@ public class MainActivity extends AppCompatActivity {
         activeWebView =
                 RoyalWebViewHost.attach(this);
 
-        activeWebView.setVisibility(View.INVISIBLE);
+        activeWebView.setVisibility(View.VISIBLE);
         activeWebView.setAlpha(1f);
 
         // 👑 إضافة الـ WebView داخل حاويته المخصصة لعدم التأثير على الهيدر والفوتر
