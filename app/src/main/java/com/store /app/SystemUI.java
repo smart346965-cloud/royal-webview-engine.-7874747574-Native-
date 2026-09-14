@@ -35,16 +35,12 @@ public class SystemUI {
     // 1 = 2 Buttons
     // 2 = Gestural
     // =========================================================
-    private static final long NAVIGATION_BAR_HIDE_DELAY = 3500L;
-
-    // 👑 مؤقت موحد لإخفاء الشريطين
-    private static final long SYSTEM_BARS_HIDE_DELAY = 3000L;
+    private static final long NAVIGATION_BAR_HIDE_DELAY = 5000L;
 
     private static final Handler NAV_HANDLER =
             new Handler(Looper.getMainLooper());
 
     private static Runnable navigationHideTask;
-    private static Runnable systemBarsHideTask;
 
     private static int detectedNavigationMode = -1;
 
@@ -93,74 +89,6 @@ public class SystemUI {
     }
 
     // =========================================================
-    // 👑 إخفاء الشريطين مع تفعيل أشرطة النظام الصلبة الأصلية لكل سحبة
-    // =========================================================
-    public static void hideSystemBars(android.app.Activity activity) {
-        if (activity == null || activity.isFinishing()) {
-            return;
-        }
-
-        activity.runOnUiThread(() -> {
-            Window window = activity.getWindow();
-            if (window == null) return;
-
-            WindowInsetsControllerCompat controller =
-                    WindowCompat.getInsetsController(
-                            window,
-                            window.getDecorView()
-                    );
-
-            if (controller == null) return;
-
-            controller.setSystemBarsBehavior(
-                    WindowInsetsControllerCompat.BEHAVIOR_SHOW_BARS_BY_SWIPE
-            );
-
-            // 👑 Status Bar تبقى موجودة بمساحتها
-            // 👑 الإخفاء التلقائي يخص Navigation Bar فقط
-            controller.hide(
-                    androidx.core.view.WindowInsetsCompat.Type.navigationBars()
-            );
-        });
-    }
-
-
-    // =========================================================
-    // 👑 إظهار الشريطين عند تفاعل المستخدم
-    // =========================================================
-
-    public static void showSystemBarsOnInteraction(android.app.Activity activity) {
-        // تم تفريغ الدالة لمنع ظهور الشريطين عند اللمس العادي داخل الشاشة
-    }
-
-
-    // =========================================================
-    // 👑 إخفاء الشريطين بعد 3 ثوانٍ
-    // =========================================================
-
-    private static void scheduleSystemBarsHide(android.app.Activity activity) {
-        // تم تفريغ الدالة لمنع تضارب المؤقتات عند التفاعل
-    }
-
-
-    // =========================================================
-    // 👑 إلغاء مؤقت الشريطين
-    // =========================================================
-
-    public static void cancelSystemBarsHide() {
-
-        if (systemBarsHideTask != null) {
-
-            NAV_HANDLER.removeCallbacks(
-                    systemBarsHideTask
-            );
-
-            systemBarsHideTask = null;
-        }
-    }
-
-
-    // =========================================================
     // 👑 Navigation Bar Controller
     // Gesture = دائم الظهور
     // Buttons = إخفاء بعد 5 ثوانٍ
@@ -197,7 +125,7 @@ public class SystemUI {
                 return;
             }
 
-            // 👑 الشريط الحقيقي للنظام — بدون طبقة داكنة أو Overlay
+            // 👑 النظام لا يفرض خلفية على شريط التنقل
             window.setNavigationBarColor(Color.TRANSPARENT);
 
             if (android.os.Build.VERSION.SDK_INT >=
@@ -208,11 +136,16 @@ public class SystemUI {
 
             // =====================================================
             // 👑 GESTURE NAVIGATION
+            // لا نلمس Navigation Bars إطلاقاً
             // =====================================================
 
             if (detectedNavigationMode == 2) {
 
                 cancelNavigationBarHide();
+
+                controller.show(
+                        androidx.core.view.WindowInsetsCompat.Type.navigationBars()
+                );
 
                 controller.setSystemBarsBehavior(
                         WindowInsetsControllerCompat
@@ -224,17 +157,22 @@ public class SystemUI {
 
             // =====================================================
             // 👑 BUTTON NAVIGATION
+            // إظهار أولاً ثم بدء عداد 5 ثوانٍ
             // =====================================================
 
-            return;
+            controller.show(
+                    androidx.core.view.WindowInsetsCompat.Type.navigationBars()
+            );
+
+            scheduleNavigationBarHide(activity);
         });
     }
 
     // =========================================================
-    // 👑 5 Second Navigation Bar Auto-Hide & Reset
+    // 👑 5 Second Navigation Bar Auto-Hide
     // =========================================================
 
-    public static void scheduleNavigationBarHide(
+    private static void scheduleNavigationBarHide(
             android.app.Activity activity
     ) {
 
@@ -246,9 +184,19 @@ public class SystemUI {
             return;
         }
 
+        // Gesture Navigation لا يتم إخفاؤه أبداً
+        if (detectedNavigationMode == 2) {
+            return;
+        }
+
         navigationHideTask = () -> {
 
             if (activity.isFinishing()) {
+                return;
+            }
+
+            // 👑 حماية إضافية: إعادة التحقق قبل الإخفاء
+            if (detectNavigationMode(activity) == 2) {
                 return;
             }
 
@@ -266,6 +214,8 @@ public class SystemUI {
 
             if (controller != null) {
 
+                // 👑 الإخفاء يتم بواسطة System UI نفسه
+                // وبالتالي يأخذ Animation النظام الطبيعي
                 controller.hide(
                         androidx.core.view.WindowInsetsCompat.Type.navigationBars()
                 );
@@ -337,18 +287,63 @@ public class SystemUI {
     }
 
     // =========================================================
-    // 👑 Navigation Bar Activity Refresh (تحديث بدون تضارب أو ومضات)
+    // 👑 Navigation Bar Activity Refresh
     // =========================================================
-    public static void refreshNavigationBar(android.app.Activity activity) {
-        if (activity == null || activity.isFinishing()) {
+
+    public static void refreshNavigationBar(
+            android.app.Activity activity
+    ) {
+
+        if (activity == null ||
+                activity.isFinishing()) {
             return;
         }
 
         activity.runOnUiThread(() -> {
-            detectedNavigationMode = detectNavigationMode(activity);
-            
-            // إعادة تأكيد حالة الإخفاء المستقرة وتجنب إطلاق مؤقتات متعارضة
-            hideSystemBars(activity);
+
+            detectedNavigationMode =
+                    detectNavigationMode(activity);
+
+            Window window = activity.getWindow();
+
+            if (window == null) {
+                return;
+            }
+
+            WindowInsetsControllerCompat controller =
+                    WindowCompat.getInsetsController(
+                            window,
+                            window.getDecorView()
+                    );
+
+            if (controller == null) {
+                return;
+            }
+
+            // 👑 دائماً استخدم Navigation Bar مستقراً
+            // وليس Transient Overlay
+            controller.setSystemBarsBehavior(
+                    WindowInsetsControllerCompat.BEHAVIOR_SHOW_BARS_BY_SWIPE
+            );
+
+            if (detectedNavigationMode == 2) {
+
+                // 👑 Gesture = ظاهر دائماً
+                cancelNavigationBarHide();
+
+                controller.show(
+                        androidx.core.view.WindowInsetsCompat.Type.navigationBars()
+                );
+
+            } else {
+
+                // 👑 Buttons = يظهر ثم يبدأ 5 ثوانٍ
+                controller.show(
+                        androidx.core.view.WindowInsetsCompat.Type.navigationBars()
+                );
+
+                scheduleNavigationBarHide(activity);
+            }
         });
     }
 
@@ -364,7 +359,7 @@ public class SystemUI {
     }
 
     // =========================================================
-    // 1. تفعيل وضع "الملك" الناتيف (ثبات دائم ومطلق للموقع منعاً للقفزات)
+    // 1. تفعيل وضع "الملك" الناتيف (Edge-to-Edge بصفاء تام)
     // =========================================================
     public static void applyKingMode(
             FragmentActivity activity,
@@ -375,17 +370,24 @@ public class SystemUI {
 
         Window window = activity.getWindow();
 
-        // تمديد النافذة ملء الشاشة مع تثبيت الشفافية
+        // تمديد النافذة ملء الشاشة مع تثبيت الشفافية لأندرويد 15
         WindowCompat.setDecorFitsSystemWindows(window, false);
         window.setStatusBarColor(Color.TRANSPARENT);
         window.setNavigationBarColor(Color.TRANSPARENT);
 
+        // 👑 كسر تدخل النظام التلقائي وحظر التباين القسري
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
             window.setNavigationBarContrastEnforced(false);
             window.setStatusBarContrastEnforced(false);
         }
 
         window.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS);
+
+        View content = activity.findViewById(android.R.id.content);
+        if (content != null) {
+            ViewCompat.setOnApplyWindowInsetsListener(content, null);
+            content.setPadding(0, 0, 0, 0);
+        }
 
         WindowInsetsControllerCompat controller =
                 WindowCompat.getInsetsController(window, window.getDecorView());
@@ -400,10 +402,8 @@ public class SystemUI {
         initializeNavigationBarController(activity);
 
         // 👑 منع الـ Transient Navigation Overlay
+        // وجعل ظهور شريط النظام يمر عبر Insets الطبيعية
         enforceStableNavigationBarPolicy(activity);
-
-        // 👑 إخفاء الشريطين مباشرة عند بدء التطبيق
-        hideSystemBars(activity);
 
         // تطبيق اللون الأولي المباشر
         applyHeaderColor(activity, initialColor);
@@ -753,8 +753,7 @@ public class SystemUI {
             syncStatusBarWithWeb(activity, webView);
         };
 
-        // 👑 مهلة موسّعة لصفحات SPA حتى يستقر الـ DOM والـ CSS بالكامل
-        SYNC_HANDLER.postDelayed(syncTask, 400L);
+        SYNC_HANDLER.postDelayed(syncTask, 80L);
     }
 
     public static void cancelStatusBarSync() {
@@ -762,30 +761,6 @@ public class SystemUI {
             SYNC_HANDLER.removeCallbacks(syncTask);
             syncTask = null;
         }
-    }
-
-    // =========================================================
-    // 👑 7-C. استقبال اللون الحيّ من طبقة الجافاسكريبت (MutationObserver)
-    // يُستدعى من RoyalJsBridge عند تغيّر meta theme-color أو خلفية الهيدر.
-    // =========================================================
-    public static void onHeaderColorChanged(
-            android.app.Activity activity,
-            String colorStr
-    ) {
-        if (activity == null || colorStr == null) return;
-
-        // 👑 تجاهل القيم الفارغة أو غير الصالحة
-        final String trimmed = colorStr.replace("\"", "").trim();
-        if (trimmed.isEmpty() || trimmed.equalsIgnoreCase("null")) return;
-
-        activity.runOnUiThread(() -> {
-            try {
-                int parsedColor = parseColorString(activity, trimmed);
-                applyHeaderColor(activity, parsedColor);
-            } catch (Throwable t) {
-                Log.w(TAG, "onHeaderColorChanged failed for: " + trimmed, t);
-            }
-        });
     }
 
     // =========================================================
@@ -832,20 +807,49 @@ public class SystemUI {
     }
 
     // =========================================================
-    // 👑 إعادة تشغيل مؤقت Navigation Bar عند النقر أو زر الرجوع
+    // 👑 إعادة تشغيل مؤقت Navigation Bar عند تفاعل المستخدم
     // =========================================================
     public static void notifyNavigationUserInteraction(
             android.app.Activity activity
     ) {
         if (activity == null ||
-                activity.isFinishing()) {
+                activity.isFinishing() ||
+                !navigationBarControllerReady) {
             return;
         }
 
-        activity.runOnUiThread(() -> {
-            // إعادة جدولة وقت الإخفاء من جديد عند التفاعل أو الرجوع
+        if (detectedNavigationMode == 2) {
+            cancelNavigationBarHide();
+            return;
+        }
+
+        Window window = activity.getWindow();
+
+        if (window == null) {
+            return;
+        }
+
+        WindowInsetsControllerCompat controller =
+                WindowCompat.getInsetsController(
+                        window,
+                        window.getDecorView()
+                );
+
+        if (controller != null) {
+
+            // 👑 منع ظهور Navigation Bar كطبقة Transient فوق Offline Bar
+            controller.setSystemBarsBehavior(
+                    WindowInsetsControllerCompat.BEHAVIOR_SHOW_BARS_BY_SWIPE
+            );
+
+            // إظهار الشريط فوراً
+            controller.show(
+                    androidx.core.view.WindowInsetsCompat.Type.navigationBars()
+            );
+
+            // 👑 إعادة عداد الـ 5 ثوانٍ من الصفر
             scheduleNavigationBarHide(activity);
-        });
+        }
     }
 
     // =========================================================
@@ -856,35 +860,28 @@ public class SystemUI {
             android.app.Activity activity,
             boolean visible
     ) {
+
         if (activity == null ||
                 activity.isFinishing()) {
             return;
         }
 
+        if (!navigationBarControllerReady) {
+            return;
+        }
+
+        if (detectedNavigationMode == 2) {
+
+            // Gesture Navigation:
+            // ممنوع تشغيل أي Hide Timer
+            cancelNavigationBarHide();
+            return;
+        }
+
         if (visible) {
 
-            Window window = activity.getWindow();
-
-            if (window != null) {
-
-                WindowInsetsControllerCompat controller =
-                        WindowCompat.getInsetsController(
-                                window,
-                                window.getDecorView()
-                        );
-
-                if (controller != null) {
-                    controller.show(
-                            androidx.core.view.WindowInsetsCompat.Type.navigationBars()
-                    );
-                }
-            }
-
+            // 👑 ظهرت أزرار النظام → أعد عداد الـ 5 ثوانٍ
             scheduleNavigationBarHide(activity);
-
-        } else {
-
-            cancelNavigationBarHide();
         }
     }
             }
