@@ -750,11 +750,13 @@ public class SystemUI {
             if (webView.getVisibility() != View.VISIBLE) return;
             if (scheduledGeneration != syncGeneration) return;
 
+            // ⚡ مزامنة فورية بدون انتظار 400ms
             syncStatusBarWithWeb(activity, webView);
         };
 
-        // 👑 مهلة موسّعة لصفحات SPA حتى يستقر الـ DOM والـ CSS بالكامل
-        SYNC_HANDLER.postDelayed(syncTask, 400L);
+        // ⚡ تنفيذ في أول دورة للـ Main Looper
+        // بدلاً من الانتظار 400ms
+        SYNC_HANDLER.post(syncTask);
     }
 
     public static void cancelStatusBarSync() {
@@ -774,16 +776,95 @@ public class SystemUI {
     ) {
         if (activity == null || colorStr == null) return;
 
-        // 👑 تجاهل القيم الفارغة أو غير الصالحة
-        final String trimmed = colorStr.replace("\"", "").trim();
-        if (trimmed.isEmpty() || trimmed.equalsIgnoreCase("null")) return;
+        final String trimmed = colorStr
+                .replace("\"", "")
+                .trim();
+
+        if (trimmed.isEmpty() ||
+                trimmed.equalsIgnoreCase("null")) {
+            return;
+        }
 
         activity.runOnUiThread(() -> {
             try {
-                int parsedColor = parseColorString(activity, trimmed);
-                applyHeaderColor(activity, parsedColor);
+
+                int parsedColor =
+                        parseColorString(activity, trimmed);
+
+                // ⚡ إلغاء أي مزامنة قديمة حتى لا تعيد
+                // لوناً قديماً بعد اللون الجديد
+                cancelStatusBarSync();
+
+                // ⚡ اللون الجديد يصبح هو المصدر الحالي فوراً
+                currentHeaderColor = compositeColorWithBackground(
+                        parsedColor,
+                        getDefaultSystemColor(activity)
+                );
+
+                // ⚡ تطبيق اللون + الأيقونات فور وصول الإشارة
+                applyHeaderColor(
+                        activity,
+                        parsedColor
+                );
+
             } catch (Throwable t) {
-                Log.w(TAG, "onHeaderColorChanged failed for: " + trimmed, t);
+
+                Log.w(
+                        TAG,
+                        "Instant header color update failed: " + trimmed,
+                        t
+                );
+            }
+        });
+    }
+
+    /**
+     * ⚡ INSTANT VISUAL SYNC
+     *
+     * يستقبل اللون النهائي مباشرة من طبقة JavaScript
+     * بدون انتظار scheduleStatusBarSync().
+     */
+    public static void applyInstantHeaderColor(
+            android.app.Activity activity,
+            String colorStr
+    ) {
+        if (activity == null ||
+                activity.isFinishing() ||
+                colorStr == null) {
+            return;
+        }
+
+        final String trimmed =
+                colorStr.replace("\"", "").trim();
+
+        if (trimmed.isEmpty() ||
+                trimmed.equalsIgnoreCase("null")) {
+            return;
+        }
+
+        activity.runOnUiThread(() -> {
+
+            try {
+
+                int parsedColor =
+                        parseColorString(activity, trimmed);
+
+                // إلغاء أي لون قديم ينتظر التطبيق
+                cancelStatusBarSync();
+
+                // التطبيق الفوري
+                applyHeaderColor(
+                        activity,
+                        parsedColor
+                );
+
+            } catch (Throwable t) {
+
+                Log.w(
+                        TAG,
+                        "applyInstantHeaderColor failed: " + trimmed,
+                        t
+                );
             }
         });
     }
