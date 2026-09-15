@@ -14,6 +14,7 @@ public class RoyalJsBridge {
     private static final String TAG = "RoyalJsBridge";
     private final WebView webView;
     private final WebEngineManager webEngineManager;
+    private final android.app.Activity activity;
     private Runnable onHideSplashCallback;
 
     // 🚀 جسر الصواريخ: مسار خلفي معزول (Single Thread) لمعالجة أوامر JS دون خنق واجهة المستخدم
@@ -25,6 +26,14 @@ public class RoyalJsBridge {
 
         this.webView = webView;
         this.webEngineManager = webEngineManager;
+
+        android.content.Context context = webView.getContext();
+
+        if (context instanceof android.app.Activity) {
+            this.activity = (android.app.Activity) context;
+        } else {
+            this.activity = null;
+        }
 
         RoyalPanopticon.registerDependency(
                 "WebChromeEngine",
@@ -148,6 +157,55 @@ public class RoyalJsBridge {
     }
 
     /**
+     * ⚡ Instant Visual Color Channel
+     *
+     * هذه القناة مخصصة فقط للون الهيدر/الخلفية المرئية.
+     * ممنوع إرسالها إلى backgroundExecutor لأن الهدف
+     * هو الوصول إلى UI thread بأقل latency ممكن.
+     */
+    @JavascriptInterface
+    public void headerColorChanged(String color) {
+
+        if (color == null || color.length() == 0) {
+            return;
+        }
+
+        final String finalColor =
+                color.replace("\"", "").trim();
+
+        if (finalColor.length() == 0 ||
+                finalColor.equalsIgnoreCase("null")) {
+            return;
+        }
+
+        webView.post(() -> {
+
+            try {
+
+                RoyalPanopticon.pulse(
+                        "JS-BridgeChannel"
+                );
+
+                if (activity == null) return;
+
+                SystemUI.applyInstantHeaderColor(
+                        activity,
+                        finalColor
+                );
+
+            } catch (Throwable t) {
+
+                Log.w(
+                        TAG,
+                        "Instant headerColorChanged failed: "
+                                + finalColor,
+                        t
+                );
+            }
+        });
+    }
+
+    /**
      * 🎭 Visual Completeness Signal
      * يُستدعى من الجافاسكريبت عندما يكتمل رسم الموقع بالكامل
      */
@@ -207,4 +265,4 @@ public class RoyalJsBridge {
         if (webView == null) return;
         webView.post(() -> webView.evaluateJavascript(script, null));
     }
-                    }
+}
